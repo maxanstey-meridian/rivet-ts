@@ -263,10 +263,15 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     const summary = this.parseStringLiteral(propertyMap.get("summary"), sourceFile);
     const description = this.parseStringLiteral(propertyMap.get("description"), sourceFile);
     const anonymous = this.parseBooleanLiteral(propertyMap.get("anonymous"), sourceFile) ?? false;
-    const securityScheme = this.parseSecurityScheme(propertyMap.get("security"), sourceFile);
+    const securityScheme = this.parseSecurityScheme(
+      propertyMap.get("security"),
+      sourceFile,
+      checker,
+    );
     const errors = this.parseErrors(
       propertyMap.get("errors"),
       sourceFile,
+      checker,
       diagnostics,
       endpointName,
     );
@@ -317,6 +322,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
   private parseErrors(
     node: ts.TypeNode | undefined,
     sourceFile: ts.SourceFile,
+    checker: ts.TypeChecker,
     diagnostics: ExtractionDiagnostic[],
     endpointName: string,
   ): ErrorResponseSpec[] {
@@ -324,7 +330,8 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       return [];
     }
 
-    if (!ts.isTupleTypeNode(node)) {
+    const errorEntries = this.getTupleElementNodes(node, checker);
+    if (!errorEntries) {
       diagnostics.push(
         this.createNodeDiagnostic(
           sourceFile,
@@ -337,8 +344,9 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     }
 
     const errors: ErrorResponseSpec[] = [];
-    for (const element of node.elements) {
-      if (!ts.isTypeLiteralNode(element)) {
+    for (const element of errorEntries) {
+      const propertyMap = this.createPropertyMap(element, sourceFile, checker);
+      if (!propertyMap) {
         diagnostics.push(
           this.createNodeDiagnostic(
             sourceFile,
@@ -348,20 +356,6 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
           ),
         );
         continue;
-      }
-
-      const propertyMap = new Map<string, ts.TypeNode>();
-      for (const member of element.members) {
-        if (!ts.isPropertySignature(member) || !member.type || !member.name) {
-          continue;
-        }
-
-        const memberName = this.getMemberName(member.name);
-        if (!memberName) {
-          continue;
-        }
-
-        propertyMap.set(memberName, member.type);
       }
 
       const status = this.parseNumericLiteral(propertyMap.get("status"), sourceFile);
@@ -415,6 +409,39 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     }
 
     return propertyMap;
+  }
+
+  private getTupleElementNodes(node: ts.TypeNode, checker: ts.TypeChecker): ts.TypeNode[] | null {
+    if (ts.isTupleTypeNode(node)) {
+      return [...node.elements];
+    }
+
+    const resolvedNode = this.resolveAliasedTypeNode(node, checker);
+    if (resolvedNode && ts.isTupleTypeNode(resolvedNode)) {
+      return [...resolvedNode.elements];
+    }
+
+    return null;
+  }
+
+  private resolveAliasedTypeNode(node: ts.TypeNode, checker?: ts.TypeChecker): ts.TypeNode | null {
+    if (ts.isParenthesizedTypeNode(node)) {
+      return this.resolveAliasedTypeNode(node.type, checker);
+    }
+
+    if (!ts.isTypeReferenceNode(node)) {
+      return null;
+    }
+
+    const symbol = checker?.getSymbolAtLocation(node.typeName);
+    const declarations = symbol?.getDeclarations() ?? [];
+    for (const declaration of declarations) {
+      if (ts.isTypeAliasDeclaration(declaration)) {
+        return declaration.type;
+      }
+    }
+
+    return null;
   }
 
   private createPropertyMapFromTypeLiteral(
@@ -480,25 +507,14 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
   private parseSecurityScheme(
     node: ts.TypeNode | undefined,
     sourceFile: ts.SourceFile,
+    checker: ts.TypeChecker,
   ): string | null {
-    if (!node || !ts.isTypeLiteralNode(node)) {
+    if (!node) {
       return null;
     }
 
-    for (const member of node.members) {
-      if (!ts.isPropertySignature(member) || !member.type || !member.name) {
-        continue;
-      }
-
-      const memberName = this.getMemberName(member.name);
-      if (memberName !== "scheme") {
-        continue;
-      }
-
-      return this.parseStringLiteral(member.type, sourceFile);
-    }
-
-    return null;
+    const propertyMap = this.createPropertyMap(node, sourceFile, checker);
+    return propertyMap ? this.parseStringLiteral(propertyMap.get("scheme"), sourceFile) : null;
   }
 
   private parseStringLiteral(
