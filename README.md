@@ -256,11 +256,17 @@ reconstruction remain downstream Rivet responsibilities.
 The supported authoring DSL is intentionally narrow and explicit:
 
 ```ts
+export const listMembersResponseExample = {
+  items: [{ id: "mem_123", email: "jane@example.com" }],
+  totalCount: 1,
+} satisfies PagedResult<MemberDto>;
+
 export interface MembersContract extends Contract<"MembersContract"> {
   List: Endpoint<{
     method: "GET";
     route: "/api/members";
     response: MemberDto[];
+    successResponseExample: typeof listMembersResponseExample;
     summary: "List members";
     description: "List all members";
   }>;
@@ -281,6 +287,8 @@ Supported endpoint keys today:
 - `route`
 - `input`
 - `response`
+- `requestExample`
+- `successResponseExample`
 - `successStatus`
 - `summary`
 - `description`
@@ -294,6 +302,10 @@ Notes:
 
 - `EndpointAuthoringSpec`, `EndpointErrorAuthoringSpec`, and `EndpointSecurityAuthoringSpec` are exported so the supported surface is visible in autocomplete and type navigation.
 - Endpoint specs are currently extracted from inline `Endpoint<{ ... }>` type literals.
+- Examples must be authored as real exported `const` values and referenced from endpoint metadata with `typeof someExample`.
+- Validate example values with `satisfies` against the DTO you want to model; the extractor serializes the const initializer, not an invented type-only example bag.
+- The current scope is one `requestExample` and one `successResponseExample` per endpoint.
+- In this slice, examples are preserved in the extracted frontend `ContractBundle` only. Downstream Rivet/OpenAPI emission is a later step.
 - `errors` should be authored as an inline tuple of inline object literals.
 - `security` should be authored as an inline object literal with a `scheme` property.
 - exported `interface`, `type`, and `enum` declarations
@@ -305,7 +317,7 @@ Notes:
 - `Brand<T, "...">`
 - `Format<T, "...">`
 - endpoint metadata: `method`, `route`, `input`, `response`, `successStatus`, `summary`, `description`, `errors`,
-  `anonymous`, `security`, `fileResponse`, `fileContentType`
+  `anonymous`, `security`, `fileResponse`, `fileContentType`, `requestExample`, `successResponseExample`
 
 Explicitly not the goal:
 

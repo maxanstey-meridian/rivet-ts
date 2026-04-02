@@ -14,6 +14,7 @@ import type {
   UpdateMemberRequest,
   ValidationErrorDto,
 } from "./models.js";
+import { createMemberRequestExample, createMemberResponseExample } from "./models.js";
 
 type AdminSecurity = EndpointSecurityAuthoringSpec & {
   readonly scheme: "admin";
@@ -30,6 +31,8 @@ export type CreateEndpointAuthoringPreview = EndpointAuthoringSpec & {
   readonly route: "/api/teams/{teamId}/members";
   readonly input: CreateMemberRequest;
   readonly response: MemberEnvelope<MemberDto>;
+  readonly requestExample: typeof createMemberRequestExample;
+  readonly successResponseExample: typeof createMemberResponseExample;
   readonly successStatus: 201;
   readonly errors: [ValidationFailure];
   readonly security: AdminSecurity;
@@ -50,6 +53,8 @@ export interface MembersContract extends Contract<"MembersContract"> {
     route: "/api/teams/{teamId}/members";
     input: CreateMemberRequest;
     response: MemberEnvelope<MemberDto>;
+    requestExample: typeof createMemberRequestExample;
+    successResponseExample: typeof createMemberResponseExample;
     successStatus: 201;
     errors: [{ status: 422; response: ValidationErrorDto; description: "Validation failed" }];
     security: { scheme: "admin" };

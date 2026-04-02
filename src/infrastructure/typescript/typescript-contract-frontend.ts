@@ -4,6 +4,8 @@ import { TsContractFrontend } from "../../application/ports/ts-contract-frontend
 import { ContractBundle } from "../../domain/contract-bundle.js";
 import {
   ContractSpec,
+  EndpointExampleSpec,
+  type EndpointExampleValue,
   EndpointSpec,
   ErrorResponseSpec,
   SecuritySpec,
@@ -257,6 +259,22 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
 
     const input = this.parseTypeExpression(propertyMap.get("input"), sourceFile);
     const response = this.parseTypeExpression(propertyMap.get("response"), sourceFile);
+    const requestExample = this.parseEndpointExample(
+      propertyMap.get("requestExample"),
+      "requestExample",
+      sourceFile,
+      checker,
+      diagnostics,
+      endpointName,
+    );
+    const successResponseExample = this.parseEndpointExample(
+      propertyMap.get("successResponseExample"),
+      "successResponseExample",
+      sourceFile,
+      checker,
+      diagnostics,
+      endpointName,
+    );
     const fileResponse =
       this.parseBooleanLiteral(propertyMap.get("fileResponse"), sourceFile) ?? false;
     const fileContentType = this.parseStringLiteral(propertyMap.get("fileContentType"), sourceFile);
@@ -290,6 +308,8 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       successStatus: successStatus ?? undefined,
       summary: summary ?? undefined,
       description: description ?? undefined,
+      requestExample: requestExample ?? undefined,
+      successResponseExample: successResponseExample ?? undefined,
       errors,
       anonymous,
       security: securityScheme ? new SecuritySpec({ scheme: securityScheme }) : undefined,
@@ -387,6 +407,59 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     return errors;
   }
 
+  private parseEndpointExample(
+    node: ts.TypeNode | undefined,
+    propertyName: "requestExample" | "successResponseExample",
+    sourceFile: ts.SourceFile,
+    checker: ts.TypeChecker,
+    diagnostics: ExtractionDiagnostic[],
+    endpointName: string,
+  ): EndpointExampleSpec | null {
+    if (!node) {
+      return null;
+    }
+
+    if (!ts.isTypeQueryNode(node)) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          node,
+          "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+          `Endpoint "${endpointName}" must declare ${propertyName} as typeof exportedConst.`,
+        ),
+      );
+      return null;
+    }
+
+    const declaration = this.resolveExampleDeclaration(node.exprName, checker);
+    if (!declaration || !declaration.initializer || !this.isConstVariableDeclaration(declaration)) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          node,
+          "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+          `Endpoint "${endpointName}" must declare ${propertyName} as typeof an exported const with an initializer.`,
+        ),
+      );
+      return null;
+    }
+
+    const data = this.parseExampleValue(declaration.initializer, checker);
+    if (data === undefined) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          declaration.initializer,
+          "UNSUPPORTED_ENDPOINT_EXAMPLE_VALUE",
+          `Endpoint "${endpointName}" ${propertyName} must resolve to a JSON-like const initializer.`,
+        ),
+      );
+      return null;
+    }
+
+    return new EndpointExampleSpec({ data });
+  }
+
   private createPropertyMap(
     typeNode: ts.TypeNode,
     sourceFile: ts.SourceFile,
@@ -462,6 +535,163 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     }
 
     return null;
+  }
+
+  private resolveExampleDeclaration(
+    entityName: ts.EntityName,
+    checker: ts.TypeChecker,
+  ): ts.VariableDeclaration | null {
+    const symbol = checker.getSymbolAtLocation(entityName);
+    if (!symbol) {
+      return null;
+    }
+
+    const resolvedSymbol =
+      (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(symbol) : symbol;
+
+    for (const declaration of resolvedSymbol.getDeclarations() ?? []) {
+      if (ts.isVariableDeclaration(declaration)) {
+        return declaration;
+      }
+    }
+
+    return null;
+  }
+
+  private isConstVariableDeclaration(declaration: ts.VariableDeclaration): boolean {
+    return (
+      ts.isVariableDeclarationList(declaration.parent) &&
+      (declaration.parent.flags & ts.NodeFlags.Const) !== 0
+    );
+  }
+
+  private parseExampleValue(
+    expression: ts.Expression,
+    checker: ts.TypeChecker,
+  ): EndpointExampleValue | undefined {
+    const unwrapped = this.unwrapExampleExpression(expression);
+
+    if (ts.isStringLiteral(unwrapped) || ts.isNoSubstitutionTemplateLiteral(unwrapped)) {
+      return unwrapped.text;
+    }
+
+    if (ts.isNumericLiteral(unwrapped)) {
+      return Number(unwrapped.text);
+    }
+
+    if (unwrapped.kind === ts.SyntaxKind.TrueKeyword) {
+      return true;
+    }
+
+    if (unwrapped.kind === ts.SyntaxKind.FalseKeyword) {
+      return false;
+    }
+
+    if (unwrapped.kind === ts.SyntaxKind.NullKeyword) {
+      return null;
+    }
+
+    if (ts.isPrefixUnaryExpression(unwrapped)) {
+      const operand = this.parseExampleValue(unwrapped.operand, checker);
+      if (typeof operand !== "number") {
+        return undefined;
+      }
+
+      if (unwrapped.operator === ts.SyntaxKind.MinusToken) {
+        return -operand;
+      }
+
+      if (unwrapped.operator === ts.SyntaxKind.PlusToken) {
+        return operand;
+      }
+
+      return undefined;
+    }
+
+    if (ts.isArrayLiteralExpression(unwrapped)) {
+      const values: EndpointExampleValue[] = [];
+      for (const element of unwrapped.elements) {
+        if (ts.isSpreadElement(element)) {
+          return undefined;
+        }
+
+        const value = this.parseExampleValue(element, checker);
+        if (value === undefined) {
+          return undefined;
+        }
+
+        values.push(value);
+      }
+
+      return values;
+    }
+
+    if (ts.isObjectLiteralExpression(unwrapped)) {
+      const value: Record<string, EndpointExampleValue> = {};
+      for (const property of unwrapped.properties) {
+        if (!ts.isPropertyAssignment(property)) {
+          return undefined;
+        }
+
+        const propertyName = this.getExamplePropertyName(property.name);
+        if (!propertyName) {
+          return undefined;
+        }
+
+        const propertyValue = this.parseExampleValue(property.initializer, checker);
+        if (propertyValue === undefined) {
+          return undefined;
+        }
+
+        value[propertyName] = propertyValue;
+      }
+
+      return value;
+    }
+
+    const literalValue = this.parseLiteralValueFromType(unwrapped, checker);
+    return literalValue;
+  }
+
+  private unwrapExampleExpression(expression: ts.Expression): ts.Expression {
+    if (
+      ts.isParenthesizedExpression(expression) ||
+      ts.isAsExpression(expression) ||
+      ts.isSatisfiesExpression(expression) ||
+      ts.isTypeAssertionExpression(expression)
+    ) {
+      return this.unwrapExampleExpression(expression.expression);
+    }
+
+    return expression;
+  }
+
+  private getExamplePropertyName(name: ts.PropertyName): string | null {
+    if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) {
+      return name.text;
+    }
+
+    return null;
+  }
+
+  private parseLiteralValueFromType(
+    expression: ts.Expression,
+    checker: ts.TypeChecker,
+  ): string | number | boolean | undefined {
+    const type = checker.getTypeAtLocation(expression);
+    if ((type.flags & ts.TypeFlags.StringLiteral) !== 0) {
+      return (type as ts.StringLiteralType).value;
+    }
+
+    if ((type.flags & ts.TypeFlags.NumberLiteral) !== 0) {
+      return (type as ts.NumberLiteralType).value;
+    }
+
+    if ((type.flags & ts.TypeFlags.BooleanLiteral) !== 0) {
+      return checker.typeToString(type) === "true";
+    }
+
+    return undefined;
   }
 
   private createPropertyMapFromTypeLiteral(

@@ -1,6 +1,21 @@
 import { TypeExpression } from "./type-expression.js";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+export type EndpointExampleValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly EndpointExampleValue[]
+  | { readonly [key: string]: EndpointExampleValue };
+
+export class EndpointExampleSpec {
+  public readonly data: EndpointExampleValue;
+
+  public constructor(input: { data: EndpointExampleValue }) {
+    this.data = input.data;
+  }
+}
 
 export class ErrorResponseSpec {
   public readonly status: number;
@@ -33,6 +48,8 @@ export class EndpointSpec {
   public readonly successStatus?: number;
   public readonly summary?: string;
   public readonly description?: string;
+  public readonly requestExample?: EndpointExampleSpec;
+  public readonly successResponseExample?: EndpointExampleSpec;
   public readonly errors: readonly ErrorResponseSpec[];
   public readonly anonymous: boolean;
   public readonly security?: SecuritySpec;
@@ -48,6 +65,8 @@ export class EndpointSpec {
     successStatus?: number;
     summary?: string;
     description?: string;
+    requestExample?: EndpointExampleSpec;
+    successResponseExample?: EndpointExampleSpec;
     errors?: readonly ErrorResponseSpec[];
     anonymous?: boolean;
     security?: SecuritySpec;
@@ -62,6 +81,8 @@ export class EndpointSpec {
     this.successStatus = input.successStatus;
     this.summary = input.summary;
     this.description = input.description;
+    this.requestExample = input.requestExample;
+    this.successResponseExample = input.successResponseExample;
     this.errors = input.errors ?? [];
     this.anonymous = input.anonymous ?? false;
     this.security = input.security;

@@ -19,6 +19,8 @@ export type EndpointAuthoringSpec = {
   readonly route: string;
   readonly input?: unknown;
   readonly response?: unknown;
+  readonly requestExample?: unknown;
+  readonly successResponseExample?: unknown;
   readonly successStatus?: number;
   readonly summary?: string;
   readonly description?: string;

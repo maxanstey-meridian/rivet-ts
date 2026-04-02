@@ -122,6 +122,34 @@ describe("ExtractTsContracts lifecycle", () => {
     expect(create).not.toHaveProperty("securityScheme");
     expect(create?.input?.text).toBe("CreateMemberRequest");
     expect(create?.response?.text).toBe("MemberEnvelope<MemberDto>");
+    expect(create?.requestExample?.data).toEqual({
+      teamId: "550e8400-e29b-41d4-a716-446655440000",
+      email: "jane@example.com",
+      status: "active",
+      priority: 2,
+      profile: {
+        displayName: "Jane Example",
+        timezone: "Europe/London",
+      },
+      metadata: {
+        invitesSent: 3,
+        logins: 12,
+      },
+    });
+    expect(create?.successResponseExample?.data).toEqual({
+      data: {
+        id: "550e8400-e29b-41d4-a716-446655440001",
+        email: "jane@example.com",
+        status: "active",
+        priority: 2,
+        managerId: null,
+        coordinates: {
+          lat: 51.5074,
+          lng: -0.1278,
+        },
+      },
+      included: ["profile", "audit"],
+    });
     expect(create?.errors).toEqual([
       expect.objectContaining({
         status: 422,
@@ -289,6 +317,89 @@ describe("ExtractTsContracts lifecycle", () => {
     ]);
     expect(bundle.contracts[0]?.endpoints[0]?.errors[0]?.response?.text).toBe("ValidationErrorDto");
   });
+
+  it.each([
+    [
+      "non-typeof example reference",
+      [
+        'import type { Contract, Endpoint } from "__IMPORT_PATH__";',
+        "",
+        "interface CreateMemberRequest {",
+        "  email: string;",
+        "}",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/temp";',
+        "    requestExample: CreateMemberRequest;",
+        "    response: void;",
+        "  }>;",
+        "}",
+        "",
+      ],
+      "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+    ],
+    [
+      "spread-heavy const initializer",
+      [
+        'import type { Contract, Endpoint } from "__IMPORT_PATH__";',
+        "",
+        "interface CreateMemberRequest {",
+        "  email: string;",
+        "  role: string;",
+        "}",
+        "",
+        'const baseRequest = { role: "admin" };',
+        "const createMemberRequestExample = {",
+        '  email: "jane@example.com",',
+        "  ...baseRequest,",
+        "} satisfies CreateMemberRequest;",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/temp";',
+        "    requestExample: typeof createMemberRequestExample;",
+        "    response: void;",
+        "  }>;",
+        "}",
+        "",
+      ],
+      "UNSUPPORTED_ENDPOINT_EXAMPLE_VALUE",
+    ],
+  ])(
+    "reports diagnostics for malformed endpoint examples via %s",
+    async (_, fileLines, expectedCode) => {
+      const frontend = new TypeScriptContractFrontend();
+      const useCase = new ExtractTsContracts(frontend);
+      const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-examples-invalid-"));
+      const entryPath = path.join(tempDirectory, "contracts.ts");
+      const normalizedImportPath = toImportPath(
+        tempDirectory,
+        path.join(getProjectRoot(), "dist", "index.js"),
+      );
+
+      await fs.writeFile(
+        entryPath,
+        fileLines.join("\n").replaceAll("__IMPORT_PATH__", normalizedImportPath),
+        "utf8",
+      );
+
+      const bundle = await useCase.execute({ entryPath });
+
+      expect(bundle.hasErrors).toBe(true);
+      expect(bundle.diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: expectedCode,
+            filePath: entryPath,
+          }),
+        ]),
+      );
+      expect(bundle.contracts[0]?.endpoints[0]?.requestExample).toBeUndefined();
+    },
+  );
 
   it.each([
     ["non-array errors type", "string", "INVALID_ERRORS_SPEC"],
