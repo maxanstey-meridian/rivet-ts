@@ -286,6 +286,48 @@ describe("ExtractTsContracts lifecycle", () => {
     expect(bundle.contracts[0]?.endpoints[0]?.errors[0]?.response?.text).toBe("ValidationErrorDto");
   });
 
+  it("reports diagnostics when security uses the helper shape without a string literal scheme", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-security-helper-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint, EndpointSecurityAuthoringSpec } from "${normalizedImportPath}";`,
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/temp";',
+        "    response: void;",
+        "    security: EndpointSecurityAuthoringSpec;",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await useCase.execute({ entryPath });
+
+    expect(bundle.hasErrors).toBe(true);
+    expect(bundle.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "INVALID_SECURITY_SPEC",
+          filePath: entryPath,
+          message: expect.stringContaining("security.scheme as a string literal"),
+        }),
+      ]),
+    );
+  });
+
   it("reports compiler diagnostics when endpoint metadata includes unsupported keys", async () => {
     const frontend = new TypeScriptContractFrontend();
     const useCase = new ExtractTsContracts(frontend);

@@ -268,6 +268,8 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       propertyMap.get("security"),
       sourceFile,
       checker,
+      diagnostics,
+      endpointName,
     );
     const errors = this.parseErrors(
       propertyMap.get("errors"),
@@ -526,13 +528,41 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     node: ts.TypeNode | undefined,
     sourceFile: ts.SourceFile,
     checker: ts.TypeChecker,
+    diagnostics: ExtractionDiagnostic[],
+    endpointName: string,
   ): string | null {
     if (!node) {
       return null;
     }
 
     const propertyMap = this.createPropertyMap(node, sourceFile, checker);
-    return propertyMap ? this.parseStringLiteral(propertyMap.get("scheme"), sourceFile) : null;
+    if (!propertyMap) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          node,
+          "INVALID_SECURITY_SPEC",
+          `Endpoint "${endpointName}" must declare security as an object type with a string literal scheme.`,
+        ),
+      );
+      return null;
+    }
+
+    const schemeNode = propertyMap.get("scheme");
+    const securityScheme = this.parseStringLiteral(schemeNode, sourceFile);
+    if (securityScheme) {
+      return securityScheme;
+    }
+
+    diagnostics.push(
+      this.createNodeDiagnostic(
+        sourceFile,
+        schemeNode ?? node,
+        "INVALID_SECURITY_SPEC",
+        `Endpoint "${endpointName}" must declare security.scheme as a string literal.`,
+      ),
+    );
+    return null;
   }
 
   private parseStringLiteral(

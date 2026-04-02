@@ -487,7 +487,7 @@ class TypeEmissionContext {
     const summary = this.readStringLiteral(propertyMap.get("summary")) ?? undefined;
     const description = this.readStringLiteral(propertyMap.get("description")) ?? undefined;
     const anonymous = this.readBooleanLiteral(propertyMap.get("anonymous")) ?? false;
-    const securityScheme = this.readSecurityScheme(propertyMap.get("security"));
+    const securityScheme = this.readSecurityScheme(propertyMap.get("security"), context);
     const fileResponse = this.readBooleanLiteral(propertyMap.get("fileResponse")) ?? false;
     const fileContentType = fileResponse
       ? (this.readStringLiteral(propertyMap.get("fileContentType")) ?? "application/octet-stream")
@@ -1534,13 +1534,55 @@ class TypeEmissionContext {
     return null;
   }
 
-  private readSecurityScheme(node: ts.TypeNode | undefined): string | null {
+  private readSecurityScheme(
+    node: ts.TypeNode | undefined,
+    context: EndpointContext,
+  ): string | null {
     if (!node) {
       return null;
     }
 
     const propertyMap = this.createPropertyMap(node);
-    return this.readStringLiteral(propertyMap?.get("scheme"));
+    if (!propertyMap) {
+      this.pushDiagnosticIfAbsent(
+        createNodeDiagnostic(
+          node,
+          "INVALID_SECURITY_SPEC",
+          `Endpoint "${context.contractName}.${context.endpointName}" must declare security as an object type with a string literal scheme.`,
+        ),
+      );
+      return null;
+    }
+
+    const schemeNode = propertyMap.get("scheme");
+    const securityScheme = this.readStringLiteral(schemeNode);
+    if (securityScheme) {
+      return securityScheme;
+    }
+
+    this.pushDiagnosticIfAbsent(
+      createNodeDiagnostic(
+        schemeNode ?? node,
+        "INVALID_SECURITY_SPEC",
+        `Endpoint "${context.contractName}.${context.endpointName}" must declare security.scheme as a string literal.`,
+      ),
+    );
+    return null;
+  }
+
+  private pushDiagnosticIfAbsent(diagnostic: ExtractionDiagnostic): void {
+    const alreadyPresent = this.diagnostics.some(
+      (existing) =>
+        existing.code === diagnostic.code &&
+        existing.message === diagnostic.message &&
+        existing.filePath === diagnostic.filePath &&
+        existing.line === diagnostic.line &&
+        existing.column === diagnostic.column,
+    );
+
+    if (!alreadyPresent) {
+      this.diagnostics.push(diagnostic);
+    }
   }
 
   private readStringLiteral(node: ts.TypeNode | undefined): string | null {
