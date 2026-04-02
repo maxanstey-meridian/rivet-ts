@@ -201,4 +201,66 @@ describe("CLI lifecycle", () => {
     expect(invalidSecurityDiagnostics).toHaveLength(1);
     expect(invalidSecurityDiagnostics[0]).toContain("security.scheme as a string literal");
   });
+
+  it.each([
+    ["non-array errors type", "string", "INVALID_ERRORS_SPEC"],
+    ["non-object error entry", "Array<string>", "INVALID_ERROR_ENTRY"],
+    [
+      "helper error entry without literal status",
+      "Array<EndpointErrorAuthoringSpec>",
+      "MISSING_ERROR_STATUS",
+    ],
+  ])(
+    "reports malformed error metadata through the real CLI path via %s",
+    async (_, errorsType, expectedCode) => {
+      const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-invalid-errors-"));
+      const entryPath = path.join(tempDirectory, "contracts.ts");
+      const outputPath = path.join(tempDirectory, "contract.json");
+      const normalizedImportPath = toImportPath(
+        tempDirectory,
+        path.join(getProjectRoot(), "dist", "index.js"),
+      );
+      const stdout: string[] = [];
+      const stderr: string[] = [];
+
+      await fs.writeFile(
+        entryPath,
+        [
+          `import type { Contract, Endpoint, EndpointErrorAuthoringSpec } from "${normalizedImportPath}";`,
+          "",
+          'export interface TempContract extends Contract<"TempContract"> {',
+          "  Create: Endpoint<{",
+          '    method: "POST";',
+          '    route: "/api/temp";',
+          "    response: void;",
+          `    errors: ${errorsType};`,
+          "  }>;",
+          "}",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const exitCode = await runCli(["--entry", entryPath, "--out", outputPath], {
+        stdout: (text) => stdout.push(text),
+        stderr: (text) => stderr.push(text),
+      });
+
+      expect(exitCode).toBe(1);
+      expect(stdout).toHaveLength(0);
+      const errorDiagnostics = stderr.filter((line) => line.includes(`[${expectedCode}]`));
+      expect(errorDiagnostics.length).toBeGreaterThan(0);
+
+      const fileContents = await fs.readFile(outputPath, "utf8");
+      const payload = JSON.parse(fileContents) as {
+        endpoints: Array<{
+          name: string;
+          responses: Array<{ statusCode: number; description?: string }>;
+        }>;
+      };
+      const createEndpoint = payload.endpoints.find((endpoint) => endpoint.name === "create");
+
+      expect(createEndpoint?.responses).toEqual([expect.objectContaining({ statusCode: 201 })]);
+    },
+  );
 });

@@ -133,6 +133,59 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     );
   });
 
+  it("defaults file responses to application/octet-stream when fileContentType is omitted", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const lowerer = new TypeScriptRivetContractLowerer();
+    const extractUseCase = new ExtractTsContracts(frontend);
+    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-file-response-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Download: Endpoint<{",
+        '    method: "GET";',
+        '    route: "/api/download";',
+        "    fileResponse: true;",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await extractUseCase.execute({ entryPath });
+    const lowered = await lowerUseCase.execute({ bundle });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(lowered.hasErrors).toBe(false);
+    expect(lowered.diagnostics).toEqual([]);
+
+    const payload = JSON.parse(lowered.toJson()) as {
+      endpoints: Array<{
+        name: string;
+        fileContentType?: string;
+        responses: Array<{ statusCode: number }>;
+      }>;
+    };
+    const downloadEndpoint = payload.endpoints.find((endpoint) => endpoint.name === "download");
+
+    expect(downloadEndpoint).toMatchObject({
+      fileContentType: "application/octet-stream",
+    });
+    expect(downloadEndpoint?.responses).toEqual(
+      expect.arrayContaining([expect.objectContaining({ statusCode: 200 })]),
+    );
+  });
+
   it.fails("reports contradictory anonymous and security metadata instead of silently dropping security", async () => {
     const frontend = new TypeScriptContractFrontend();
     const lowerer = new TypeScriptRivetContractLowerer();

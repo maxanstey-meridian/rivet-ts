@@ -290,6 +290,59 @@ describe("ExtractTsContracts lifecycle", () => {
     expect(bundle.contracts[0]?.endpoints[0]?.errors[0]?.response?.text).toBe("ValidationErrorDto");
   });
 
+  it.each([
+    ["non-array errors type", "string", "INVALID_ERRORS_SPEC"],
+    ["non-object error entry", "Array<string>", "INVALID_ERROR_ENTRY"],
+    [
+      "helper error entry without literal status",
+      "Array<EndpointErrorAuthoringSpec>",
+      "MISSING_ERROR_STATUS",
+    ],
+  ])(
+    "reports diagnostics for malformed error metadata via %s",
+    async (_, errorsType, expectedCode) => {
+      const frontend = new TypeScriptContractFrontend();
+      const useCase = new ExtractTsContracts(frontend);
+      const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-errors-invalid-"));
+      const entryPath = path.join(tempDirectory, "contracts.ts");
+      const normalizedImportPath = toImportPath(
+        tempDirectory,
+        path.join(getProjectRoot(), "dist", "index.js"),
+      );
+
+      await fs.writeFile(
+        entryPath,
+        [
+          `import type { Contract, Endpoint, EndpointErrorAuthoringSpec } from "${normalizedImportPath}";`,
+          "",
+          'export interface TempContract extends Contract<"TempContract"> {',
+          "  Create: Endpoint<{",
+          '    method: "POST";',
+          '    route: "/api/temp";',
+          "    response: void;",
+          `    errors: ${errorsType};`,
+          "  }>;",
+          "}",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const bundle = await useCase.execute({ entryPath });
+
+      expect(bundle.hasErrors).toBe(true);
+      expect(bundle.diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: expectedCode,
+            filePath: entryPath,
+          }),
+        ]),
+      );
+      expect(bundle.contracts[0]?.endpoints[0]?.errors ?? []).toEqual([]);
+    },
+  );
+
   it("reports diagnostics when security uses the helper shape without a string literal scheme", async () => {
     const frontend = new TypeScriptContractFrontend();
     const useCase = new ExtractTsContracts(frontend);
