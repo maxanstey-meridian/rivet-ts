@@ -155,7 +155,21 @@ describe("ExtractTsContracts lifecycle", () => {
           filePath: expect.stringContaining(
             path.join("tests", "fixtures", "invalid-authoring-contract", "contracts.ts"),
           ),
-          message: expect.stringContaining("foo"),
+          message: expect.stringContaining("topLevelExtra"),
+        }),
+        expect.objectContaining({
+          code: expect.stringMatching(/^TS\d+$/),
+          filePath: expect.stringContaining(
+            path.join("tests", "fixtures", "invalid-authoring-contract", "contracts.ts"),
+          ),
+          message: expect.stringContaining("securityExtra"),
+        }),
+        expect.objectContaining({
+          code: expect.stringMatching(/^TS\d+$/),
+          filePath: expect.stringContaining(
+            path.join("tests", "fixtures", "invalid-authoring-contract", "contracts.ts"),
+          ),
+          message: expect.stringContaining("errorExtra"),
         }),
       ]),
     );

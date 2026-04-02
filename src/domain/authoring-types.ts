@@ -29,8 +29,32 @@ export type EndpointAuthoringSpec = {
   readonly fileContentType?: string;
 };
 
-type ExactEndpointAuthoringSpec<TSpec extends EndpointAuthoringSpec> = EndpointAuthoringSpec & {
-  readonly [TKey in Exclude<keyof TSpec, keyof EndpointAuthoringSpec>]: never;
+type ExactAuthoringShape<TActual, TShape> = TShape & {
+  readonly [TKey in Exclude<keyof TActual, keyof TShape>]: never;
+};
+
+type ExactEndpointSecurityAuthoringSpec<TSpec extends EndpointSecurityAuthoringSpec> =
+  ExactAuthoringShape<TSpec, EndpointSecurityAuthoringSpec>;
+
+type ExactEndpointErrorAuthoringSpec<TSpec extends EndpointErrorAuthoringSpec> =
+  ExactAuthoringShape<TSpec, EndpointErrorAuthoringSpec>;
+
+type ExactEndpointErrorAuthoringTuple<TErrors> = TErrors extends readonly unknown[]
+  ? {
+      readonly [TIndex in keyof TErrors]: TErrors[TIndex] extends EndpointErrorAuthoringSpec
+        ? ExactEndpointErrorAuthoringSpec<TErrors[TIndex]>
+        : TErrors[TIndex];
+    }
+  : TErrors;
+
+type ExactEndpointAuthoringSpec<TSpec extends EndpointAuthoringSpec> = ExactAuthoringShape<
+  TSpec,
+  EndpointAuthoringSpec
+> & {
+  readonly errors?: ExactEndpointErrorAuthoringTuple<TSpec["errors"]>;
+  readonly security?: TSpec["security"] extends EndpointSecurityAuthoringSpec
+    ? ExactEndpointSecurityAuthoringSpec<TSpec["security"]>
+    : TSpec["security"];
 };
 
 export type Endpoint<TSpec extends ExactEndpointAuthoringSpec<TSpec>> = {

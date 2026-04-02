@@ -1,4 +1,10 @@
-import type { Contract, Endpoint } from "../../../src/index.js";
+import type {
+  Contract,
+  Endpoint,
+  EndpointAuthoringSpec,
+  EndpointErrorAuthoringSpec,
+  EndpointSecurityAuthoringSpec,
+} from "../../../src/index.js";
 import type {
   CreateMemberRequest,
   MemberDto,
@@ -8,6 +14,26 @@ import type {
   UpdateMemberRequest,
   ValidationErrorDto,
 } from "./models.js";
+
+type AdminSecurity = EndpointSecurityAuthoringSpec & {
+  readonly scheme: "admin";
+};
+
+type ValidationFailure = EndpointErrorAuthoringSpec & {
+  readonly status: 422;
+  readonly response: ValidationErrorDto;
+  readonly description: "Validation failed";
+};
+
+export type CreateEndpointAuthoringPreview = EndpointAuthoringSpec & {
+  readonly method: "POST";
+  readonly route: "/api/teams/{teamId}/members";
+  readonly input: CreateMemberRequest;
+  readonly response: MemberEnvelope<MemberDto>;
+  readonly successStatus: 201;
+  readonly errors: [ValidationFailure];
+  readonly security: AdminSecurity;
+};
 
 export interface MembersContract extends Contract<"MembersContract"> {
   Search: Endpoint<{

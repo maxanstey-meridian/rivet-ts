@@ -305,7 +305,7 @@ Notes:
 - `Brand<T, "...">`
 - `Format<T, "...">`
 - endpoint metadata: `method`, `route`, `input`, `response`, `successStatus`, `summary`, `description`, `errors`,
-  `anonymous`, `security`
+  `anonymous`, `security`, `fileResponse`, `fileContentType`
 
 Explicitly not the goal:
 
