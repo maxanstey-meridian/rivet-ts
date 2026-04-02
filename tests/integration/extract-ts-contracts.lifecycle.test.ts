@@ -1,7 +1,19 @@
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ExtractTsContracts } from "../../src/application/use-cases/extract-ts-contracts.js";
 import { TypeScriptContractFrontend } from "../../src/infrastructure/typescript/typescript-contract-frontend.js";
+
+const getProjectRoot = (): string => {
+  const currentFilePath = fileURLToPath(import.meta.url);
+  return path.resolve(path.dirname(currentFilePath), "..", "..");
+};
+
+const toImportPath = (fromDirectory: string, targetFilePath: string): string => {
+  const relativePath = path.relative(fromDirectory, targetFilePath).split(path.sep).join("/");
+  return relativePath.startsWith(".") ? relativePath : `./${relativePath}`;
+};
 
 const getFixturePath = (relativePath: string): string => {
   const currentFilePath = fileURLToPath(import.meta.url);
@@ -137,6 +149,74 @@ describe("ExtractTsContracts lifecycle", () => {
       anonymous: true,
       description: "Anonymous liveness probe",
     });
+  });
+
+  it("extracts aliased endpoint authoring specs exported from the public DSL", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+
+    const bundle = await useCase.execute({
+      entryPath: getFixturePath(path.join("aliased-authoring-contract", "contracts.ts")),
+    });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(bundle.diagnostics).toEqual([]);
+    expect(bundle.contracts).toHaveLength(1);
+
+    const [contract] = bundle.contracts;
+    expect(contract.name).toBe("AliasedMembersContract");
+    expect(contract.endpoints).toHaveLength(1);
+
+    expect(contract.endpoints[0]).toMatchObject({
+      name: "List",
+      method: "GET",
+      route: "/api/aliased-members",
+      summary: "List aliased members",
+      description: "List members from an aliased endpoint spec",
+      securityScheme: "admin",
+    });
+    expect(contract.endpoints[0]?.response?.text).toBe("MemberDto[]");
+    expect(contract.endpoints[0]?.errors).toEqual([
+      expect.objectContaining({
+        status: 404,
+        description: "Members not found",
+      }),
+    ]);
+  });
+
+  it("extracts contracts from a temp consumer entry without requiring local node ambient types", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-consumer-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Ping: Endpoint<{",
+        '    method: "GET";',
+        '    route: "/api/ping";',
+        "    response: void;",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await useCase.execute({ entryPath });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(bundle.diagnostics).toEqual([]);
+    expect(bundle.contracts).toHaveLength(1);
+    expect(bundle.contracts[0]?.name).toBe("TempContract");
   });
 
   it("reports compiler diagnostics when endpoint metadata includes unsupported keys", async () => {

@@ -4,7 +4,7 @@ import type {
   EndpointAuthoringSpec,
   EndpointErrorAuthoringSpec,
   EndpointSecurityAuthoringSpec,
-} from "../../../src/index.js";
+} from "../../../dist/index.js";
 import type {
   CreateMemberRequest,
   MemberDto,

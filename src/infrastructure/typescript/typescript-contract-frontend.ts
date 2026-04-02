@@ -12,6 +12,11 @@ import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import { TypeExpression } from "../../domain/type-expression.js";
 
 const HTTP_METHODS = new Set<HttpMethod>(["GET", "POST", "PUT", "PATCH", "DELETE"]);
+const AUTHORING_HELPER_TYPE_NAMES = new Set([
+  "EndpointAuthoringSpec",
+  "EndpointErrorAuthoringSpec",
+  "EndpointSecurityAuthoringSpec",
+]);
 const BUILTIN_TYPE_NAMES = new Set([
   "Array",
   "Record",
@@ -36,10 +41,10 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       resolveJsonModule: true,
       esModuleInterop: true,
       verbatimModuleSyntax: true,
-      types: ["node"],
     };
 
     const program = ts.createProgram([absoluteEntryPath], compilerOptions);
+    const checker = program.getTypeChecker();
     const sourceFile = program.getSourceFile(absoluteEntryPath);
     const diagnostics = this.createDiagnostics(program, absoluteEntryPath);
 
@@ -93,7 +98,13 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
           continue;
         }
 
-        const endpoint = this.parseEndpoint(member.type, endpointName, sourceFile, diagnostics);
+        const endpoint = this.parseEndpoint(
+          member.type,
+          endpointName,
+          sourceFile,
+          checker,
+          diagnostics,
+        );
         if (!endpoint) {
           continue;
         }
@@ -182,6 +193,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     typeNode: ts.TypeNode,
     endpointName: string,
     sourceFile: ts.SourceFile,
+    checker: ts.TypeChecker,
     diagnostics: ExtractionDiagnostic[],
   ): EndpointSpec | null {
     if (!ts.isTypeReferenceNode(typeNode) || typeNode.typeName.getText(sourceFile) !== "Endpoint") {
@@ -197,30 +209,29 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     }
 
     const [specNode] = typeNode.typeArguments ?? [];
-    if (!specNode || !ts.isTypeLiteralNode(specNode)) {
+    if (!specNode) {
       diagnostics.push(
         this.createNodeDiagnostic(
           sourceFile,
           typeNode,
           "INVALID_ENDPOINT_SPEC",
-          `Endpoint "${endpointName}" must use a type literal spec.`,
+          `Endpoint "${endpointName}" must declare an endpoint authoring spec.`,
         ),
       );
       return null;
     }
 
-    const propertyMap = new Map<string, ts.TypeNode>();
-    for (const member of specNode.members) {
-      if (!ts.isPropertySignature(member) || !member.type || !member.name) {
-        continue;
-      }
-
-      const memberName = this.getMemberName(member.name);
-      if (!memberName) {
-        continue;
-      }
-
-      propertyMap.set(memberName, member.type);
+    const propertyMap = this.createPropertyMap(specNode, sourceFile, checker);
+    if (!propertyMap) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          typeNode,
+          "INVALID_ENDPOINT_SPEC",
+          `Endpoint "${endpointName}" must use a type literal spec or a type alias that resolves to one.`,
+        ),
+      );
+      return null;
     }
 
     const method = this.parseHttpMethod(
@@ -377,6 +388,93 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     }
 
     return errors;
+  }
+
+  private createPropertyMap(
+    typeNode: ts.TypeNode,
+    sourceFile: ts.SourceFile,
+    checker: ts.TypeChecker,
+  ): Map<string, ts.TypeNode> | null {
+    if (ts.isTypeLiteralNode(typeNode)) {
+      return this.createPropertyMapFromTypeLiteral(typeNode);
+    }
+
+    const specType = checker.getTypeFromTypeNode(typeNode);
+    if ((specType.flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection)) === 0) {
+      return null;
+    }
+
+    const propertyMap = new Map<string, ts.TypeNode>();
+    for (const propertySymbol of checker.getApparentType(specType).getProperties()) {
+      const propertyTypeNode = this.selectPropertyTypeNode(propertySymbol, sourceFile);
+      if (!propertyTypeNode) {
+        continue;
+      }
+
+      propertyMap.set(propertySymbol.getName(), propertyTypeNode);
+    }
+
+    return propertyMap;
+  }
+
+  private createPropertyMapFromTypeLiteral(
+    typeLiteral: ts.TypeLiteralNode,
+  ): Map<string, ts.TypeNode> {
+    const propertyMap = new Map<string, ts.TypeNode>();
+    for (const member of typeLiteral.members) {
+      if (!ts.isPropertySignature(member) || !member.type || !member.name) {
+        continue;
+      }
+
+      const memberName = this.getMemberName(member.name);
+      if (!memberName) {
+        continue;
+      }
+
+      propertyMap.set(memberName, member.type);
+    }
+
+    return propertyMap;
+  }
+
+  private selectPropertyTypeNode(symbol: ts.Symbol, sourceFile: ts.SourceFile): ts.TypeNode | null {
+    const declarations = symbol
+      .getDeclarations()
+      ?.filter((declaration) => !this.isAuthoringHelperPropertyDeclaration(declaration))
+      .flatMap((declaration) => {
+        const typeNode = this.getPropertyTypeNode(declaration);
+        return typeNode ? [{ declaration, typeNode }] : [];
+      });
+
+    if (!declarations || declarations.length === 0) {
+      return null;
+    }
+
+    const inSourceFile = declarations.find(
+      ({ declaration }) => declaration.getSourceFile().fileName === sourceFile.fileName,
+    );
+
+    return inSourceFile?.typeNode ?? declarations[0].typeNode;
+  }
+
+  private getPropertyTypeNode(declaration: ts.Declaration): ts.TypeNode | null {
+    if (
+      (ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration)) &&
+      declaration.type
+    ) {
+      return declaration.type;
+    }
+
+    return null;
+  }
+
+  private isAuthoringHelperPropertyDeclaration(declaration: ts.Declaration): boolean {
+    if (!ts.isPropertySignature(declaration) || !ts.isTypeLiteralNode(declaration.parent)) {
+      return false;
+    }
+
+    const parent = declaration.parent.parent;
+    return ts.isTypeAliasDeclaration(parent) && AUTHORING_HELPER_TYPE_NAMES.has(parent.name.text);
   }
 
   private parseSecurityScheme(

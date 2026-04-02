@@ -35,7 +35,7 @@
     "lint:fix": "oxlint --fix src/ tests/",
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
-    "test": "vitest run",
+    "test": "pnpm build && vitest run",
     "test:watch": "vitest",
     "check": "pnpm run fmt:check && pnpm run lint && pnpm run test && pnpm run build"
   },

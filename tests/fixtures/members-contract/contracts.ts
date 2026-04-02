@@ -1,4 +1,4 @@
-import type { Contract, Endpoint } from "../../../src/index.js";
+import type { Contract, Endpoint } from "../../../dist/index.js";
 import type {
   InviteMemberRequest,
   InviteMemberResponse,

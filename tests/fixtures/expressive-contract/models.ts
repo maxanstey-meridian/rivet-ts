@@ -1,4 +1,4 @@
-import type { Brand, Format } from "../../../src/index.js";
+import type { Brand, Format } from "../../../dist/index.js";
 
 export enum MemberStatus {
   Active = "active",
