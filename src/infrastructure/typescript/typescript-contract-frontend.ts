@@ -331,14 +331,14 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       return [];
     }
 
-    const errorEntries = this.getTupleElementNodes(node, checker);
+    const errorEntries = this.getErrorEntryNodes(node, checker);
     if (!errorEntries) {
       diagnostics.push(
         this.createNodeDiagnostic(
           sourceFile,
           node,
           "INVALID_ERRORS_SPEC",
-          `Endpoint "${endpointName}" must declare errors as a tuple type.`,
+          `Endpoint "${endpointName}" must declare errors as an array or tuple type.`,
         ),
       );
       return [];
@@ -412,17 +412,34 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     return propertyMap;
   }
 
-  private getTupleElementNodes(node: ts.TypeNode, checker: ts.TypeChecker): ts.TypeNode[] | null {
+  private getErrorEntryNodes(node: ts.TypeNode, checker: ts.TypeChecker): ts.TypeNode[] | null {
+    if (ts.isParenthesizedTypeNode(node)) {
+      return this.getErrorEntryNodes(node.type, checker);
+    }
+
+    if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) {
+      return this.getErrorEntryNodes(node.type, checker);
+    }
+
     if (ts.isTupleTypeNode(node)) {
       return [...node.elements];
     }
 
-    const resolvedNode = this.resolveAliasedTypeNode(node, checker);
-    if (resolvedNode && ts.isTupleTypeNode(resolvedNode)) {
-      return [...resolvedNode.elements];
+    if (ts.isArrayTypeNode(node)) {
+      return [node.elementType];
     }
 
-    return null;
+    if (
+      ts.isTypeReferenceNode(node) &&
+      ts.isIdentifier(node.typeName) &&
+      BUILTIN_TYPE_NAMES.has(node.typeName.text)
+    ) {
+      const [elementType] = node.typeArguments ?? [];
+      return elementType ? [elementType] : null;
+    }
+
+    const resolvedNode = this.resolveAliasedTypeNode(node, checker);
+    return resolvedNode ? this.getErrorEntryNodes(resolvedNode, checker) : null;
   }
 
   private resolveAliasedTypeNode(node: ts.TypeNode, checker?: ts.TypeChecker): ts.TypeNode | null {

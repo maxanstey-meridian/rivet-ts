@@ -234,6 +234,58 @@ describe("ExtractTsContracts lifecycle", () => {
     expect(bundle.contracts[0]?.name).toBe("TempContract");
   });
 
+  it("extracts array-authored error metadata from the public DSL", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-errors-array-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint, EndpointErrorAuthoringSpec } from "${normalizedImportPath}";`,
+        "",
+        "type ValidationFailure = EndpointErrorAuthoringSpec & {",
+        "  status: 422;",
+        '  description: "Validation failed";',
+        "  response: ValidationErrorDto;",
+        "};",
+        "",
+        "interface ValidationErrorDto {",
+        "  message: string;",
+        "}",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/temp";',
+        "    response: void;",
+        "    errors: readonly ValidationFailure[];",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await useCase.execute({ entryPath });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(bundle.diagnostics).toEqual([]);
+    expect(bundle.contracts).toHaveLength(1);
+    expect(bundle.contracts[0]?.endpoints[0]?.errors).toEqual([
+      expect.objectContaining({
+        status: 422,
+        description: "Validation failed",
+      }),
+    ]);
+    expect(bundle.contracts[0]?.endpoints[0]?.errors[0]?.response?.text).toBe("ValidationErrorDto");
+  });
+
   it("reports compiler diagnostics when endpoint metadata includes unsupported keys", async () => {
     const frontend = new TypeScriptContractFrontend();
     const useCase = new ExtractTsContracts(frontend);
