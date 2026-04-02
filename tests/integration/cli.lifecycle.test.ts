@@ -251,6 +251,70 @@ describe("CLI lifecycle", () => {
     );
   });
 
+  it("propagates malformed endpoint example diagnostics through the real CLI path", async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-invalid-example-cli-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const outputPath = path.join(tempDirectory, "contract.json");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        "interface CreateMemberRequest {",
+        "  email: string;",
+        "  role: string;",
+        "}",
+        "",
+        'const baseRequest = { role: "admin" };',
+        "export const createMemberRequestExample = {",
+        '  email: "jane@example.com",',
+        "  ...baseRequest,",
+        "} satisfies CreateMemberRequest;",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/temp";',
+        "    input: CreateMemberRequest;",
+        "    requestExample: typeof createMemberRequestExample;",
+        "    response: void;",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const exitCode = await runCli(["--entry", entryPath, "--out", outputPath], {
+      stdout: (text) => stdout.push(text),
+      stderr: (text) => stderr.push(text),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toHaveLength(0);
+    const exampleDiagnostics = stderr.filter((line) =>
+      line.includes("[UNSUPPORTED_ENDPOINT_EXAMPLE_VALUE]"),
+    );
+    expect(exampleDiagnostics).toHaveLength(1);
+
+    const fileContents = await fs.readFile(outputPath, "utf8");
+    const payload = JSON.parse(fileContents) as {
+      endpoints: Array<{ name: string; requestExample?: unknown }>;
+    };
+    expect(payload.endpoints.find((endpoint) => endpoint.name === "create")).not.toHaveProperty(
+      "requestExample",
+    );
+  });
+
   it.each([
     ["non-array errors type", "string", "INVALID_ERRORS_SPEC"],
     ["non-object error entry", "Array<string>", "INVALID_ERROR_ENTRY"],

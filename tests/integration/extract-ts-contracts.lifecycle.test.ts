@@ -453,6 +453,56 @@ describe("ExtractTsContracts lifecycle", () => {
       ],
       "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
     ],
+    [
+      "request example without matching input",
+      [
+        'import type { Contract, Endpoint } from "__IMPORT_PATH__";',
+        "",
+        "interface CreateMemberRequest {",
+        "  email: string;",
+        "}",
+        "",
+        "export const createMemberRequestExample = {",
+        '  email: "jane@example.com",',
+        "} satisfies CreateMemberRequest;",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/temp";',
+        "    requestExample: typeof createMemberRequestExample;",
+        "    response: void;",
+        "  }>;",
+        "}",
+        "",
+      ],
+      "INVALID_ENDPOINT_EXAMPLE_TYPE",
+    ],
+    [
+      "success response example without matching response",
+      [
+        'import type { Contract, Endpoint } from "__IMPORT_PATH__";',
+        "",
+        "interface CreateMemberResponse {",
+        "  id: string;",
+        "}",
+        "",
+        "export const createMemberResponseExample = {",
+        '  id: "mem_123",',
+        "} satisfies CreateMemberResponse;",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/temp";',
+        "    input: { email: string };",
+        "    successResponseExample: typeof createMemberResponseExample;",
+        "  }>;",
+        "}",
+        "",
+      ],
+      "INVALID_ENDPOINT_EXAMPLE_TYPE",
+    ],
   ])(
     "reports diagnostics for malformed endpoint examples via %s",
     async (_, fileLines, expectedCode) => {
@@ -463,6 +513,12 @@ describe("ExtractTsContracts lifecycle", () => {
       const normalizedImportPath = toImportPath(
         tempDirectory,
         path.join(getProjectRoot(), "dist", "index.js"),
+      );
+
+      await fs.writeFile(
+        path.join(tempDirectory, "package.json"),
+        '{ "type": "module" }\n',
+        "utf8",
       );
 
       await fs.writeFile(
@@ -483,6 +539,7 @@ describe("ExtractTsContracts lifecycle", () => {
         ]),
       );
       expect(bundle.contracts[0]?.endpoints[0]?.requestExample).toBeUndefined();
+      expect(bundle.contracts[0]?.endpoints[0]?.successResponseExample).toBeUndefined();
     },
   );
 

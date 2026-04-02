@@ -133,6 +133,145 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     );
   });
 
+  it("preserves frontend example diagnostics when lowering an invalid bundle", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const lowerer = new TypeScriptRivetContractLowerer();
+    const extractUseCase = new ExtractTsContracts(frontend);
+    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+    const tempDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rivet-ts-lower-invalid-example-"),
+    );
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        "interface CreateMemberRequest {",
+        "  email: string;",
+        "  role: string;",
+        "}",
+        "",
+        'const baseRequest = { role: "admin" };',
+        "export const createMemberRequestExample = {",
+        '  email: "jane@example.com",',
+        "  ...baseRequest,",
+        "} satisfies CreateMemberRequest;",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/temp";',
+        "    input: CreateMemberRequest;",
+        "    requestExample: typeof createMemberRequestExample;",
+        "    response: void;",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await extractUseCase.execute({ entryPath });
+    const lowered = await lowerUseCase.execute({ bundle });
+
+    expect(bundle.hasErrors).toBe(true);
+    expect(lowered.hasErrors).toBe(true);
+    expect(lowered.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "UNSUPPORTED_ENDPOINT_EXAMPLE_VALUE",
+          filePath: entryPath,
+        }),
+      ]),
+    );
+
+    const payload = JSON.parse(lowered.toJson()) as {
+      endpoints: Array<{ name: string; requestExample?: unknown }>;
+    };
+    expect(payload.endpoints.find((endpoint) => endpoint.name === "create")).not.toHaveProperty(
+      "requestExample",
+    );
+  });
+
+  it("lowers scalar and array-root endpoint examples without wrapping or reshaping them", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const lowerer = new TypeScriptRivetContractLowerer();
+    const extractUseCase = new ExtractTsContracts(frontend);
+    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-root-examples-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        "export const tagsExample = [",
+        '  "alpha",',
+        '  "beta",',
+        "] satisfies string[];",
+        "",
+        "export const versionExample = 3 satisfies number;",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Tags: Endpoint<{",
+        '    method: "GET";',
+        '    route: "/api/tags";',
+        "    response: string[];",
+        "    successResponseExample: typeof tagsExample;",
+        "  }>;",
+        "",
+        "  Version: Endpoint<{",
+        '    method: "GET";',
+        '    route: "/api/version";',
+        "    response: number;",
+        "    successResponseExample: typeof versionExample;",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await extractUseCase.execute({ entryPath });
+    const lowered = await lowerUseCase.execute({ bundle });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(lowered.hasErrors).toBe(false);
+
+    const payload = JSON.parse(lowered.toJson()) as {
+      endpoints: Array<{
+        name: string;
+        successResponseExample?: { data: unknown };
+      }>;
+    };
+
+    expect(
+      payload.endpoints.find((endpoint) => endpoint.name === "tags")?.successResponseExample,
+    ).toEqual({
+      data: ["alpha", "beta"],
+    });
+    expect(
+      payload.endpoints.find((endpoint) => endpoint.name === "version")?.successResponseExample,
+    ).toEqual({
+      data: 3,
+    });
+  });
+
   it("defaults file responses to application/octet-stream when fileContentType is omitted", async () => {
     const frontend = new TypeScriptContractFrontend();
     const lowerer = new TypeScriptRivetContractLowerer();
