@@ -1,26 +1,296 @@
 # rivet-ts
 
-TypeScript contract extractor for Rivet.
+**Extract a Rivet contract JSON document from a constrained TypeScript contract DSL.**
 
-This package is intended to mirror the role of `rivet-php`:
+Define your API surface in type-only TypeScript, run the extractor, get a JSON contract that
+[Rivet](https://github.com/maxanstey-meridian/rivet) can turn into TypeScript clients, OpenAPI specs, JSON Schema,
+and generated C# contracts downstream.
 
-- read a TS contract source program
-- extract a Rivet-oriented intermediate contract shape
-- emit JSON that `dotnet rivet` can consume downstream
+## Install
 
-The current scaffold establishes:
-
-- layered source structure: `domain`, `application`, `interfaces`, `infrastructure`
-- a thin type-only authoring surface via `Contract<T>` and `Endpoint<T>`
-- a compiler-backed frontend using the TypeScript compiler API
-- integration-style lifecycle tests that exercise real files and CLI flow
-
-## Scripts
+This repo is not published on npm yet. Install it directly from GitHub:
 
 ```bash
-pnpm install
-pnpm test
-pnpm build
-pnpm check
+pnpm add -D github:<owner>/rivet-ts
 ```
 
+You can also pin a branch, tag, or commit:
+
+```bash
+pnpm add -D github:<owner>/rivet-ts#main
+pnpm add -D github:<owner>/rivet-ts#v0.1.0
+pnpm add -D github:<owner>/rivet-ts#<commit>
+```
+
+After install, use the CLI from your consumer repo:
+
+```bash
+pnpm exec rivet-reflect-ts --entry ./contracts.ts --out ./contract.json
+```
+
+## Define TS contracts -> get a JSON contract
+
+```ts
+// contracts.ts
+import type {Contract, Endpoint} from "rivet-ts";
+
+export interface MemberDto {
+  id: string;
+  email: string;
+}
+
+export interface CreateMemberRequest {
+  email: string;
+}
+
+export interface ValidationErrorDto {
+  message: string;
+  fields: Record<string, string[]>;
+}
+
+export interface MembersContract extends Contract<"MembersContract"> {
+  List: Endpoint<{
+    method: "GET";
+    route: "/api/members";
+    response: MemberDto[];
+    description: "List all members";
+  }>;
+
+  Create: Endpoint<{
+    method: "POST";
+    route: "/api/members";
+    input: CreateMemberRequest;
+    response: MemberDto;
+    successStatus: 201;
+    errors: [{ status: 422; response: ValidationErrorDto; description: "Validation failed" }];
+    security: { scheme: "admin" };
+  }>;
+}
+```
+
+```bash
+pnpm build
+node ./dist/interfaces/cli/main.js --entry ./contracts.ts --out ./contract.json
+```
+
+```json
+{
+  "types": [
+    {
+      "name": "CreateMemberRequest",
+      "typeParameters": [],
+      "properties": [
+        {
+          "name": "email",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "MemberDto",
+      "typeParameters": [],
+      "properties": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "optional": false
+        },
+        {
+          "name": "email",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ValidationErrorDto",
+      "typeParameters": [],
+      "properties": [
+        {
+          "name": "message",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "optional": false
+        },
+        {
+          "name": "fields",
+          "type": {
+            "kind": "dictionary",
+            "value": {
+              "kind": "array",
+              "element": {
+                "kind": "primitive",
+                "type": "string"
+              }
+            }
+          },
+          "optional": false
+        }
+      ]
+    }
+  ],
+  "enums": [],
+  "endpoints": [
+    {
+      "name": "list",
+      "httpMethod": "GET",
+      "routeTemplate": "/api/members",
+      "params": [],
+      "controllerName": "members",
+      "returnType": {
+        "kind": "array",
+        "element": {
+          "kind": "ref",
+          "name": "MemberDto"
+        }
+      },
+      "responses": [
+        {
+          "statusCode": 200,
+          "dataType": {
+            "kind": "array",
+            "element": {
+              "kind": "ref",
+              "name": "MemberDto"
+            }
+          }
+        }
+      ],
+      "description": "List all members"
+    },
+    {
+      "name": "create",
+      "httpMethod": "POST",
+      "routeTemplate": "/api/members",
+      "params": [
+        {
+          "name": "body",
+          "type": {
+            "kind": "ref",
+            "name": "CreateMemberRequest"
+          },
+          "source": "body"
+        }
+      ],
+      "controllerName": "members",
+      "returnType": {
+        "kind": "ref",
+        "name": "MemberDto"
+      },
+      "responses": [
+        {
+          "statusCode": 201,
+          "dataType": {
+            "kind": "ref",
+            "name": "MemberDto"
+          }
+        },
+        {
+          "statusCode": 422,
+          "dataType": {
+            "kind": "ref",
+            "name": "ValidationErrorDto"
+          },
+          "description": "Validation failed"
+        }
+      ],
+      "security": {
+        "isAnonymous": false,
+        "scheme": "admin"
+      }
+    }
+  ]
+}
+```
+
+## Feed the contract to Rivet -> get TypeScript
+
+Generate the contract JSON here, then hand it to the main Rivet tool:
+
+```bash
+dotnet rivet --from contract.json --output ./generated
+```
+
+Rivet will emit the same downstream artifacts it emits for C# and PHP sources:
+
+- TypeScript types
+- typed TS clients
+- OpenAPI
+- JSON Schema and optional Zod validators
+- generated C# DTOs, enums, and contracts
+
+## Feed the contract to Rivet -> get OpenAPI
+
+```bash
+dotnet rivet --from contract.json --openapi openapi.json --output ./generated
+```
+
+This package stops at the JSON contract seam. OpenAPI emission, client generation, validator generation, and C#
+reconstruction remain downstream Rivet responsibilities.
+
+## Current TS DSL
+
+The supported authoring DSL is intentionally narrow and explicit:
+
+```ts
+export interface MembersContract extends Contract<"MembersContract"> {
+  List: Endpoint<{
+    method: "GET";
+    route: "/api/members";
+    response: MemberDto[];
+  }>;
+}
+```
+
+Supported today:
+
+- `Contract<"...">`
+- `Endpoint<{ ... }>`
+- exported `interface`, `type`, and `enum` declarations
+- primitives, arrays, `Record<string, T>`, object types
+- generic definitions and generic application
+- string and numeric literal unions
+- nullable `T | null`
+- optional and readonly properties
+- `Brand<T, "...">`
+- `Format<T, "...">`
+- endpoint metadata: `method`, `route`, `input`, `response`, `successStatus`, `summary`, `description`, `errors`,
+  `anonymous`, `security`
+
+Explicitly not the goal:
+
+- arbitrary advanced TS metaprogramming
+- conditional types
+- mapped types
+- indexed access tricks
+- namespace/class/decorator-based authoring
+- turning this package into a runtime framework or a wrapper around `dotnet rivet`
+
+Unsupported constructs should produce explicit diagnostics rather than loose fallbacks.
+
+## Development
+
+```bash
+pnpm test
+pnpm build
+pnpm run lint
+pnpm run fmt:check
+pnpm run check
+```
+
+## Related repos
+
+- [Rivet core](https://github.com/maxanstey-meridian/rivet)
+- [rivet-php](https://github.com/maxanstey-meridian/rivet-php)

@@ -1,0 +1,537 @@
+{
+  "types": [
+    {
+      "name": "CreateMemberRequest",
+      "typeParameters": [],
+      "properties": [
+        {
+          "name": "teamId",
+          "type": {
+            "kind": "primitive",
+            "type": "string",
+            "format": "uuid"
+          },
+          "optional": false
+        },
+        {
+          "name": "email",
+          "type": {
+            "kind": "brand",
+            "name": "EmailAddress",
+            "underlying": {
+              "kind": "primitive",
+              "type": "string"
+            }
+          },
+          "optional": false
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "ref",
+            "name": "MemberStatus"
+          },
+          "optional": false
+        },
+        {
+          "name": "priority",
+          "type": {
+            "kind": "ref",
+            "name": "MemberPriority"
+          },
+          "optional": false
+        },
+        {
+          "name": "profile",
+          "type": {
+            "kind": "inlineObject",
+            "properties": [
+              {
+                "name": "displayName",
+                "type": {
+                  "kind": "primitive",
+                  "type": "string"
+                }
+              },
+              {
+                "name": "timezone",
+                "type": {
+                  "kind": "primitive",
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "optional": false
+        },
+        {
+          "name": "metadata",
+          "type": {
+            "kind": "dictionary",
+            "value": {
+              "kind": "primitive",
+              "type": "number"
+            }
+          },
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "MemberDto",
+      "typeParameters": [],
+      "properties": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "primitive",
+            "type": "string",
+            "format": "uuid"
+          },
+          "optional": false,
+          "readOnly": true
+        },
+        {
+          "name": "email",
+          "type": {
+            "kind": "brand",
+            "name": "EmailAddress",
+            "underlying": {
+              "kind": "primitive",
+              "type": "string"
+            }
+          },
+          "optional": false
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "ref",
+            "name": "MemberStatus"
+          },
+          "optional": false
+        },
+        {
+          "name": "priority",
+          "type": {
+            "kind": "ref",
+            "name": "MemberPriority"
+          },
+          "optional": false
+        },
+        {
+          "name": "managerId",
+          "type": {
+            "kind": "nullable",
+            "inner": {
+              "kind": "primitive",
+              "type": "string"
+            }
+          },
+          "optional": true
+        },
+        {
+          "name": "coordinates",
+          "type": {
+            "kind": "inlineObject",
+            "properties": [
+              {
+                "name": "lat",
+                "type": {
+                  "kind": "primitive",
+                  "type": "number"
+                }
+              },
+              {
+                "name": "lng",
+                "type": {
+                  "kind": "primitive",
+                  "type": "number"
+                }
+              }
+            ]
+          },
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "MemberEnvelope",
+      "typeParameters": ["TData"],
+      "properties": [
+        {
+          "name": "data",
+          "type": {
+            "kind": "typeParam",
+            "name": "TData"
+          },
+          "optional": false
+        },
+        {
+          "name": "included",
+          "type": {
+            "kind": "array",
+            "element": {
+              "kind": "primitive",
+              "type": "string"
+            }
+          },
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "MemberPatch",
+      "typeParameters": [],
+      "properties": [
+        {
+          "name": "nickname",
+          "type": {
+            "kind": "nullable",
+            "inner": {
+              "kind": "primitive",
+              "type": "string"
+            }
+          },
+          "optional": true
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "ref",
+            "name": "MemberStatus"
+          },
+          "optional": true
+        },
+        {
+          "name": "preferences",
+          "type": {
+            "kind": "inlineObject",
+            "properties": [
+              {
+                "name": "digest",
+                "type": {
+                  "kind": "primitive",
+                  "type": "boolean"
+                }
+              },
+              {
+                "name": "channels",
+                "type": {
+                  "kind": "array",
+                  "element": {
+                    "kind": "primitive",
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "PagedResult",
+      "typeParameters": ["TItem"],
+      "properties": [
+        {
+          "name": "items",
+          "type": {
+            "kind": "array",
+            "element": {
+              "kind": "typeParam",
+              "name": "TItem"
+            }
+          },
+          "optional": false
+        },
+        {
+          "name": "totalCount",
+          "type": {
+            "kind": "primitive",
+            "type": "number"
+          },
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "UpdateMemberRequest",
+      "typeParameters": [],
+      "properties": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "primitive",
+            "type": "string",
+            "format": "uuid"
+          },
+          "optional": false
+        },
+        {
+          "name": "patch",
+          "type": {
+            "kind": "ref",
+            "name": "MemberPatch"
+          },
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ValidationErrorDto",
+      "typeParameters": [],
+      "properties": [
+        {
+          "name": "message",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "optional": false
+        },
+        {
+          "name": "fields",
+          "type": {
+            "kind": "dictionary",
+            "value": {
+              "kind": "array",
+              "element": {
+                "kind": "primitive",
+                "type": "string"
+              }
+            }
+          },
+          "optional": false
+        }
+      ]
+    }
+  ],
+  "enums": [
+    {
+      "name": "MemberPriority",
+      "intValues": [1, 2, 3]
+    },
+    {
+      "name": "MemberStatus",
+      "values": ["active", "suspended"]
+    },
+    {
+      "name": "SortDirection",
+      "values": ["asc", "desc"]
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "search",
+      "httpMethod": "GET",
+      "routeTemplate": "/api/teams/{teamId}/members",
+      "params": [
+        {
+          "name": "teamId",
+          "type": {
+            "kind": "primitive",
+            "type": "string",
+            "format": "uuid"
+          },
+          "source": "route"
+        },
+        {
+          "name": "search",
+          "type": {
+            "kind": "nullable",
+            "inner": {
+              "kind": "primitive",
+              "type": "string"
+            }
+          },
+          "source": "query"
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "nullable",
+            "inner": {
+              "kind": "ref",
+              "name": "MemberStatus"
+            }
+          },
+          "source": "query"
+        },
+        {
+          "name": "priority",
+          "type": {
+            "kind": "ref",
+            "name": "MemberPriority"
+          },
+          "source": "query"
+        },
+        {
+          "name": "includeInactive",
+          "type": {
+            "kind": "primitive",
+            "type": "boolean"
+          },
+          "source": "query"
+        },
+        {
+          "name": "sort",
+          "type": {
+            "kind": "ref",
+            "name": "SortDirection"
+          },
+          "source": "query"
+        }
+      ],
+      "returnType": {
+        "kind": "generic",
+        "name": "PagedResult",
+        "typeArgs": [
+          {
+            "kind": "ref",
+            "name": "MemberDto"
+          }
+        ]
+      },
+      "controllerName": "members",
+      "responses": [
+        {
+          "statusCode": 200,
+          "dataType": {
+            "kind": "generic",
+            "name": "PagedResult",
+            "typeArgs": [
+              {
+                "kind": "ref",
+                "name": "MemberDto"
+              }
+            ]
+          }
+        }
+      ],
+      "summary": "Search members",
+      "description": "Search members in a team"
+    },
+    {
+      "name": "create",
+      "httpMethod": "POST",
+      "routeTemplate": "/api/teams/{teamId}/members",
+      "params": [
+        {
+          "name": "teamId",
+          "type": {
+            "kind": "primitive",
+            "type": "string",
+            "format": "uuid"
+          },
+          "source": "route"
+        },
+        {
+          "name": "body",
+          "type": {
+            "kind": "ref",
+            "name": "CreateMemberRequest"
+          },
+          "source": "body"
+        }
+      ],
+      "returnType": {
+        "kind": "generic",
+        "name": "MemberEnvelope",
+        "typeArgs": [
+          {
+            "kind": "ref",
+            "name": "MemberDto"
+          }
+        ]
+      },
+      "controllerName": "members",
+      "responses": [
+        {
+          "statusCode": 201,
+          "dataType": {
+            "kind": "generic",
+            "name": "MemberEnvelope",
+            "typeArgs": [
+              {
+                "kind": "ref",
+                "name": "MemberDto"
+              }
+            ]
+          }
+        },
+        {
+          "statusCode": 422,
+          "dataType": {
+            "kind": "ref",
+            "name": "ValidationErrorDto"
+          },
+          "description": "Validation failed"
+        }
+      ],
+      "security": {
+        "isAnonymous": false,
+        "scheme": "admin"
+      }
+    },
+    {
+      "name": "update",
+      "httpMethod": "PATCH",
+      "routeTemplate": "/api/members/{id}",
+      "params": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "primitive",
+            "type": "string",
+            "format": "uuid"
+          },
+          "source": "route"
+        },
+        {
+          "name": "body",
+          "type": {
+            "kind": "ref",
+            "name": "UpdateMemberRequest"
+          },
+          "source": "body"
+        }
+      ],
+      "returnType": {
+        "kind": "ref",
+        "name": "MemberDto"
+      },
+      "controllerName": "members",
+      "responses": [
+        {
+          "statusCode": 200,
+          "dataType": {
+            "kind": "ref",
+            "name": "MemberDto"
+          }
+        },
+        {
+          "statusCode": 404,
+          "description": "Member not found"
+        }
+      ],
+      "security": {
+        "isAnonymous": false,
+        "scheme": "admin"
+      }
+    },
+    {
+      "name": "ping",
+      "httpMethod": "GET",
+      "routeTemplate": "/api/ping",
+      "params": [],
+      "controllerName": "members",
+      "responses": [],
+      "description": "Anonymous liveness probe",
+      "security": {
+        "isAnonymous": true
+      }
+    }
+  ]
+}

@@ -1,7 +1,9 @@
 import fs from "node:fs/promises";
 
+import { LowerContractBundleToRivetContract } from "../../application/use-cases/lower-contract-bundle-to-rivet-contract.js";
 import { ExtractTsContracts } from "../../application/use-cases/extract-ts-contracts.js";
 import { TypeScriptContractFrontend } from "../../infrastructure/typescript/typescript-contract-frontend.js";
+import { TypeScriptRivetContractLowerer } from "../../infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 
 type CliIO = {
   stdout: (text: string) => void;
@@ -22,17 +24,20 @@ export const runCli = async (args: readonly string[], io: CliIO = DEFAULT_IO): P
   }
 
   const frontend = new TypeScriptContractFrontend();
+  const lowerer = new TypeScriptRivetContractLowerer();
   const useCase = new ExtractTsContracts(frontend);
+  const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
   const bundle = await useCase.execute({ entryPath: parsed.entryPath });
+  const lowered = await lowerUseCase.execute({ bundle });
 
-  for (const diagnostic of bundle.diagnostics) {
+  for (const diagnostic of lowered.diagnostics) {
     const location = diagnostic.filePath
       ? `${diagnostic.filePath}${diagnostic.line ? `:${diagnostic.line}:${diagnostic.column}` : ""}`
       : "(unknown)";
     io.stderr(`${diagnostic.severity}: [${diagnostic.code}] ${location} ${diagnostic.message}\n`);
   }
 
-  const json = `${JSON.stringify(bundle, null, 2)}\n`;
+  const json = `${lowered.toJson()}\n`;
 
   if (parsed.outputPath) {
     await fs.writeFile(parsed.outputPath, json, "utf8");
@@ -40,7 +45,7 @@ export const runCli = async (args: readonly string[], io: CliIO = DEFAULT_IO): P
     io.stdout(json);
   }
 
-  return bundle.hasErrors ? 1 : 0;
+  return lowered.hasErrors ? 1 : 0;
 };
 
 const parseArgs = (args: readonly string[]): { entryPath?: string; outputPath?: string } => {

@@ -1,14 +1,28 @@
 {
   "name": "rivet-ts",
   "version": "0.1.0",
+  "description": "TypeScript contract extractor for Rivet",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@10.24.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist", "README.md"],
   "bin": {
     "rivet-reflect-ts": "./dist/interfaces/cli/main.js"
   },
+  "keywords": ["rivet", "typescript", "contracts", "openapi", "codegen"],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "prepare": "tsc -p tsconfig.build.json",
     "lint": "oxlint src tests",
     "lint:fix": "oxlint --fix src tests",
     "fmt": "oxfmt --write src tests vitest.config.ts tsconfig.json tsconfig.build.json",
@@ -27,4 +41,3 @@
     "vitest": "^4.1.2"
   }
 }
-
