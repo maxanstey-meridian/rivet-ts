@@ -265,7 +265,7 @@ export interface MembersContract extends Contract<"MembersContract"> {
   List: Endpoint<{
     method: "GET";
     route: "/api/members";
-    response: MemberDto[];
+    response: PagedResult<MemberDto>;
     successResponseExample: typeof listMembersResponseExample;
     summary: "List members";
     description: "List all members";

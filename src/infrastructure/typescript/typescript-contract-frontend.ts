@@ -432,7 +432,12 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     }
 
     const declaration = this.resolveExampleDeclaration(node.exprName, checker);
-    if (!declaration || !declaration.initializer || !this.isConstVariableDeclaration(declaration)) {
+    if (
+      !declaration ||
+      !declaration.initializer ||
+      !this.isConstVariableDeclaration(declaration) ||
+      !this.isExportedVariableDeclaration(declaration)
+    ) {
       diagnostics.push(
         this.createNodeDiagnostic(
           sourceFile,
@@ -562,6 +567,17 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     return (
       ts.isVariableDeclarationList(declaration.parent) &&
       (declaration.parent.flags & ts.NodeFlags.Const) !== 0
+    );
+  }
+
+  private isExportedVariableDeclaration(declaration: ts.VariableDeclaration): boolean {
+    return (
+      ts.isVariableDeclarationList(declaration.parent) &&
+      ts.isVariableStatement(declaration.parent.parent) &&
+      (declaration.parent.parent.modifiers?.some(
+        (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+      ) ??
+        false)
     );
   }
 
