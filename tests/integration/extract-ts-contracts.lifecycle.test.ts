@@ -478,6 +478,69 @@ describe("ExtractTsContracts lifecycle", () => {
     );
   });
 
+  it("attributes imported malformed example diagnostics to the source module that declares the initializer", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-examples-imported-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const examplesPath = path.join(tempDirectory, "examples.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      examplesPath,
+      [
+        "interface CreateMemberRequest {",
+        "  email: string;",
+        "  role: string;",
+        "}",
+        "",
+        'const baseRequest = { role: "admin" };',
+        "export const createMemberRequestExample = {",
+        '  email: "jane@example.com",',
+        "  ...baseRequest,",
+        "} satisfies CreateMemberRequest;",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        'import { createMemberRequestExample } from "./examples.js";',
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/temp";',
+        "    requestExample: typeof createMemberRequestExample;",
+        "    response: void;",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await useCase.execute({ entryPath });
+
+    expect(bundle.hasErrors).toBe(true);
+    expect(bundle.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "UNSUPPORTED_ENDPOINT_EXAMPLE_VALUE",
+          filePath: examplesPath,
+        }),
+      ]),
+    );
+  });
+
   it.each([
     ["non-array errors type", "string", "INVALID_ERRORS_SPEC"],
     ["non-object error entry", "Array<string>", "INVALID_ERROR_ENTRY"],

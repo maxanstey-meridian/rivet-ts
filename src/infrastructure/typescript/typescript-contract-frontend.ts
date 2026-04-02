@@ -939,13 +939,16 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     code: string,
     message: string,
   ): ExtractionDiagnostic {
-    const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+    const diagnosticSourceFile = node.getSourceFile() ?? sourceFile;
+    const position = diagnosticSourceFile.getLineAndCharacterOfPosition(
+      node.getStart(diagnosticSourceFile),
+    );
 
     return new ExtractionDiagnostic({
       severity: "error",
       code,
       message,
-      filePath: sourceFile.fileName,
+      filePath: diagnosticSourceFile.fileName,
       line: position.line + 1,
       column: position.character + 1,
     });
