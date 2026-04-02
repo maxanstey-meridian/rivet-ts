@@ -360,6 +360,7 @@ describe("ExtractTsContracts lifecycle", () => {
         "  Create: Endpoint<{",
         '    method: "POST";',
         '    route: "/api/temp";',
+        "    input: CreateMemberRequest;",
         "    requestExample: typeof createMemberRequestExample;",
         "    response: void;",
         "  }>;",
@@ -478,6 +479,148 @@ describe("ExtractTsContracts lifecycle", () => {
     );
   });
 
+  it("reports compiler diagnostics when request and response examples do not match the endpoint DTO types", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+    const tempDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rivet-ts-examples-mismatched-types-"),
+    );
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        "interface CreateMemberRequest {",
+        "  email: string;",
+        "}",
+        "",
+        "interface MemberDto {",
+        "  id: string;",
+        "}",
+        "",
+        "export const wrongRequestExample = {",
+        '  id: "mem_123",',
+        "} satisfies MemberDto;",
+        "",
+        "export const wrongResponseExample = {",
+        '  email: "jane@example.com",',
+        "} satisfies CreateMemberRequest;",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/temp";',
+        "    input: CreateMemberRequest;",
+        "    response: MemberDto;",
+        "    requestExample: typeof wrongRequestExample;",
+        "    successResponseExample: typeof wrongResponseExample;",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await useCase.execute({ entryPath });
+
+    expect(bundle.hasErrors).toBe(true);
+    expect(bundle.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: expect.stringMatching(/^TS\d+$/),
+          filePath: entryPath,
+          message: expect.stringContaining("requestExample"),
+        }),
+        expect.objectContaining({
+          code: expect.stringMatching(/^TS\d+$/),
+          filePath: entryPath,
+          message: expect.stringContaining("successResponseExample"),
+        }),
+      ]),
+    );
+  });
+
+  it("rejects mismatched endpoint examples in the extractor when type-surface diagnostics are bypassed", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+    const tempDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rivet-ts-examples-mismatched-bypass-"),
+    );
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        "interface CreateMemberRequest {",
+        "  email: string;",
+        "}",
+        "",
+        "interface MemberDto {",
+        "  id: string;",
+        "}",
+        "",
+        "export const wrongRequestExample = {",
+        '  id: "mem_123",',
+        "} satisfies MemberDto;",
+        "",
+        "export const wrongResponseExample = {",
+        '  email: "jane@example.com",',
+        "} satisfies CreateMemberRequest;",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/temp";',
+        "    input: CreateMemberRequest;",
+        "    response: MemberDto;",
+        "    // @ts-ignore bypass DSL check to exercise extractor-side validation",
+        "    requestExample: typeof wrongRequestExample;",
+        "    // @ts-ignore bypass DSL check to exercise extractor-side validation",
+        "    successResponseExample: typeof wrongResponseExample;",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await useCase.execute({ entryPath });
+
+    expect(bundle.hasErrors).toBe(true);
+    expect(bundle.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "INVALID_ENDPOINT_EXAMPLE_TYPE",
+          filePath: entryPath,
+          message: expect.stringContaining("requestExample"),
+        }),
+        expect.objectContaining({
+          code: "INVALID_ENDPOINT_EXAMPLE_TYPE",
+          filePath: entryPath,
+          message: expect.stringContaining("successResponseExample"),
+        }),
+      ]),
+    );
+    expect(bundle.contracts[0]?.endpoints[0]?.requestExample).toBeUndefined();
+    expect(bundle.contracts[0]?.endpoints[0]?.successResponseExample).toBeUndefined();
+  });
+
   it("attributes imported malformed example diagnostics to the source module that declares the initializer", async () => {
     const frontend = new TypeScriptContractFrontend();
     const useCase = new ExtractTsContracts(frontend);
@@ -515,10 +658,16 @@ describe("ExtractTsContracts lifecycle", () => {
         `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
         'import { createMemberRequestExample } from "./examples.js";',
         "",
+        "interface CreateMemberRequest {",
+        "  email: string;",
+        "  role: string;",
+        "}",
+        "",
         'export interface TempContract extends Contract<"TempContract"> {',
         "  Create: Endpoint<{",
         '    method: "POST";',
         '    route: "/api/temp";',
+        "    input: CreateMemberRequest;",
         "    requestExample: typeof createMemberRequestExample;",
         "    response: void;",
         "  }>;",

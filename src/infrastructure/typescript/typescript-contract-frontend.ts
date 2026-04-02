@@ -261,6 +261,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     const response = this.parseTypeExpression(propertyMap.get("response"), sourceFile);
     const requestExample = this.parseEndpointExample(
       propertyMap.get("requestExample"),
+      propertyMap.get("input"),
       "requestExample",
       sourceFile,
       checker,
@@ -269,6 +270,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     );
     const successResponseExample = this.parseEndpointExample(
       propertyMap.get("successResponseExample"),
+      propertyMap.get("response"),
       "successResponseExample",
       sourceFile,
       checker,
@@ -409,6 +411,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
 
   private parseEndpointExample(
     node: ts.TypeNode | undefined,
+    targetNode: ts.TypeNode | undefined,
     propertyName: "requestExample" | "successResponseExample",
     sourceFile: ts.SourceFile,
     checker: ts.TypeChecker,
@@ -449,6 +452,18 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       return null;
     }
 
+    if (!targetNode) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          node,
+          "INVALID_ENDPOINT_EXAMPLE_TYPE",
+          `Endpoint "${endpointName}" ${propertyName} requires the corresponding endpoint ${propertyName === "requestExample" ? "input" : "response"} type.`,
+        ),
+      );
+      return null;
+    }
+
     const data = this.parseExampleValue(declaration.initializer, checker);
     if (data === undefined) {
       diagnostics.push(
@@ -457,6 +472,20 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
           declaration.initializer,
           "UNSUPPORTED_ENDPOINT_EXAMPLE_VALUE",
           `Endpoint "${endpointName}" ${propertyName} must resolve to a JSON-like const initializer.`,
+        ),
+      );
+      return null;
+    }
+
+    const exampleType = checker.getTypeFromTypeNode(node);
+    const targetType = checker.getTypeFromTypeNode(targetNode);
+    if (!checker.isTypeAssignableTo(exampleType, targetType)) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          node,
+          "INVALID_ENDPOINT_EXAMPLE_TYPE",
+          `Endpoint "${endpointName}" ${propertyName} must be assignable to the endpoint ${propertyName === "requestExample" ? "input" : "response"} type.`,
         ),
       );
       return null;

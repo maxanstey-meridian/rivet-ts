@@ -71,18 +71,41 @@ type ExactEndpointErrorAuthoringTuple<TErrors> = TErrors extends readonly unknow
     }
   : TErrors;
 
+type EndpointRequestExampleAuthoringReference<TSpec extends EndpointAuthoringSpec> =
+  "input" extends keyof TSpec ? EndpointExampleAuthoringReference<TSpec["input"]> : never;
+
+type EndpointSuccessResponseExampleAuthoringReference<TSpec extends EndpointAuthoringSpec> =
+  "response" extends keyof TSpec
+    ? [TSpec["response"]] extends [void]
+      ? never
+      : EndpointExampleAuthoringReference<TSpec["response"]>
+    : never;
+
+type HasSpecificEndpointExampleAuthoringReference<
+  TSpec extends EndpointAuthoringSpec,
+  TKey extends "requestExample" | "successResponseExample",
+> = EndpointAuthoringSpec[TKey] extends TSpec[TKey] ? false : true;
+
 type ExactEndpointAuthoringSpec<TSpec extends EndpointAuthoringSpec> = ExactAuthoringShape<
   TSpec,
   EndpointAuthoringSpec
 > & {
   readonly errors?: ExactEndpointErrorAuthoringTuple<TSpec["errors"]>;
-  readonly requestExample?: EndpointExampleAuthoringReference<TSpec["requestExample"]>;
+  readonly requestExample?: HasSpecificEndpointExampleAuthoringReference<
+    TSpec,
+    "requestExample"
+  > extends true
+    ? EndpointRequestExampleAuthoringReference<TSpec>
+    : TSpec["requestExample"];
   readonly security?: TSpec["security"] extends EndpointSecurityAuthoringSpec
     ? ExactEndpointSecurityAuthoringSpec<TSpec["security"]>
     : TSpec["security"];
-  readonly successResponseExample?: EndpointExampleAuthoringReference<
-    TSpec["successResponseExample"]
-  >;
+  readonly successResponseExample?: HasSpecificEndpointExampleAuthoringReference<
+    TSpec,
+    "successResponseExample"
+  > extends true
+    ? EndpointSuccessResponseExampleAuthoringReference<TSpec>
+    : TSpec["successResponseExample"];
 };
 
 export type Endpoint<TSpec extends ExactEndpointAuthoringSpec<TSpec>> = {
