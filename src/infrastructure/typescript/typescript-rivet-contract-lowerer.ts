@@ -55,6 +55,7 @@ const AUTHORING_HELPER_TYPE_NAMES = new Set([
   "EndpointErrorAuthoringSpec",
   "EndpointSecurityAuthoringSpec",
 ]);
+const BUILTIN_TYPE_NAMES = new Set(["Array", "ReadonlyArray"]);
 
 const buildProgram = (entryPath: string): ts.Program =>
   ts.createProgram([path.resolve(entryPath)], DEFAULT_COMPILER_OPTIONS);
@@ -922,13 +923,13 @@ class TypeEmissionContext {
   }
 
   private readErrorResponses(node: ts.TypeNode, context: EndpointContext): RivetResponseType[] {
-    const errorEntries = this.getTupleElementNodes(node);
+    const errorEntries = this.getErrorEntryNodes(node);
     if (!errorEntries) {
       this.diagnostics.push(
         createNodeDiagnostic(
           node,
           "INVALID_ERRORS_SPEC",
-          `Endpoint "${context.contractName}.${context.endpointName}" must declare errors as a tuple type.`,
+          `Endpoint "${context.contractName}.${context.endpointName}" must declare errors as an array or tuple type.`,
         ),
       );
       return [];
@@ -975,17 +976,34 @@ class TypeEmissionContext {
     return responses;
   }
 
-  private getTupleElementNodes(node: ts.TypeNode): ts.TypeNode[] | null {
+  private getErrorEntryNodes(node: ts.TypeNode): ts.TypeNode[] | null {
+    if (ts.isParenthesizedTypeNode(node)) {
+      return this.getErrorEntryNodes(node.type);
+    }
+
+    if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) {
+      return this.getErrorEntryNodes(node.type);
+    }
+
     if (ts.isTupleTypeNode(node)) {
       return [...node.elements];
     }
 
-    const resolvedNode = this.resolveAliasedTypeNode(node);
-    if (resolvedNode && ts.isTupleTypeNode(resolvedNode)) {
-      return [...resolvedNode.elements];
+    if (ts.isArrayTypeNode(node)) {
+      return [node.elementType];
     }
 
-    return null;
+    if (
+      ts.isTypeReferenceNode(node) &&
+      ts.isIdentifier(node.typeName) &&
+      BUILTIN_TYPE_NAMES.has(node.typeName.text)
+    ) {
+      const [elementType] = node.typeArguments ?? [];
+      return elementType ? [elementType] : null;
+    }
+
+    const resolvedNode = this.resolveAliasedTypeNode(node);
+    return resolvedNode ? this.getErrorEntryNodes(resolvedNode) : null;
   }
 
   private createPropertyMap(typeNode: ts.TypeNode): Map<string, ts.TypeNode> | null {
