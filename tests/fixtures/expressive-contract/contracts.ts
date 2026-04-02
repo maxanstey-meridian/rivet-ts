@@ -1,3 +1,4 @@
+import type { Contract, Endpoint } from "../../../src/index.js";
 import type {
   CreateMemberRequest,
   MemberDto,
@@ -7,7 +8,6 @@ import type {
   UpdateMemberRequest,
   ValidationErrorDto,
 } from "./models.js";
-import type { Contract, Endpoint } from "./rivet.js";
 
 export interface MembersContract extends Contract<"MembersContract"> {
   Search: Endpoint<{
@@ -35,6 +35,16 @@ export interface MembersContract extends Contract<"MembersContract"> {
     input: UpdateMemberRequest;
     response: MemberDto;
     errors: [{ status: 404; description: "Member not found" }];
+    security: { scheme: "admin" };
+  }>;
+
+  ExportMembers: Endpoint<{
+    method: "GET";
+    route: "/api/teams/{teamId}/members/export";
+    fileResponse: true;
+    fileContentType: "text/csv";
+    summary: "Export members";
+    description: "Download members as CSV";
     security: { scheme: "admin" };
   }>;
 

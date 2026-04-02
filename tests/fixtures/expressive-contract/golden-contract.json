@@ -522,6 +522,34 @@
       }
     },
     {
+      "name": "exportMembers",
+      "httpMethod": "GET",
+      "routeTemplate": "/api/teams/{teamId}/members/export",
+      "params": [
+        {
+          "name": "teamId",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "source": "route"
+        }
+      ],
+      "controllerName": "members",
+      "responses": [
+        {
+          "statusCode": 200
+        }
+      ],
+      "summary": "Export members",
+      "description": "Download members as CSV",
+      "security": {
+        "isAnonymous": false,
+        "scheme": "admin"
+      },
+      "fileContentType": "text/csv"
+    },
+    {
       "name": "ping",
       "httpMethod": "GET",
       "routeTemplate": "/api/ping",

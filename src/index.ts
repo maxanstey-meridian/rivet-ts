@@ -1,4 +1,13 @@
-export type { Contract, Endpoint, Brand, Format } from "./domain/authoring-types.js";
+export type {
+  Brand,
+  Contract,
+  Endpoint,
+  EndpointAuthoringHttpMethod,
+  EndpointAuthoringSpec,
+  EndpointErrorAuthoringSpec,
+  EndpointSecurityAuthoringSpec,
+  Format,
+} from "./domain/authoring-types.js";
 export { ContractBundle } from "./domain/contract-bundle.js";
 export {
   ContractSpec,

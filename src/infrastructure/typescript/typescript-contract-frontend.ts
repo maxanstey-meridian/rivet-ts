@@ -36,6 +36,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       resolveJsonModule: true,
       esModuleInterop: true,
       verbatimModuleSyntax: true,
+      types: ["node"],
     };
 
     const program = ts.createProgram([absoluteEntryPath], compilerOptions);

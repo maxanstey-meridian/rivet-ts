@@ -53,6 +53,7 @@ export interface MembersContract extends Contract<"MembersContract"> {
     method: "GET";
     route: "/api/members";
     response: MemberDto[];
+    summary: "List members";
     description: "List all members";
   }>;
 
@@ -63,6 +64,16 @@ export interface MembersContract extends Contract<"MembersContract"> {
     response: MemberDto;
     successStatus: 201;
     errors: [{ status: 422; response: ValidationErrorDto; description: "Validation failed" }];
+    security: { scheme: "admin" };
+  }>;
+
+  Export: Endpoint<{
+    method: "GET";
+    route: "/api/members/export";
+    fileResponse: true;
+    fileContentType: "text/csv";
+    summary: "Export members";
+    description: "Download members as CSV";
     security: { scheme: "admin" };
   }>;
 }
@@ -250,6 +261,8 @@ export interface MembersContract extends Contract<"MembersContract"> {
     method: "GET";
     route: "/api/members";
     response: MemberDto[];
+    summary: "List members";
+    description: "List all members";
   }>;
 }
 ```
@@ -258,6 +271,31 @@ Supported today:
 
 - `Contract<"...">`
 - `Endpoint<{ ... }>`
+- `EndpointAuthoringSpec`
+- `EndpointErrorAuthoringSpec`
+- `EndpointSecurityAuthoringSpec`
+
+Supported endpoint keys today:
+
+- `method`
+- `route`
+- `input`
+- `response`
+- `successStatus`
+- `summary`
+- `description`
+- `errors`
+- `anonymous`
+- `security`
+- `fileResponse`
+- `fileContentType`
+
+Notes:
+
+- `EndpointAuthoringSpec`, `EndpointErrorAuthoringSpec`, and `EndpointSecurityAuthoringSpec` are exported so the supported surface is visible in autocomplete and type navigation.
+- Endpoint specs are currently extracted from inline `Endpoint<{ ... }>` type literals.
+- `errors` should be authored as an inline tuple of inline object literals.
+- `security` should be authored as an inline object literal with a `scheme` property.
 - exported `interface`, `type`, and `enum` declarations
 - primitives, arrays, `Record<string, T>`, object types
 - generic definitions and generic application

@@ -1,4 +1,4 @@
-import type { Brand, Format } from "./rivet.js";
+import type { Brand, Format } from "../../../src/index.js";
 
 export enum MemberStatus {
   Active = "active",
