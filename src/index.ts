@@ -11,6 +11,12 @@ export type {
   EndpointSecurityAuthoringSpec,
   Format,
 } from "./domain/authoring-types.js";
+export {
+  handle,
+  type ContractEndpointKey,
+  type EndpointSpecOf,
+  type RivetHandler,
+} from "./domain/handler-types.js";
 export { ContractBundle } from "./domain/contract-bundle.js";
 export {
   ContractSpec,
