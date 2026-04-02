@@ -426,6 +426,58 @@ describe("ExtractTsContracts lifecycle", () => {
     },
   );
 
+  it("reports compiler diagnostics when an example reference resolves to a non-JSON-like value type", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-examples-typecheck-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint, EndpointExampleAuthoringReference } from "${normalizedImportPath}";`,
+        "",
+        "export const createMemberRequestExample = {",
+        '  email: "jane@example.com",',
+        '  normalize: () => "jane@example.com",',
+        "};",
+        "",
+        "const checkedExample: EndpointExampleAuthoringReference<typeof createMemberRequestExample> =",
+        "  createMemberRequestExample;",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/temp";',
+        "    requestExample: typeof createMemberRequestExample;",
+        "    response: void;",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await useCase.execute({ entryPath });
+
+    expect(bundle.hasErrors).toBe(true);
+    expect(bundle.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: expect.stringMatching(/^TS\d+$/),
+          filePath: entryPath,
+          message: expect.stringContaining("normalize"),
+        }),
+      ]),
+    );
+  });
+
   it.each([
     ["non-array errors type", "string", "INVALID_ERRORS_SPEC"],
     ["non-object error entry", "Array<string>", "INVALID_ERROR_ENTRY"],

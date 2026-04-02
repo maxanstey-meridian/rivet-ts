@@ -277,6 +277,8 @@ Supported today:
 
 - `Contract<"...">`
 - `Endpoint<{ ... }>`
+- `EndpointExampleAuthoringReference`
+- `EndpointExampleAuthoringValue`
 - `EndpointAuthoringSpec`
 - `EndpointErrorAuthoringSpec`
 - `EndpointSecurityAuthoringSpec`
@@ -300,9 +302,10 @@ Supported endpoint keys today:
 
 Notes:
 
-- `EndpointAuthoringSpec`, `EndpointErrorAuthoringSpec`, and `EndpointSecurityAuthoringSpec` are exported so the supported surface is visible in autocomplete and type navigation.
+- `EndpointAuthoringSpec`, `EndpointExampleAuthoringReference`, `EndpointExampleAuthoringValue`, `EndpointErrorAuthoringSpec`, and `EndpointSecurityAuthoringSpec` are exported so the supported surface is visible in autocomplete and type navigation.
 - Endpoint specs are currently extracted from inline `Endpoint<{ ... }>` type literals.
 - Examples must be authored as real exported `const` values and referenced from endpoint metadata with `typeof someExample`.
+- Example references are constrained to JSON-like value shapes in the public DSL; functions and other non-serializable value shapes should fail at compile time.
 - Validate example values with `satisfies` against the DTO you want to model; the extractor serializes the const initializer, not an invented type-only example bag.
 - The current scope is one `requestExample` and one `successResponseExample` per endpoint.
 - In this slice, examples are preserved in the extracted frontend `ContractBundle` only. Downstream Rivet/OpenAPI emission is a later step.

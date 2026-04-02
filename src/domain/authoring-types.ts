@@ -14,13 +14,35 @@ export type EndpointSecurityAuthoringSpec = {
   readonly scheme: string;
 };
 
+export type EndpointExampleAuthoringScalar = string | number | boolean | null;
+
+export type EndpointExampleAuthoringValue =
+  | EndpointExampleAuthoringScalar
+  | readonly EndpointExampleAuthoringValue[]
+  | {
+      readonly [key: string]: EndpointExampleAuthoringValue;
+    };
+
+export type EndpointExampleAuthoringReference<TExample = EndpointExampleAuthoringValue> =
+  TExample extends EndpointExampleAuthoringScalar
+    ? TExample
+    : TExample extends readonly (infer TItem)[]
+      ? readonly EndpointExampleAuthoringReference<TItem>[]
+      : TExample extends (...args: readonly never[]) => unknown
+        ? never
+        : TExample extends object
+          ? {
+              readonly [TKey in keyof TExample]: EndpointExampleAuthoringReference<TExample[TKey]>;
+            }
+          : never;
+
 export type EndpointAuthoringSpec = {
   readonly method: EndpointAuthoringHttpMethod;
   readonly route: string;
   readonly input?: unknown;
   readonly response?: unknown;
-  readonly requestExample?: unknown;
-  readonly successResponseExample?: unknown;
+  readonly requestExample?: EndpointExampleAuthoringReference;
+  readonly successResponseExample?: EndpointExampleAuthoringReference;
   readonly successStatus?: number;
   readonly summary?: string;
   readonly description?: string;
@@ -54,9 +76,13 @@ type ExactEndpointAuthoringSpec<TSpec extends EndpointAuthoringSpec> = ExactAuth
   EndpointAuthoringSpec
 > & {
   readonly errors?: ExactEndpointErrorAuthoringTuple<TSpec["errors"]>;
+  readonly requestExample?: EndpointExampleAuthoringReference<TSpec["requestExample"]>;
   readonly security?: TSpec["security"] extends EndpointSecurityAuthoringSpec
     ? ExactEndpointSecurityAuthoringSpec<TSpec["security"]>
     : TSpec["security"];
+  readonly successResponseExample?: EndpointExampleAuthoringReference<
+    TSpec["successResponseExample"]
+  >;
 };
 
 export type Endpoint<TSpec extends ExactEndpointAuthoringSpec<TSpec>> = {
