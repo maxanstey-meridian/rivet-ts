@@ -11,15 +11,15 @@ and generated C# contracts downstream.
 This repo is not published on npm yet. Install it directly from GitHub:
 
 ```bash
-pnpm add -D github:<owner>/rivet-ts
+pnpm add -D github:maxanstey-meridian/rivet-ts
 ```
 
 You can also pin a branch, tag, or commit:
 
 ```bash
-pnpm add -D github:<owner>/rivet-ts#main
-pnpm add -D github:<owner>/rivet-ts#v0.1.0
-pnpm add -D github:<owner>/rivet-ts#<commit>
+pnpm add -D github:maxanstey-meridian/rivet-ts#main
+pnpm add -D github:maxanstey-meridian/rivet-ts#v0.1.0
+pnpm add -D github:maxanstey-meridian/rivet-ts#<commit>
 ```
 
 After install, use the CLI from your consumer repo:
