@@ -18,7 +18,7 @@ import {
 
 type SupportedDeclaration = ts.EnumDeclaration | ts.InterfaceDeclaration | ts.TypeAliasDeclaration;
 
-type ContractIndex = Map<string, Map<string, ts.TypeLiteralNode>>;
+type ContractIndex = Map<string, Map<string, ts.TypeNode>>;
 
 type EndpointContext = {
   contractName: string;
@@ -50,6 +50,11 @@ const EMPTY_DOCUMENT = new RivetContractDocument({});
 
 const BODY_HTTP_METHODS = new Set(["PATCH", "POST", "PUT"]);
 const ROUTE_PARAM_PATTERN = /\{([^}]+)\}/g;
+const AUTHORING_HELPER_TYPE_NAMES = new Set([
+  "EndpointAuthoringSpec",
+  "EndpointErrorAuthoringSpec",
+  "EndpointSecurityAuthoringSpec",
+]);
 
 const buildProgram = (entryPath: string): ts.Program =>
   ts.createProgram([path.resolve(entryPath)], DEFAULT_COMPILER_OPTIONS);
@@ -164,7 +169,7 @@ const getContractName = (node: ts.InterfaceDeclaration): string | null => {
   return null;
 };
 
-const getEndpointSpecLiteral = (member: ts.TypeElement): ts.TypeLiteralNode | null => {
+const getEndpointSpecNode = (member: ts.TypeElement): ts.TypeNode | null => {
   if (!ts.isPropertySignature(member) || !member.type) {
     return null;
   }
@@ -178,7 +183,7 @@ const getEndpointSpecLiteral = (member: ts.TypeElement): ts.TypeLiteralNode | nu
   }
 
   const [argument] = member.type.typeArguments ?? [];
-  return argument && ts.isTypeLiteralNode(argument) ? argument : null;
+  return argument ?? null;
 };
 
 const indexContractEndpointSpecs = (sourceFile: ts.SourceFile): ContractIndex => {
@@ -194,19 +199,19 @@ const indexContractEndpointSpecs = (sourceFile: ts.SourceFile): ContractIndex =>
       continue;
     }
 
-    const endpoints = new Map<string, ts.TypeLiteralNode>();
+    const endpoints = new Map<string, ts.TypeNode>();
     for (const member of statement.members) {
       if (!ts.isPropertySignature(member) || !member.name) {
         continue;
       }
 
       const endpointName = getPropertyName(member.name);
-      const specLiteral = getEndpointSpecLiteral(member);
-      if (!endpointName || !specLiteral) {
+      const specNode = getEndpointSpecNode(member);
+      if (!endpointName || !specNode) {
         continue;
       }
 
-      endpoints.set(endpointName, specLiteral);
+      endpoints.set(endpointName, specNode);
     }
 
     contracts.set(contractName, endpoints);
@@ -446,17 +451,28 @@ class TypeEmissionContext {
   }
 
   public lowerEndpoint(
-    specLiteral: ts.TypeLiteralNode,
+    specNode: ts.TypeNode,
     context: EndpointContext,
   ): RivetEndpointDefinition | null {
-    const propertyMap = this.createPropertyMap(specLiteral);
+    const propertyMap = this.createPropertyMap(specNode);
+    if (!propertyMap) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          specNode,
+          "INVALID_ENDPOINT_SPEC",
+          `Endpoint "${context.contractName}.${context.endpointName}" must use a type literal spec or a type alias that resolves to one.`,
+        ),
+      );
+      return null;
+    }
+
     const routeNode = propertyMap.get("route");
     const routeLiteral = routeNode ? this.readStringLiteral(routeNode) : null;
 
     if (!routeLiteral) {
       this.diagnostics.push(
         createNodeDiagnostic(
-          specLiteral,
+          specNode,
           "INCOMPLETE_ENDPOINT",
           `Endpoint "${context.contractName}.${context.endpointName}" is missing a string literal route.`,
         ),
@@ -480,7 +496,7 @@ class TypeEmissionContext {
 
     const params = this.buildEndpointParams(routeLiteral, context, inputNode, inputType);
     const responses = this.buildResponses(
-      specLiteral,
+      specNode,
       context,
       successStatus,
       responseNode,
@@ -868,7 +884,7 @@ class TypeEmissionContext {
   }
 
   private buildResponses(
-    specLiteral: ts.TypeLiteralNode,
+    specNode: ts.TypeNode,
     context: EndpointContext,
     successStatusOverride: number | null,
     responseNode: ts.TypeNode | undefined,
@@ -876,7 +892,7 @@ class TypeEmissionContext {
     fileResponse: boolean,
   ): RivetResponseType[] {
     const responses: RivetResponseType[] = [];
-    const errorsNode = this.createPropertyMap(specLiteral).get("errors");
+    const errorsNode = this.createPropertyMap(specNode)?.get("errors");
     const errorResponses = errorsNode ? this.readErrorResponses(errorsNode, context) : [];
 
     if (responseType) {
@@ -906,7 +922,8 @@ class TypeEmissionContext {
   }
 
   private readErrorResponses(node: ts.TypeNode, context: EndpointContext): RivetResponseType[] {
-    if (!ts.isTupleTypeNode(node)) {
+    const errorEntries = this.getTupleElementNodes(node);
+    if (!errorEntries) {
       this.diagnostics.push(
         createNodeDiagnostic(
           node,
@@ -918,8 +935,9 @@ class TypeEmissionContext {
     }
 
     const responses: RivetResponseType[] = [];
-    for (const element of node.elements) {
-      if (!ts.isTypeLiteralNode(element)) {
+    for (const element of errorEntries) {
+      const propertyMap = this.createPropertyMap(element);
+      if (!propertyMap) {
         this.diagnostics.push(
           createNodeDiagnostic(
             element,
@@ -930,7 +948,6 @@ class TypeEmissionContext {
         continue;
       }
 
-      const propertyMap = this.createPropertyMap(element);
       const statusNode = propertyMap.get("status");
       const status = statusNode ? this.readNumericLiteral(statusNode) : null;
       if (status === null) {
@@ -958,7 +975,46 @@ class TypeEmissionContext {
     return responses;
   }
 
-  private createPropertyMap(typeLiteral: ts.TypeLiteralNode): Map<string, ts.TypeNode> {
+  private getTupleElementNodes(node: ts.TypeNode): ts.TypeNode[] | null {
+    if (ts.isTupleTypeNode(node)) {
+      return [...node.elements];
+    }
+
+    const resolvedNode = this.resolveAliasedTypeNode(node);
+    if (resolvedNode && ts.isTupleTypeNode(resolvedNode)) {
+      return [...resolvedNode.elements];
+    }
+
+    return null;
+  }
+
+  private createPropertyMap(typeNode: ts.TypeNode): Map<string, ts.TypeNode> | null {
+    if (ts.isTypeLiteralNode(typeNode)) {
+      return this.createPropertyMapFromTypeLiteral(typeNode);
+    }
+
+    const specType = this.checker.getTypeFromTypeNode(typeNode);
+    if ((specType.flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection)) === 0) {
+      return null;
+    }
+
+    const sourceFile = getNodeSourceFile(typeNode);
+    const propertyMap = new Map<string, ts.TypeNode>();
+    for (const propertySymbol of this.checker.getApparentType(specType).getProperties()) {
+      const propertyTypeNode = this.selectPropertyTypeNode(propertySymbol, sourceFile);
+      if (!propertyTypeNode) {
+        continue;
+      }
+
+      propertyMap.set(propertySymbol.getName(), propertyTypeNode);
+    }
+
+    return propertyMap;
+  }
+
+  private createPropertyMapFromTypeLiteral(
+    typeLiteral: ts.TypeLiteralNode,
+  ): Map<string, ts.TypeNode> {
     const propertyMap = new Map<string, ts.TypeNode>();
     for (const member of typeLiteral.members) {
       if (!ts.isPropertySignature(member) || !member.type || !member.name) {
@@ -974,6 +1030,66 @@ class TypeEmissionContext {
     }
 
     return propertyMap;
+  }
+
+  private selectPropertyTypeNode(symbol: ts.Symbol, sourceFile: ts.SourceFile): ts.TypeNode | null {
+    const declarations = symbol
+      .getDeclarations()
+      ?.filter((declaration) => !this.isAuthoringHelperPropertyDeclaration(declaration))
+      .flatMap((declaration) => {
+        const typeNode = this.getPropertyTypeNode(declaration);
+        return typeNode ? [{ declaration, typeNode }] : [];
+      });
+
+    if (!declarations || declarations.length === 0) {
+      return null;
+    }
+
+    const inSourceFile = declarations.find(
+      ({ declaration }) => declaration.getSourceFile().fileName === sourceFile.fileName,
+    );
+
+    return inSourceFile?.typeNode ?? declarations[0].typeNode;
+  }
+
+  private getPropertyTypeNode(declaration: ts.Declaration): ts.TypeNode | null {
+    if (
+      (ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration)) &&
+      declaration.type
+    ) {
+      return declaration.type;
+    }
+
+    return null;
+  }
+
+  private isAuthoringHelperPropertyDeclaration(declaration: ts.Declaration): boolean {
+    if (!ts.isPropertySignature(declaration) || !ts.isTypeLiteralNode(declaration.parent)) {
+      return false;
+    }
+
+    const parent = declaration.parent.parent;
+    return ts.isTypeAliasDeclaration(parent) && AUTHORING_HELPER_TYPE_NAMES.has(parent.name.text);
+  }
+
+  private resolveAliasedTypeNode(node: ts.TypeNode): ts.TypeNode | null {
+    if (ts.isParenthesizedTypeNode(node)) {
+      return this.resolveAliasedTypeNode(node.type);
+    }
+
+    if (!ts.isTypeReferenceNode(node)) {
+      return null;
+    }
+
+    const symbol = this.checker.getSymbolAtLocation(node.typeName);
+    const declarations = symbol?.getDeclarations() ?? [];
+    for (const declaration of declarations) {
+      if (ts.isTypeAliasDeclaration(declaration)) {
+        return declaration.type;
+      }
+    }
+
+    return null;
   }
 
   private readPropertyMembers(
@@ -1401,12 +1517,12 @@ class TypeEmissionContext {
   }
 
   private readSecurityScheme(node: ts.TypeNode | undefined): string | null {
-    if (!node || !ts.isTypeLiteralNode(node)) {
+    if (!node) {
       return null;
     }
 
     const propertyMap = this.createPropertyMap(node);
-    return this.readStringLiteral(propertyMap.get("scheme"));
+    return this.readStringLiteral(propertyMap?.get("scheme"));
   }
 
   private readStringLiteral(node: ts.TypeNode | undefined): string | null {

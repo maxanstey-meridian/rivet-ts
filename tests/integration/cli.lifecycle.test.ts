@@ -53,4 +53,57 @@ describe("CLI lifecycle", () => {
       ]),
     );
   });
+
+  it("writes Rivet contract JSON for aliased endpoint specs through the real CLI path", async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-"));
+    const outputPath = path.join(tempDirectory, "aliased-contract.json");
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+
+    const exitCode = await runCli(
+      [
+        "--entry",
+        getFixturePath(path.join("aliased-authoring-contract", "contracts.ts")),
+        "--out",
+        outputPath,
+      ],
+      {
+        stdout: (text) => stdout.push(text),
+        stderr: (text) => stderr.push(text),
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toHaveLength(0);
+    expect(stderr).toHaveLength(0);
+
+    const fileContents = await fs.readFile(outputPath, "utf8");
+    const payload = JSON.parse(fileContents) as {
+      endpoints: Array<{
+        name: string;
+        routeTemplate: string;
+        security?: { scheme?: string; isAnonymous: boolean };
+        responses: Array<{ statusCode: number; description?: string }>;
+      }>;
+    };
+
+    expect(payload.endpoints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "list",
+          routeTemplate: "/api/aliased-members",
+          security: {
+            isAnonymous: false,
+            scheme: "admin",
+          },
+          responses: expect.arrayContaining([
+            expect.objectContaining({
+              statusCode: 404,
+              description: "Members not found",
+            }),
+          ]),
+        }),
+      ]),
+    );
+  });
 });
