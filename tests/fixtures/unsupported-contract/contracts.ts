@@ -1,10 +1,10 @@
-import type { Contract, Endpoint } from "./rivet.js";
 import type {
   BadSearchQuery,
   ConditionalDto,
   InlineOptionalWrapper,
   IntersectionWrapper,
 } from "./models.js";
+import type { Contract, Endpoint } from "./rivet.js";
 
 export interface UnsupportedContract extends Contract<"UnsupportedContract"> {
   Search: Endpoint<{

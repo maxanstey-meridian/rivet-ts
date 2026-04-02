@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
-
-import { LowerContractBundleToRivetContract } from "../../application/use-cases/lower-contract-bundle-to-rivet-contract.js";
 import { ExtractTsContracts } from "../../application/use-cases/extract-ts-contracts.js";
+import { LowerContractBundleToRivetContract } from "../../application/use-cases/lower-contract-bundle-to-rivet-contract.js";
 import { TypeScriptContractFrontend } from "../../infrastructure/typescript/typescript-contract-frontend.js";
 import { TypeScriptRivetContractLowerer } from "../../infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 

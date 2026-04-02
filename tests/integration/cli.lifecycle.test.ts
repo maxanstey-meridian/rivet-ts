@@ -2,7 +2,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-
 import { runCli } from "../../src/interfaces/cli/run-cli.js";
 
 const getFixturePath = (relativePath: string): string => {

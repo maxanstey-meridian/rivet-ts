@@ -20,6 +20,8 @@ export class EndpointSpec {
   public readonly route: string;
   public readonly input?: TypeExpression;
   public readonly response?: TypeExpression;
+  public readonly fileResponse: boolean;
+  public readonly fileContentType?: string;
   public readonly successStatus?: number;
   public readonly summary?: string;
   public readonly description?: string;
@@ -33,6 +35,8 @@ export class EndpointSpec {
     route: string;
     input?: TypeExpression;
     response?: TypeExpression;
+    fileResponse?: boolean;
+    fileContentType?: string;
     successStatus?: number;
     summary?: string;
     description?: string;
@@ -45,6 +49,8 @@ export class EndpointSpec {
     this.route = input.route;
     this.input = input.input;
     this.response = input.response;
+    this.fileResponse = input.fileResponse ?? false;
+    this.fileContentType = input.fileContentType;
     this.successStatus = input.successStatus;
     this.summary = input.summary;
     this.description = input.description;

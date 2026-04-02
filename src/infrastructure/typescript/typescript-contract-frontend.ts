@@ -1,7 +1,5 @@
 import path from "node:path";
-
 import ts from "typescript";
-
 import { TsContractFrontend } from "../../application/ports/ts-contract-frontend.js";
 import { ContractBundle } from "../../domain/contract-bundle.js";
 import {
@@ -246,6 +244,9 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
 
     const input = this.parseTypeExpression(propertyMap.get("input"), sourceFile);
     const response = this.parseTypeExpression(propertyMap.get("response"), sourceFile);
+    const fileResponse =
+      this.parseBooleanLiteral(propertyMap.get("fileResponse"), sourceFile) ?? false;
+    const fileContentType = this.parseStringLiteral(propertyMap.get("fileContentType"), sourceFile);
     const successStatus = this.parseNumericLiteral(propertyMap.get("successStatus"), sourceFile);
     const summary = this.parseStringLiteral(propertyMap.get("summary"), sourceFile);
     const description = this.parseStringLiteral(propertyMap.get("description"), sourceFile);
@@ -264,6 +265,8 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       route,
       input: input ?? undefined,
       response: response ?? undefined,
+      fileResponse,
+      fileContentType: fileContentType ?? undefined,
       successStatus: successStatus ?? undefined,
       summary: summary ?? undefined,
       description: description ?? undefined,

@@ -32,7 +32,7 @@ pnpm exec rivet-reflect-ts --entry ./contracts.ts --out ./contract.json
 
 ```ts
 // contracts.ts
-import type {Contract, Endpoint} from "rivet-ts";
+import type { Contract, Endpoint } from "rivet-ts";
 
 export interface MemberDto {
   id: string;

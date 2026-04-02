@@ -1,4 +1,3 @@
-import type { Contract, Endpoint } from "./rivet.js";
 import type {
   CreateMemberRequest,
   MemberDto,
@@ -8,6 +7,7 @@ import type {
   UpdateMemberRequest,
   ValidationErrorDto,
 } from "./models.js";
+import type { Contract, Endpoint } from "./rivet.js";
 
 export interface MembersContract extends Contract<"MembersContract"> {
   Search: Endpoint<{

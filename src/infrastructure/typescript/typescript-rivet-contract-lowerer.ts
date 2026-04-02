@@ -1,10 +1,9 @@
 import path from "node:path";
-
 import ts from "typescript";
-
 import { RivetContractLowerer } from "../../application/ports/rivet-contract-lowerer.js";
 import { ContractBundle } from "../../domain/contract-bundle.js";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
+import { RivetContractLoweringResult } from "../../domain/rivet-contract-lowering-result.js";
 import {
   RivetContractDocument,
   type RivetContractEnum,
@@ -16,7 +15,6 @@ import {
   RivetTypeDefinition,
   type RivetPropertyDefinition,
 } from "../../domain/rivet-contract.js";
-import { RivetContractLoweringResult } from "../../domain/rivet-contract-lowering-result.js";
 
 type SupportedDeclaration = ts.EnumDeclaration | ts.InterfaceDeclaration | ts.TypeAliasDeclaration;
 
@@ -473,6 +471,10 @@ class TypeEmissionContext {
     const description = this.readStringLiteral(propertyMap.get("description")) ?? undefined;
     const anonymous = this.readBooleanLiteral(propertyMap.get("anonymous")) ?? false;
     const securityScheme = this.readSecurityScheme(propertyMap.get("security"));
+    const fileResponse = this.readBooleanLiteral(propertyMap.get("fileResponse")) ?? false;
+    const fileContentType = fileResponse
+      ? (this.readStringLiteral(propertyMap.get("fileContentType")) ?? "application/octet-stream")
+      : undefined;
     const inputType = this.lowerOptionalTypeNode(inputNode);
     const responseType = this.lowerOptionalTypeNode(responseNode);
 
@@ -483,6 +485,7 @@ class TypeEmissionContext {
       successStatus,
       responseNode,
       responseType,
+      fileResponse,
     );
 
     const security =
@@ -504,6 +507,7 @@ class TypeEmissionContext {
       summary,
       description,
       security,
+      fileContentType,
     });
   }
 
@@ -869,6 +873,7 @@ class TypeEmissionContext {
     successStatusOverride: number | null,
     responseNode: ts.TypeNode | undefined,
     responseType: RivetType | null,
+    fileResponse: boolean,
   ): RivetResponseType[] {
     const responses: RivetResponseType[] = [];
     const errorsNode = this.createPropertyMap(specLiteral).get("errors");
@@ -882,6 +887,7 @@ class TypeEmissionContext {
         }),
       );
     } else if (
+      fileResponse ||
       successStatusOverride !== null ||
       errorResponses.length > 0 ||
       this.getDefaultSuccessStatus(context.httpMethod) !== 200 ||
