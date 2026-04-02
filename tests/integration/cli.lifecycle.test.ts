@@ -89,24 +89,66 @@ describe("CLI lifecycle", () => {
 
     const fileContents = await fs.readFile(outputPath, "utf8");
     const payload = JSON.parse(fileContents) as {
+      types: Array<{
+        name: string;
+        properties: Array<{ name: string }>;
+      }>;
       endpoints: Array<{
         name: string;
         routeTemplate: string;
+        returnType?: { kind: string; element?: { kind: string; name?: string } };
+        summary?: string;
+        description?: string;
         security?: { scheme?: string; isAnonymous: boolean };
-        responses: Array<{ statusCode: number; description?: string }>;
+        responses: Array<{
+          statusCode: number;
+          description?: string;
+          dataType?: { kind: string; element?: { kind: string; name?: string } };
+        }>;
       }>;
     };
+
+    expect(payload.types).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "MemberDto",
+          properties: expect.arrayContaining([
+            expect.objectContaining({ name: "id" }),
+            expect.objectContaining({ name: "email" }),
+          ]),
+        }),
+      ]),
+    );
 
     expect(payload.endpoints).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           name: "list",
           routeTemplate: "/api/aliased-members",
+          returnType: {
+            kind: "array",
+            element: {
+              kind: "ref",
+              name: "MemberDto",
+            },
+          },
+          summary: "List aliased members",
+          description: "List members from an aliased endpoint spec",
           security: {
             isAnonymous: false,
             scheme: "admin",
           },
           responses: expect.arrayContaining([
+            expect.objectContaining({
+              statusCode: 200,
+              dataType: {
+                kind: "array",
+                element: {
+                  kind: "ref",
+                  name: "MemberDto",
+                },
+              },
+            }),
             expect.objectContaining({
               statusCode: 404,
               description: "Members not found",

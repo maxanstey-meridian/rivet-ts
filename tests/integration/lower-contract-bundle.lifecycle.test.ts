@@ -56,7 +56,11 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     );
   });
 
-  it("lowers array-authored endpoint errors from the public DSL", async () => {
+  it.each([
+    ["readonly-array syntax", "readonly ValidationFailure[]"],
+    ["Array helper syntax", "Array<ValidationFailure>"],
+    ["ReadonlyArray helper syntax", "ReadonlyArray<ValidationFailure>"],
+  ])("lowers array-authored endpoint errors from the public DSL via %s", async (_, errorsType) => {
     const frontend = new TypeScriptContractFrontend();
     const lowerer = new TypeScriptRivetContractLowerer();
     const extractUseCase = new ExtractTsContracts(frontend);
@@ -88,7 +92,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
         '    method: "POST";',
         '    route: "/api/temp";',
         "    response: void;",
-        "    errors: readonly ValidationFailure[];",
+        `    errors: ${errorsType};`,
         "  }>;",
         "}",
         "",
@@ -104,14 +108,75 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     expect(lowered.diagnostics).toEqual([]);
 
     const payload = JSON.parse(lowered.toJson()) as {
-      endpoints: Array<{ name: string; responses: Array<{ statusCode: number }> }>;
+      endpoints: Array<{
+        name: string;
+        responses: Array<{
+          statusCode: number;
+          description?: string;
+          dataType?: { name?: string };
+        }>;
+      }>;
     };
     const createEndpoint = payload.endpoints.find((endpoint) => endpoint.name === "create");
 
     expect(createEndpoint?.responses).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ statusCode: 201 }),
-        expect.objectContaining({ statusCode: 422 }),
+        expect.objectContaining({
+          statusCode: 422,
+          description: "Validation failed",
+          dataType: expect.objectContaining({
+            name: "ValidationErrorDto",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it.fails("reports contradictory anonymous and security metadata instead of silently dropping security", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const lowerer = new TypeScriptRivetContractLowerer();
+    const extractUseCase = new ExtractTsContracts(frontend);
+    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+    const tempDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rivet-ts-conflicting-security-"),
+    );
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Ping: Endpoint<{",
+        '    method: "GET";',
+        '    route: "/api/ping";',
+        "    anonymous: true;",
+        '    security: { scheme: "admin" };',
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await extractUseCase.execute({ entryPath });
+    const lowered = await lowerUseCase.execute({ bundle });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(lowered.hasErrors).toBe(true);
+    expect(lowered.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "CONFLICTING_SECURITY_SPEC",
+          filePath: entryPath,
+          message: expect.stringContaining("cannot declare both anonymous and security"),
+        }),
       ]),
     );
   });

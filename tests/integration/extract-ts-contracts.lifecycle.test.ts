@@ -234,7 +234,11 @@ describe("ExtractTsContracts lifecycle", () => {
     expect(bundle.contracts[0]?.name).toBe("TempContract");
   });
 
-  it("extracts array-authored error metadata from the public DSL", async () => {
+  it.each([
+    ["readonly-array syntax", "readonly ValidationFailure[]"],
+    ["Array helper syntax", "Array<ValidationFailure>"],
+    ["ReadonlyArray helper syntax", "ReadonlyArray<ValidationFailure>"],
+  ])("extracts array-authored error metadata from the public DSL via %s", async (_, errorsType) => {
     const frontend = new TypeScriptContractFrontend();
     const useCase = new ExtractTsContracts(frontend);
     const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-errors-array-"));
@@ -264,7 +268,7 @@ describe("ExtractTsContracts lifecycle", () => {
         '    method: "POST";',
         '    route: "/api/temp";',
         "    response: void;",
-        "    errors: readonly ValidationFailure[];",
+        `    errors: ${errorsType};`,
         "  }>;",
         "}",
         "",
