@@ -33,6 +33,8 @@ describe("Expressive contract lifecycle", () => {
         name: string;
         params: Array<{ name: string; source: string; type: Record<string, unknown> }>;
         responses: Array<{ statusCode: number }>;
+        requestExample?: { data: Record<string, unknown> };
+        successResponseExample?: { data: Record<string, unknown> };
       }>;
       types: Array<{
         name: string;
@@ -105,6 +107,38 @@ describe("Expressive contract lifecycle", () => {
         expect.objectContaining({ statusCode: 422 }),
       ]),
     );
+    expect(createEndpoint?.requestExample).toEqual({
+      data: {
+        teamId: "550e8400-e29b-41d4-a716-446655440000",
+        email: "jane@example.com",
+        status: "active",
+        priority: 2,
+        profile: {
+          displayName: "Jane Example",
+          timezone: "Europe/London",
+        },
+        metadata: {
+          invitesSent: 3,
+          logins: 12,
+        },
+      },
+    });
+    expect(createEndpoint?.successResponseExample).toEqual({
+      data: {
+        data: {
+          id: "550e8400-e29b-41d4-a716-446655440001",
+          email: "jane@example.com",
+          status: "active",
+          priority: 2,
+          managerId: null,
+          coordinates: {
+            lat: 51.5074,
+            lng: -0.1278,
+          },
+        },
+        included: ["profile", "audit"],
+      },
+    });
 
     const memberDto = payload.types.find((type) => type.name === "MemberDto");
     expect(memberDto?.properties).toEqual(

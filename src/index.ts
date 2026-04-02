@@ -25,6 +25,8 @@ export {
   RivetContractDocument,
   type RivetContractEnum,
   RivetEndpointDefinition,
+  RivetEndpointExample,
+  type RivetEndpointExampleValue,
   RivetEndpointParam,
   RivetEndpointSecurity,
   RivetResponseType,

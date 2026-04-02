@@ -157,7 +157,9 @@
     },
     {
       "name": "MemberEnvelope",
-      "typeParameters": ["TData"],
+      "typeParameters": [
+        "TData"
+      ],
       "properties": [
         {
           "name": "data",
@@ -233,7 +235,9 @@
     },
     {
       "name": "PagedResult",
-      "typeParameters": ["TItem"],
+      "typeParameters": [
+        "TItem"
+      ],
       "properties": [
         {
           "name": "items",
@@ -311,15 +315,25 @@
   "enums": [
     {
       "name": "MemberPriority",
-      "intValues": [1, 2, 3]
+      "intValues": [
+        1,
+        2,
+        3
+      ]
     },
     {
       "name": "MemberStatus",
-      "values": ["active", "suspended"]
+      "values": [
+        "active",
+        "suspended"
+      ]
     },
     {
       "name": "SortDirection",
-      "values": ["asc", "desc"]
+      "values": [
+        "asc",
+        "desc"
+      ]
     }
   ],
   "endpoints": [
@@ -470,6 +484,41 @@
           "description": "Validation failed"
         }
       ],
+      "requestExample": {
+        "data": {
+          "teamId": "550e8400-e29b-41d4-a716-446655440000",
+          "email": "jane@example.com",
+          "status": "active",
+          "priority": 2,
+          "profile": {
+            "displayName": "Jane Example",
+            "timezone": "Europe/London"
+          },
+          "metadata": {
+            "invitesSent": 3,
+            "logins": 12
+          }
+        }
+      },
+      "successResponseExample": {
+        "data": {
+          "data": {
+            "id": "550e8400-e29b-41d4-a716-446655440001",
+            "email": "jane@example.com",
+            "status": "active",
+            "priority": 2,
+            "managerId": null,
+            "coordinates": {
+              "lat": 51.5074,
+              "lng": -0.1278
+            }
+          },
+          "included": [
+            "profile",
+            "audit"
+          ]
+        }
+      },
       "security": {
         "isAnonymous": false,
         "scheme": "admin"

@@ -7,6 +7,7 @@ import { RivetContractLoweringResult } from "../../domain/rivet-contract-lowerin
 import {
   RivetContractDocument,
   type RivetContractEnum,
+  RivetEndpointExample,
   RivetEndpointDefinition,
   RivetEndpointParam,
   RivetEndpointSecurity,
@@ -24,6 +25,8 @@ type EndpointContext = {
   contractName: string;
   endpointName: string;
   httpMethod: string;
+  requestExample?: RivetEndpointExample;
+  successResponseExample?: RivetEndpointExample;
 };
 
 type PropertyDescriptor = {
@@ -371,6 +374,12 @@ export class TypeScriptRivetContractLowerer extends RivetContractLowerer {
           contractName: contract.name,
           endpointName: endpoint.name,
           httpMethod: endpoint.method,
+          requestExample: endpoint.requestExample
+            ? new RivetEndpointExample({ data: endpoint.requestExample.data })
+            : undefined,
+          successResponseExample: endpoint.successResponseExample
+            ? new RivetEndpointExample({ data: endpoint.successResponseExample.data })
+            : undefined,
         });
 
         if (!loweredEndpoint) {
@@ -534,6 +543,8 @@ class TypeEmissionContext {
       responses,
       summary,
       description,
+      requestExample: context.requestExample,
+      successResponseExample: context.successResponseExample,
       security,
       fileContentType,
     });
