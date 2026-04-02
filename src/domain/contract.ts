@@ -14,6 +14,14 @@ export class ErrorResponseSpec {
   }
 }
 
+export class SecuritySpec {
+  public readonly scheme: string;
+
+  public constructor(input: { scheme: string }) {
+    this.scheme = input.scheme;
+  }
+}
+
 export class EndpointSpec {
   public readonly name: string;
   public readonly method: HttpMethod;
@@ -27,7 +35,7 @@ export class EndpointSpec {
   public readonly description?: string;
   public readonly errors: readonly ErrorResponseSpec[];
   public readonly anonymous: boolean;
-  public readonly securityScheme?: string;
+  public readonly security?: SecuritySpec;
 
   public constructor(input: {
     name: string;
@@ -42,7 +50,7 @@ export class EndpointSpec {
     description?: string;
     errors?: readonly ErrorResponseSpec[];
     anonymous?: boolean;
-    securityScheme?: string;
+    security?: SecuritySpec;
   }) {
     this.name = input.name;
     this.method = input.method;
@@ -56,7 +64,7 @@ export class EndpointSpec {
     this.description = input.description;
     this.errors = input.errors ?? [];
     this.anonymous = input.anonymous ?? false;
-    this.securityScheme = input.securityScheme;
+    this.security = input.security;
   }
 }
 

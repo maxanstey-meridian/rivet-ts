@@ -13,6 +13,7 @@ export {
   ContractSpec,
   EndpointSpec,
   ErrorResponseSpec,
+  SecuritySpec,
   type HttpMethod,
 } from "./domain/contract.js";
 export { ExtractionDiagnostic, type DiagnosticSeverity } from "./domain/diagnostic.js";

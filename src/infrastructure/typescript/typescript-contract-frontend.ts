@@ -6,6 +6,7 @@ import {
   ContractSpec,
   EndpointSpec,
   ErrorResponseSpec,
+  SecuritySpec,
   type HttpMethod,
 } from "../../domain/contract.js";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
@@ -289,7 +290,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       description: description ?? undefined,
       errors,
       anonymous,
-      securityScheme: securityScheme ?? undefined,
+      security: securityScheme ? new SecuritySpec({ scheme: securityScheme }) : undefined,
     });
   }
 

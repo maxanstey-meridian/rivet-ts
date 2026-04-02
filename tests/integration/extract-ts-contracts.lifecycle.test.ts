@@ -60,8 +60,11 @@ describe("ExtractTsContracts lifecycle", () => {
       method: "POST",
       route: "/api/members",
       successStatus: 201,
-      securityScheme: "admin",
+      security: {
+        scheme: "admin",
+      },
     });
+    expect(invite).not.toHaveProperty("securityScheme");
     expect(invite?.input?.text).toBe("InviteMemberRequest");
     expect(invite?.response?.text).toBe("InviteMemberResponse");
     expect(invite?.errors).toHaveLength(1);
@@ -77,6 +80,7 @@ describe("ExtractTsContracts lifecycle", () => {
       anonymous: true,
       description: "Health check",
     });
+    expect(health?.security).toBeUndefined();
     expect(health?.response).toBeUndefined();
   });
 
@@ -111,8 +115,11 @@ describe("ExtractTsContracts lifecycle", () => {
       method: "POST",
       route: "/api/teams/{teamId}/members",
       successStatus: 201,
-      securityScheme: "admin",
+      security: {
+        scheme: "admin",
+      },
     });
+    expect(create).not.toHaveProperty("securityScheme");
     expect(create?.input?.text).toBe("CreateMemberRequest");
     expect(create?.response?.text).toBe("MemberEnvelope<MemberDto>");
     expect(create?.errors).toEqual([
@@ -121,6 +128,7 @@ describe("ExtractTsContracts lifecycle", () => {
         description: "Validation failed",
       }),
     ]);
+    expect(create?.errors[0]?.response?.text).toBe("ValidationErrorDto");
 
     const update = contract.endpoints.find((endpoint) => endpoint.name === "Update");
     expect(update?.errors).toEqual([
@@ -138,8 +146,11 @@ describe("ExtractTsContracts lifecycle", () => {
       fileContentType: "text/csv",
       summary: "Export members",
       description: "Download members as CSV",
-      securityScheme: "admin",
+      security: {
+        scheme: "admin",
+      },
     });
+    expect(exportMembers).not.toHaveProperty("securityScheme");
     expect(exportMembers?.response).toBeUndefined();
 
     const ping = contract.endpoints.find((endpoint) => endpoint.name === "Ping");
@@ -149,6 +160,7 @@ describe("ExtractTsContracts lifecycle", () => {
       anonymous: true,
       description: "Anonymous liveness probe",
     });
+    expect(ping?.security).toBeUndefined();
   });
 
   it("extracts aliased endpoint authoring specs exported from the public DSL", async () => {
@@ -173,8 +185,11 @@ describe("ExtractTsContracts lifecycle", () => {
       route: "/api/aliased-members",
       summary: "List aliased members",
       description: "List members from an aliased endpoint spec",
-      securityScheme: "admin",
+      security: {
+        scheme: "admin",
+      },
     });
+    expect(contract.endpoints[0]).not.toHaveProperty("securityScheme");
     expect(contract.endpoints[0]?.response?.text).toBe("MemberDto[]");
     expect(contract.endpoints[0]?.errors).toEqual([
       expect.objectContaining({
