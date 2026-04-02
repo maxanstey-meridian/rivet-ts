@@ -1,8 +1,12 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { runCli } from "../../src/interfaces/cli/run-cli.js";
+
+const execFileAsync = promisify(execFile);
 
 const getProjectRoot = (): string => {
   const currentFilePath = fileURLToPath(import.meta.url);
@@ -202,6 +206,48 @@ describe("CLI lifecycle", () => {
     expect(invalidSecurityDiagnostics[0]).toContain("security.scheme as a string literal");
   });
 
+  it.fails("reports contradictory anonymous and security metadata through the real CLI path", async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-conflicting-cli-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const outputPath = path.join(tempDirectory, "contract.json");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Ping: Endpoint<{",
+        '    method: "GET";',
+        '    route: "/api/ping";',
+        "    anonymous: true;",
+        '    security: { scheme: "admin" };',
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const exitCode = await runCli(["--entry", entryPath, "--out", outputPath], {
+      stdout: (text) => stdout.push(text),
+      stderr: (text) => stderr.push(text),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toHaveLength(0);
+    const conflictingSecurityDiagnostics = stderr.filter((line) =>
+      line.includes("[CONFLICTING_SECURITY_SPEC]"),
+    );
+    expect(conflictingSecurityDiagnostics).toHaveLength(1);
+  });
+
   it.each([
     ["non-array errors type", "string", "INVALID_ERRORS_SPEC"],
     ["non-object error entry", "Array<string>", "INVALID_ERROR_ENTRY"],
@@ -263,4 +309,116 @@ describe("CLI lifecycle", () => {
       expect(createEndpoint?.responses).toEqual([expect.objectContaining({ statusCode: 201 })]);
     },
   );
+
+  it("supports the documented installed-consumer package import and CLI bin path", async () => {
+    const packDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-pack-"));
+    const consumerDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-consumer-"));
+    const { stdout: packStdout } = await execFileAsync(
+      "pnpm",
+      ["pack", "--pack-destination", packDirectory],
+      {
+        cwd: getProjectRoot(),
+      },
+    );
+    const tarballName = packStdout.trim().split("\n").at(-1);
+    if (!tarballName) {
+      throw new Error("pnpm pack did not return a tarball name");
+    }
+
+    const tarballPath = path.isAbsolute(tarballName)
+      ? tarballName
+      : path.join(packDirectory, tarballName);
+
+    await fs.writeFile(
+      path.join(consumerDirectory, "package.json"),
+      JSON.stringify(
+        {
+          name: "rivet-ts-consumer-smoke",
+          private: true,
+          type: "module",
+          dependencies: {
+            "rivet-ts": tarballPath,
+          },
+          pnpm: {
+            overrides: {
+              typescript: `file:${path.join(getProjectRoot(), "node_modules", "typescript")}`,
+            },
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    await execFileAsync("pnpm", ["install", "--offline"], {
+      cwd: consumerDirectory,
+    });
+
+    await fs.writeFile(
+      path.join(consumerDirectory, "contracts.ts"),
+      [
+        'import type { Contract, Endpoint } from "rivet-ts";',
+        "",
+        "export interface PingResponse {",
+        "  ok: boolean;",
+        "}",
+        "",
+        'export interface HealthContract extends Contract<"HealthContract"> {',
+        "  Ping: Endpoint<{",
+        '    method: "GET";',
+        '    route: "/api/ping";',
+        "    response: PingResponse;",
+        "    anonymous: true;",
+        '    description: "Installed consumer ping";',
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    await execFileAsync(
+      "pnpm",
+      ["exec", "rivet-reflect-ts", "--entry", "contracts.ts", "--out", "contract.json"],
+      {
+        cwd: consumerDirectory,
+      },
+    );
+
+    const payload = JSON.parse(
+      await fs.readFile(path.join(consumerDirectory, "contract.json"), "utf8"),
+    ) as {
+      types: Array<{ name: string }>;
+      endpoints: Array<{
+        name: string;
+        routeTemplate: string;
+        description?: string;
+        security?: { isAnonymous: boolean };
+        responses: Array<{ statusCode: number; dataType?: { name?: string } }>;
+      }>;
+    };
+
+    expect(payload.types).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "PingResponse" })]),
+    );
+    expect(payload.endpoints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "ping",
+          routeTemplate: "/api/ping",
+          description: "Installed consumer ping",
+          security: {
+            isAnonymous: true,
+          },
+          responses: expect.arrayContaining([
+            expect.objectContaining({
+              statusCode: 200,
+              dataType: expect.objectContaining({ name: "PingResponse" }),
+            }),
+          ]),
+        }),
+      ]),
+    );
+  }, 60000);
 });
