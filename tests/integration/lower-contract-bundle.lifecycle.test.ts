@@ -186,7 +186,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     );
   });
 
-  it.fails("reports contradictory anonymous and security metadata instead of silently dropping security", async () => {
+  it("reports contradictory anonymous and security metadata instead of silently dropping security", async () => {
     const frontend = new TypeScriptContractFrontend();
     const lowerer = new TypeScriptRivetContractLowerer();
     const extractUseCase = new ExtractTsContracts(frontend);

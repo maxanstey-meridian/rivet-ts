@@ -206,7 +206,7 @@ describe("CLI lifecycle", () => {
     expect(invalidSecurityDiagnostics[0]).toContain("security.scheme as a string literal");
   });
 
-  it.fails("reports contradictory anonymous and security metadata through the real CLI path", async () => {
+  it("reports contradictory anonymous and security metadata through the real CLI path", async () => {
     const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-conflicting-cli-"));
     const entryPath = path.join(tempDirectory, "contracts.ts");
     const outputPath = path.join(tempDirectory, "contract.json");
@@ -246,6 +246,9 @@ describe("CLI lifecycle", () => {
       line.includes("[CONFLICTING_SECURITY_SPEC]"),
     );
     expect(conflictingSecurityDiagnostics).toHaveLength(1);
+    expect(conflictingSecurityDiagnostics[0]).toContain(
+      "cannot declare both anonymous and security",
+    );
   });
 
   it.each([

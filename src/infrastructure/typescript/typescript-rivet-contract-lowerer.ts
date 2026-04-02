@@ -505,6 +505,17 @@ class TypeEmissionContext {
       fileResponse,
     );
 
+    if (anonymous && securityScheme) {
+      const conflictingNode = propertyMap.get("security") ?? specNode;
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          conflictingNode,
+          "CONFLICTING_SECURITY_SPEC",
+          `Endpoint "${context.contractName}.${context.endpointName}" cannot declare both anonymous and security.`,
+        ),
+      );
+    }
+
     const security =
       anonymous || securityScheme
         ? new RivetEndpointSecurity({
