@@ -308,7 +308,8 @@ Notes:
 - Example references are constrained to JSON-like value shapes in the public DSL; functions and other non-serializable value shapes should fail at compile time.
 - Validate example values with `satisfies` against the DTO you want to model; the extractor serializes the const initializer, not an invented type-only example bag.
 - The current scope is one `requestExample` and one `successResponseExample` per endpoint.
-- In this slice, examples are preserved in the extracted frontend `ContractBundle` only. Downstream Rivet/OpenAPI emission is a later step.
+- Examples are preserved in the extracted frontend `ContractBundle` and in the lowered Rivet contract document.
+- This package still stops at the Rivet JSON seam; downstream Rivet/OpenAPI emission must consume those lowered example fields before examples appear in generated OpenAPI.
 - `errors` should be authored as an inline tuple of inline object literals.
 - `security` should be authored as an inline object literal with a `scheme` property.
 - exported `interface`, `type`, and `enum` declarations

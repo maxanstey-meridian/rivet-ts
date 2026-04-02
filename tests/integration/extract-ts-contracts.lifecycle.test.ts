@@ -3,7 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ExtractTsContracts } from "../../src/application/use-cases/extract-ts-contracts.js";
+import { LowerContractBundleToRivetContract } from "../../src/application/use-cases/lower-contract-bundle-to-rivet-contract.js";
 import { TypeScriptContractFrontend } from "../../src/infrastructure/typescript/typescript-contract-frontend.js";
+import { TypeScriptRivetContractLowerer } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 
 const getProjectRoot = (): string => {
   const currentFilePath = fileURLToPath(import.meta.url);
@@ -189,6 +191,63 @@ describe("ExtractTsContracts lifecycle", () => {
       description: "Anonymous liveness probe",
     });
     expect(ping?.security).toBeUndefined();
+  });
+
+  it("carries extracted endpoint examples through the lowered Rivet contract document", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const lowerer = new TypeScriptRivetContractLowerer();
+    const extractUseCase = new ExtractTsContracts(frontend);
+    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+
+    const bundle = await extractUseCase.execute({
+      entryPath: getFixturePath(path.join("expressive-contract", "contracts.ts")),
+    });
+    const lowered = await lowerUseCase.execute({ bundle });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(lowered.hasErrors).toBe(false);
+
+    const payload = JSON.parse(lowered.toJson()) as {
+      endpoints: Array<{
+        name: string;
+        requestExample?: { data: Record<string, unknown> };
+        successResponseExample?: { data: Record<string, unknown> };
+      }>;
+    };
+    const create = payload.endpoints.find((endpoint) => endpoint.name === "create");
+
+    expect(create?.requestExample).toEqual({
+      data: {
+        teamId: "550e8400-e29b-41d4-a716-446655440000",
+        email: "jane@example.com",
+        status: "active",
+        priority: 2,
+        profile: {
+          displayName: "Jane Example",
+          timezone: "Europe/London",
+        },
+        metadata: {
+          invitesSent: 3,
+          logins: 12,
+        },
+      },
+    });
+    expect(create?.successResponseExample).toEqual({
+      data: {
+        data: {
+          id: "550e8400-e29b-41d4-a716-446655440001",
+          email: "jane@example.com",
+          status: "active",
+          priority: 2,
+          managerId: null,
+          coordinates: {
+            lat: 51.5074,
+            lng: -0.1278,
+          },
+        },
+        included: ["profile", "audit"],
+      },
+    });
   });
 
   it("extracts aliased endpoint authoring specs exported from the public DSL", async () => {
