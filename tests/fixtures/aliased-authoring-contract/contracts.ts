@@ -11,6 +11,21 @@ export interface MemberDto {
   email: string;
 }
 
+export interface ListMembersQuery {
+  search?: string;
+}
+
+export const listMembersRequestExample = {
+  search: "Ada",
+} satisfies ListMembersQuery;
+
+export const listMembersResponseExample = [
+  {
+    id: "mem_123",
+    email: "ada@example.com",
+  },
+] satisfies MemberDto[];
+
 type AdminSecurity = EndpointSecurityAuthoringSpec & {
   scheme: "admin";
 };
@@ -23,7 +38,10 @@ type NotFoundError = EndpointErrorAuthoringSpec & {
 export type ListMembersSpec = EndpointAuthoringSpec & {
   method: "GET";
   route: "/api/aliased-members";
+  input: ListMembersQuery;
   response: MemberDto[];
+  requestExample: typeof listMembersRequestExample;
+  successResponseExample: typeof listMembersResponseExample;
   summary: "List aliased members";
   description: "List members from an aliased endpoint spec";
   security: AdminSecurity;

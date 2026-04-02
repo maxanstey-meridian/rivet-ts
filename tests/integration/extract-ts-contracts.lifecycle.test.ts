@@ -277,7 +277,17 @@ describe("ExtractTsContracts lifecycle", () => {
       },
     });
     expect(contract.endpoints[0]).not.toHaveProperty("securityScheme");
+    expect(contract.endpoints[0]?.input?.text).toBe("ListMembersQuery");
     expect(contract.endpoints[0]?.response?.text).toBe("MemberDto[]");
+    expect(contract.endpoints[0]?.requestExample?.data).toEqual({
+      search: "Ada",
+    });
+    expect(contract.endpoints[0]?.successResponseExample?.data).toEqual([
+      {
+        id: "mem_123",
+        email: "ada@example.com",
+      },
+    ]);
     expect(contract.endpoints[0]?.errors).toEqual([
       expect.objectContaining({
         status: 404,
@@ -804,6 +814,59 @@ describe("ExtractTsContracts lifecycle", () => {
         }),
       ]),
     );
+  });
+
+  it.fails("extracts shorthand-property example objects", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-examples-shorthand-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        "interface CreateMemberRequest {",
+        "  email: string;",
+        "  role: string;",
+        "}",
+        "",
+        'const email = "jane@example.com";',
+        "export const createMemberRequestExample = {",
+        "  email,",
+        '  role: "admin",',
+        "} satisfies CreateMemberRequest;",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/temp";',
+        "    input: CreateMemberRequest;",
+        "    requestExample: typeof createMemberRequestExample;",
+        "    response: void;",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await useCase.execute({ entryPath });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(bundle.contracts[0]?.endpoints[0]?.requestExample).toEqual({
+      data: {
+        email: "jane@example.com",
+        role: "admin",
+      },
+    });
   });
 
   it.each([

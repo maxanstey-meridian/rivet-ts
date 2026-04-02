@@ -129,6 +129,19 @@ describe("CLI lifecycle", () => {
         expect.objectContaining({
           name: "list",
           routeTemplate: "/api/aliased-members",
+          requestExample: {
+            data: {
+              search: "Ada",
+            },
+          },
+          successResponseExample: {
+            data: [
+              {
+                id: "mem_123",
+                email: "ada@example.com",
+              },
+            ],
+          },
           returnType: {
             kind: "array",
             element: {
@@ -427,16 +440,32 @@ describe("CLI lifecycle", () => {
       [
         'import type { Contract, Endpoint } from "rivet-ts";',
         "",
-        "export interface PingResponse {",
-        "  ok: boolean;",
+        "export interface CreatePingRequest {",
+        "  name: string;",
         "}",
         "",
+        "export interface PingResponse {",
+        "  ok: boolean;",
+        "  echoedName: string;",
+        "}",
+        "",
+        "export const createPingRequestExample = {",
+        '  name: "Ada",',
+        "} satisfies CreatePingRequest;",
+        "",
+        "export const pingResponseExample = {",
+        "  ok: true,",
+        '  echoedName: "Ada",',
+        "} satisfies PingResponse;",
+        "",
         'export interface HealthContract extends Contract<"HealthContract"> {',
-        "  Ping: Endpoint<{",
-        '    method: "GET";',
+        "  CreatePing: Endpoint<{",
+        '    method: "POST";',
         '    route: "/api/ping";',
+        "    input: CreatePingRequest;",
         "    response: PingResponse;",
-        "    anonymous: true;",
+        "    requestExample: typeof createPingRequestExample;",
+        "    successResponseExample: typeof pingResponseExample;",
         '    description: "Installed consumer ping";',
         "  }>;",
         "}",
@@ -461,26 +490,39 @@ describe("CLI lifecycle", () => {
         name: string;
         routeTemplate: string;
         description?: string;
+        requestExample?: { data: Record<string, unknown> };
+        successResponseExample?: { data: Record<string, unknown> };
         security?: { isAnonymous: boolean };
         responses: Array<{ statusCode: number; dataType?: { name?: string } }>;
       }>;
     };
 
     expect(payload.types).toEqual(
-      expect.arrayContaining([expect.objectContaining({ name: "PingResponse" })]),
+      expect.arrayContaining([
+        expect.objectContaining({ name: "CreatePingRequest" }),
+        expect.objectContaining({ name: "PingResponse" }),
+      ]),
     );
     expect(payload.endpoints).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          name: "ping",
+          name: "createPing",
           routeTemplate: "/api/ping",
           description: "Installed consumer ping",
-          security: {
-            isAnonymous: true,
+          requestExample: {
+            data: {
+              name: "Ada",
+            },
+          },
+          successResponseExample: {
+            data: {
+              ok: true,
+              echoedName: "Ada",
+            },
           },
           responses: expect.arrayContaining([
             expect.objectContaining({
-              statusCode: 200,
+              statusCode: 201,
               dataType: expect.objectContaining({ name: "PingResponse" }),
             }),
           ]),

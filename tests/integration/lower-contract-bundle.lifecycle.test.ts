@@ -56,6 +56,45 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     );
   });
 
+  it("lowers aliased endpoint-spec examples into Rivet contract JSON", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const lowerer = new TypeScriptRivetContractLowerer();
+    const extractUseCase = new ExtractTsContracts(frontend);
+    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+
+    const bundle = await extractUseCase.execute({
+      entryPath: getFixturePath(path.join("aliased-authoring-contract", "contracts.ts")),
+    });
+    const lowered = await lowerUseCase.execute({ bundle });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(lowered.hasErrors).toBe(false);
+
+    const payload = JSON.parse(lowered.toJson()) as {
+      endpoints: Array<{
+        name: string;
+        requestExample?: { data: Record<string, unknown> };
+        successResponseExample?: { data: unknown };
+      }>;
+    };
+
+    expect(payload.endpoints.find((endpoint) => endpoint.name === "list")).toMatchObject({
+      requestExample: {
+        data: {
+          search: "Ada",
+        },
+      },
+      successResponseExample: {
+        data: [
+          {
+            id: "mem_123",
+            email: "ada@example.com",
+          },
+        ],
+      },
+    });
+  });
+
   it.each([
     ["readonly-array syntax", "readonly ValidationFailure[]"],
     ["Array helper syntax", "Array<ValidationFailure>"],
