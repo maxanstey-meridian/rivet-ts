@@ -1574,7 +1574,6 @@ class TypeEmissionContext {
     const alreadyPresent = this.diagnostics.some(
       (existing) =>
         existing.code === diagnostic.code &&
-        existing.message === diagnostic.message &&
         existing.filePath === diagnostic.filePath &&
         existing.line === diagnostic.line &&
         existing.column === diagnostic.column,

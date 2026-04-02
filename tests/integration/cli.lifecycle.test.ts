@@ -153,9 +153,10 @@ describe("CLI lifecycle", () => {
 
     expect(exitCode).toBe(1);
     expect(stdout).toHaveLength(0);
-    expect(stderr).toEqual(
-      expect.arrayContaining([expect.stringContaining("[INVALID_SECURITY_SPEC]")]),
+    const invalidSecurityDiagnostics = stderr.filter((line) =>
+      line.includes("[INVALID_SECURITY_SPEC]"),
     );
-    expect(stderr.join("")).toContain("security.scheme as a string literal");
+    expect(invalidSecurityDiagnostics).toHaveLength(1);
+    expect(invalidSecurityDiagnostics[0]).toContain("security.scheme as a string literal");
   });
 });
