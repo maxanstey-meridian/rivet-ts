@@ -470,22 +470,25 @@
           "description": "Validation failed"
         }
       ],
-      "requestExample": {
-        "data": {
-          "teamId": "550e8400-e29b-41d4-a716-446655440000",
-          "email": "jane@example.com",
-          "status": "active",
-          "priority": 2,
-          "profile": {
-            "displayName": "Jane Example",
-            "timezone": "Europe/London"
+      "requestExamples": [
+        {
+          "json": {
+            "teamId": "550e8400-e29b-41d4-a716-446655440000",
+            "email": "jane@example.com",
+            "status": "active",
+            "priority": 2,
+            "profile": {
+              "displayName": "Jane Example",
+              "timezone": "Europe/London"
+            },
+            "metadata": {
+              "invitesSent": 3,
+              "logins": 12
+            }
           },
-          "metadata": {
-            "invitesSent": 3,
-            "logins": 12
-          }
+          "mediaType": "application/json"
         }
-      },
+      ],
       "successResponseExample": {
         "data": {
           "data": {

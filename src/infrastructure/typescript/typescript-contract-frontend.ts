@@ -259,10 +259,10 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
 
     const input = this.parseTypeExpression(propertyMap.get("input"), sourceFile);
     const response = this.parseTypeExpression(propertyMap.get("response"), sourceFile);
-    const requestExample = this.parseEndpointExample(
+    const requestExamples = this.parseRequestExamples(
+      propertyMap.get("requestExamples"),
       propertyMap.get("requestExample"),
       propertyMap.get("input"),
-      "requestExample",
       sourceFile,
       checker,
       diagnostics,
@@ -272,6 +272,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       propertyMap.get("successResponseExample"),
       propertyMap.get("response"),
       "successResponseExample",
+      "response",
       sourceFile,
       checker,
       diagnostics,
@@ -310,7 +311,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       successStatus: successStatus ?? undefined,
       summary: summary ?? undefined,
       description: description ?? undefined,
-      requestExample: requestExample ?? undefined,
+      requestExamples,
       successResponseExample: successResponseExample ?? undefined,
       errors,
       anonymous,
@@ -409,10 +410,125 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     return errors;
   }
 
+  private parseRequestExamples(
+    pluralNode: ts.TypeNode | undefined,
+    singularNode: ts.TypeNode | undefined,
+    targetNode: ts.TypeNode | undefined,
+    sourceFile: ts.SourceFile,
+    checker: ts.TypeChecker,
+    diagnostics: ExtractionDiagnostic[],
+    endpointName: string,
+  ): EndpointExampleSpec[] {
+    if (pluralNode && singularNode) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          pluralNode,
+          "CONFLICTING_REQUEST_EXAMPLE_SPEC",
+          `Endpoint "${endpointName}" cannot declare both requestExample and requestExamples.`,
+        ),
+      );
+      return [];
+    }
+
+    if (pluralNode) {
+      const entryNodes = this.getRequestExampleEntryNodes(pluralNode, checker);
+      if (!entryNodes) {
+        diagnostics.push(
+          this.createNodeDiagnostic(
+            sourceFile,
+            pluralNode,
+            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+            `Endpoint "${endpointName}" must declare requestExamples as an array of typeof exportedConst entries or { json: typeof exportedConst } descriptors.`,
+          ),
+        );
+        return [];
+      }
+
+      const examples: EndpointExampleSpec[] = [];
+      for (const entryNode of entryNodes) {
+        const example = this.parseRequestExampleEntry(
+          entryNode,
+          targetNode,
+          sourceFile,
+          checker,
+          diagnostics,
+          endpointName,
+        );
+        if (example) {
+          examples.push(example);
+        }
+      }
+
+      return examples;
+    }
+
+    const requestExample = this.parseEndpointExample(
+      singularNode,
+      targetNode,
+      "requestExample",
+      "input",
+      sourceFile,
+      checker,
+      diagnostics,
+      endpointName,
+    );
+
+    return requestExample ? [requestExample] : [];
+  }
+
+  private parseRequestExampleEntry(
+    node: ts.TypeNode,
+    targetNode: ts.TypeNode | undefined,
+    sourceFile: ts.SourceFile,
+    checker: ts.TypeChecker,
+    diagnostics: ExtractionDiagnostic[],
+    endpointName: string,
+  ): EndpointExampleSpec | null {
+    if (ts.isTypeQueryNode(node)) {
+      return this.parseEndpointExample(
+        node,
+        targetNode,
+        "requestExamples entries",
+        "input",
+        sourceFile,
+        checker,
+        diagnostics,
+        endpointName,
+      );
+    }
+
+    const propertyMap = this.createPropertyMap(node, sourceFile, checker);
+    const jsonNode = propertyMap?.get("json");
+    if (!propertyMap || !jsonNode || propertyMap.size !== 1) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          node,
+          "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+          `Endpoint "${endpointName}" requestExamples entries must be typeof exportedConst or { json: typeof exportedConst }.`,
+        ),
+      );
+      return null;
+    }
+
+    return this.parseEndpointExample(
+      jsonNode,
+      targetNode,
+      "requestExamples entries",
+      "input",
+      sourceFile,
+      checker,
+      diagnostics,
+      endpointName,
+    );
+  }
+
   private parseEndpointExample(
     node: ts.TypeNode | undefined,
     targetNode: ts.TypeNode | undefined,
-    propertyName: "requestExample" | "successResponseExample",
+    propertyName: string,
+    targetPropertyName: "input" | "response",
     sourceFile: ts.SourceFile,
     checker: ts.TypeChecker,
     diagnostics: ExtractionDiagnostic[],
@@ -458,7 +574,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
           sourceFile,
           node,
           "INVALID_ENDPOINT_EXAMPLE_TYPE",
-          `Endpoint "${endpointName}" ${propertyName} requires the corresponding endpoint ${propertyName === "requestExample" ? "input" : "response"} type.`,
+          `Endpoint "${endpointName}" ${propertyName} requires the corresponding endpoint ${targetPropertyName} type.`,
         ),
       );
       return null;
@@ -485,7 +601,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
           sourceFile,
           node,
           "INVALID_ENDPOINT_EXAMPLE_TYPE",
-          `Endpoint "${endpointName}" ${propertyName} must be assignable to the endpoint ${propertyName === "requestExample" ? "input" : "response"} type.`,
+          `Endpoint "${endpointName}" ${propertyName} must be assignable to the endpoint ${targetPropertyName} type.`,
         ),
       );
       return null;
@@ -549,6 +665,39 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
 
     const resolvedNode = this.resolveAliasedTypeNode(node, checker);
     return resolvedNode ? this.getErrorEntryNodes(resolvedNode, checker) : null;
+  }
+
+  private getRequestExampleEntryNodes(
+    node: ts.TypeNode,
+    checker: ts.TypeChecker,
+  ): ts.TypeNode[] | null {
+    if (ts.isParenthesizedTypeNode(node)) {
+      return this.getRequestExampleEntryNodes(node.type, checker);
+    }
+
+    if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) {
+      return this.getRequestExampleEntryNodes(node.type, checker);
+    }
+
+    if (ts.isTupleTypeNode(node)) {
+      return [...node.elements];
+    }
+
+    if (ts.isArrayTypeNode(node)) {
+      return [node.elementType];
+    }
+
+    if (
+      ts.isTypeReferenceNode(node) &&
+      ts.isIdentifier(node.typeName) &&
+      BUILTIN_TYPE_NAMES.has(node.typeName.text)
+    ) {
+      const [elementType] = node.typeArguments ?? [];
+      return elementType ? [elementType] : null;
+    }
+
+    const resolvedNode = this.resolveAliasedTypeNode(node, checker);
+    return resolvedNode ? this.getRequestExampleEntryNodes(resolvedNode, checker) : null;
   }
 
   private resolveAliasedTypeNode(node: ts.TypeNode, checker?: ts.TypeChecker): ts.TypeNode | null {
@@ -705,7 +854,9 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
 
     if (ts.isShorthandPropertyAssignment(property)) {
       const propertyValue = this.parseShorthandExampleValue(property, checker);
-      return propertyValue === undefined ? null : { name: property.name.text, value: propertyValue };
+      return propertyValue === undefined
+        ? null
+        : { name: property.name.text, value: propertyValue };
     }
 
     return null;

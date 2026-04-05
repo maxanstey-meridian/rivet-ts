@@ -73,17 +73,20 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     const payload = JSON.parse(lowered.toJson()) as {
       endpoints: Array<{
         name: string;
-        requestExample?: { data: Record<string, unknown> };
+        requestExamples?: Array<{ json: Record<string, unknown>; mediaType: string }>;
         successResponseExample?: { data: unknown };
       }>;
     };
 
     expect(payload.endpoints.find((endpoint) => endpoint.name === "list")).toMatchObject({
-      requestExample: {
-        data: {
-          search: "Ada",
+      requestExamples: [
+        {
+          json: {
+            search: "Ada",
+          },
+          mediaType: "application/json",
         },
-      },
+      ],
       successResponseExample: {
         data: [
           {
@@ -93,6 +96,75 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
         ],
       },
     });
+  });
+
+  it("lowers plural inline request examples from the dedicated fixture", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const lowerer = new TypeScriptRivetContractLowerer();
+    const extractUseCase = new ExtractTsContracts(frontend);
+    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+
+    const bundle = await extractUseCase.execute({
+      entryPath: getFixturePath(path.join("request-examples-contract", "contracts.ts")),
+    });
+    const lowered = await lowerUseCase.execute({ bundle });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(lowered.hasErrors).toBe(false);
+
+    const payload = JSON.parse(lowered.toJson()) as unknown;
+    const writeFixture = process.env.UPDATE_GOLDEN === "1";
+    const goldenPath = getFixturePath(
+      path.join("request-examples-contract", "golden-contract.json"),
+    );
+    if (writeFixture) {
+      await fs.writeFile(goldenPath, `${lowered.toJson()}\n`, "utf8");
+    }
+
+    const expected = await readJsonFixture(
+      path.join("request-examples-contract", "golden-contract.json"),
+    );
+    expect(payload).toEqual(expected);
+
+    const typedPayload = payload as {
+      endpoints: Array<{
+        name: string;
+        requestExamples?: Array<{ json: Record<string, unknown>; mediaType: string }>;
+      }>;
+    };
+
+    expect(typedPayload.endpoints.find((endpoint) => endpoint.name === "create")).toMatchObject({
+      requestExamples: [
+        {
+          json: {
+            email: "jane@example.com",
+            role: "admin",
+          },
+          mediaType: "application/json",
+        },
+        {
+          json: {
+            email: "alex@example.com",
+            role: "reviewer",
+          },
+          mediaType: "application/json",
+        },
+      ],
+    });
+    expect(
+      typedPayload.endpoints.find((endpoint) => endpoint.name === "legacyCreate"),
+    ).toMatchObject({
+      requestExamples: [
+        {
+          json: {
+            email: "legacy@example.com",
+            role: "member",
+          },
+          mediaType: "application/json",
+        },
+      ],
+    });
+    expect(typedPayload.endpoints.every((endpoint) => !("requestExample" in endpoint))).toBe(true);
   });
 
   it.each([
@@ -233,10 +305,10 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     );
 
     const payload = JSON.parse(lowered.toJson()) as {
-      endpoints: Array<{ name: string; requestExample?: unknown }>;
+      endpoints: Array<{ name: string; requestExamples?: unknown }>;
     };
     expect(payload.endpoints.find((endpoint) => endpoint.name === "create")).not.toHaveProperty(
-      "requestExample",
+      "requestExamples",
     );
   });
 
@@ -362,17 +434,23 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     expect(lowered.hasErrors).toBe(false);
 
     const payload = JSON.parse(lowered.toJson()) as {
-      endpoints: Array<{ name: string; requestExample?: { data: unknown } }>;
+      endpoints: Array<{
+        name: string;
+        requestExamples?: Array<{ json: unknown; mediaType: string }>;
+      }>;
     };
 
-    expect(payload.endpoints.find((endpoint) => endpoint.name === "create")?.requestExample).toEqual(
+    expect(
+      payload.endpoints.find((endpoint) => endpoint.name === "create")?.requestExamples,
+    ).toEqual([
       {
-        data: {
+        json: {
           email: "jane@example.com",
           role: "admin",
         },
+        mediaType: "application/json",
       },
-    );
+    ]);
   });
 
   it("defaults file responses to application/octet-stream when fileContentType is omitted", async () => {

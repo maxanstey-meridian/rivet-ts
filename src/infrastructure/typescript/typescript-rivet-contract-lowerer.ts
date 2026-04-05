@@ -10,6 +10,7 @@ import {
   RivetEndpointExample,
   RivetEndpointDefinition,
   RivetEndpointParam,
+  RivetRequestExample,
   RivetEndpointSecurity,
   RivetResponseType,
   type RivetType,
@@ -25,7 +26,7 @@ type EndpointContext = {
   contractName: string;
   endpointName: string;
   httpMethod: string;
-  requestExample?: RivetEndpointExample;
+  requestExamples?: readonly RivetRequestExample[];
   successResponseExample?: RivetEndpointExample;
 };
 
@@ -59,6 +60,7 @@ const AUTHORING_HELPER_TYPE_NAMES = new Set([
   "EndpointSecurityAuthoringSpec",
 ]);
 const BUILTIN_TYPE_NAMES = new Set(["Array", "ReadonlyArray"]);
+const DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE = "application/json";
 
 const buildProgram = (entryPath: string): ts.Program =>
   ts.createProgram([path.resolve(entryPath)], DEFAULT_COMPILER_OPTIONS);
@@ -374,9 +376,16 @@ export class TypeScriptRivetContractLowerer extends RivetContractLowerer {
           contractName: contract.name,
           endpointName: endpoint.name,
           httpMethod: endpoint.method,
-          requestExample: endpoint.requestExample
-            ? new RivetEndpointExample({ data: endpoint.requestExample.data })
-            : undefined,
+          requestExamples:
+            endpoint.requestExamples.length > 0
+              ? endpoint.requestExamples.map(
+                  (requestExample) =>
+                    new RivetRequestExample({
+                      json: requestExample.data,
+                      mediaType: DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE,
+                    }),
+                )
+              : undefined,
           successResponseExample: endpoint.successResponseExample
             ? new RivetEndpointExample({ data: endpoint.successResponseExample.data })
             : undefined,
@@ -543,7 +552,7 @@ class TypeEmissionContext {
       responses,
       summary,
       description,
-      requestExample: context.requestExample,
+      requestExamples: context.requestExamples,
       successResponseExample: context.successResponseExample,
       security,
       fileContentType,

@@ -124,20 +124,24 @@ describe("ExtractTsContracts lifecycle", () => {
     expect(create).not.toHaveProperty("securityScheme");
     expect(create?.input?.text).toBe("CreateMemberRequest");
     expect(create?.response?.text).toBe("MemberEnvelope<MemberDto>");
-    expect(create?.requestExample?.data).toEqual({
-      teamId: "550e8400-e29b-41d4-a716-446655440000",
-      email: "jane@example.com",
-      status: "active",
-      priority: 2,
-      profile: {
-        displayName: "Jane Example",
-        timezone: "Europe/London",
+    expect(create?.requestExamples).toEqual([
+      {
+        data: {
+          teamId: "550e8400-e29b-41d4-a716-446655440000",
+          email: "jane@example.com",
+          status: "active",
+          priority: 2,
+          profile: {
+            displayName: "Jane Example",
+            timezone: "Europe/London",
+          },
+          metadata: {
+            invitesSent: 3,
+            logins: 12,
+          },
+        },
       },
-      metadata: {
-        invitesSent: 3,
-        logins: 12,
-      },
-    });
+    ]);
     expect(create?.successResponseExample?.data).toEqual({
       data: {
         id: "550e8400-e29b-41d4-a716-446655440001",
@@ -210,28 +214,31 @@ describe("ExtractTsContracts lifecycle", () => {
     const payload = JSON.parse(lowered.toJson()) as {
       endpoints: Array<{
         name: string;
-        requestExample?: { data: Record<string, unknown> };
+        requestExamples?: Array<{ json: Record<string, unknown>; mediaType: string }>;
         successResponseExample?: { data: Record<string, unknown> };
       }>;
     };
     const create = payload.endpoints.find((endpoint) => endpoint.name === "create");
 
-    expect(create?.requestExample).toEqual({
-      data: {
-        teamId: "550e8400-e29b-41d4-a716-446655440000",
-        email: "jane@example.com",
-        status: "active",
-        priority: 2,
-        profile: {
-          displayName: "Jane Example",
-          timezone: "Europe/London",
+    expect(create?.requestExamples).toEqual([
+      {
+        json: {
+          teamId: "550e8400-e29b-41d4-a716-446655440000",
+          email: "jane@example.com",
+          status: "active",
+          priority: 2,
+          profile: {
+            displayName: "Jane Example",
+            timezone: "Europe/London",
+          },
+          metadata: {
+            invitesSent: 3,
+            logins: 12,
+          },
         },
-        metadata: {
-          invitesSent: 3,
-          logins: 12,
-        },
+        mediaType: "application/json",
       },
-    });
+    ]);
     expect(create?.successResponseExample).toEqual({
       data: {
         data: {
@@ -279,9 +286,13 @@ describe("ExtractTsContracts lifecycle", () => {
     expect(contract.endpoints[0]).not.toHaveProperty("securityScheme");
     expect(contract.endpoints[0]?.input?.text).toBe("ListMembersQuery");
     expect(contract.endpoints[0]?.response?.text).toBe("MemberDto[]");
-    expect(contract.endpoints[0]?.requestExample?.data).toEqual({
-      search: "Ada",
-    });
+    expect(contract.endpoints[0]?.requestExamples).toEqual([
+      {
+        data: {
+          search: "Ada",
+        },
+      },
+    ]);
     expect(contract.endpoints[0]?.successResponseExample?.data).toEqual([
       {
         id: "mem_123",
@@ -293,6 +304,101 @@ describe("ExtractTsContracts lifecycle", () => {
         status: 404,
         description: "Members not found",
       }),
+    ]);
+  });
+
+  it("extracts ordered plural request examples and normalizes legacy requestExample sugar", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+
+    const bundle = await useCase.execute({
+      entryPath: getFixturePath(path.join("request-examples-contract", "contracts.ts")),
+    });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(bundle.diagnostics).toEqual([]);
+
+    const contract = bundle.contracts[0];
+    const create = contract?.endpoints.find((endpoint) => endpoint.name === "Create");
+    const legacy = contract?.endpoints.find((endpoint) => endpoint.name === "LegacyCreate");
+
+    expect(create?.requestExamples).toEqual([
+      {
+        data: {
+          email: "jane@example.com",
+          role: "admin",
+        },
+      },
+      {
+        data: {
+          email: "alex@example.com",
+          role: "reviewer",
+        },
+      },
+    ]);
+    expect(legacy?.requestExamples).toEqual([
+      {
+        data: {
+          email: "legacy@example.com",
+          role: "member",
+        },
+      },
+    ]);
+  });
+
+  it.each([
+    ["tuple syntax", "[typeof createMemberRequestExample]"],
+    ["readonly tuple syntax", "readonly [typeof createMemberRequestExample]"],
+    ["Array helper syntax", "Array<typeof createMemberRequestExample>"],
+    ["ReadonlyArray helper syntax", "ReadonlyArray<typeof createMemberRequestExample>"],
+  ])("extracts requestExamples authored via %s", async (_, requestExamplesType) => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-request-examples-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        "interface CreateMemberRequest {",
+        "  email: string;",
+        "}",
+        "",
+        "export const createMemberRequestExample = {",
+        '  email: "jane@example.com",',
+        "} satisfies CreateMemberRequest;",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/temp";',
+        "    input: CreateMemberRequest;",
+        `    requestExamples: ${requestExamplesType};`,
+        "    response: void;",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await useCase.execute({ entryPath });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(bundle.contracts[0]?.endpoints[0]?.requestExamples).toEqual([
+      {
+        data: {
+          email: "jane@example.com",
+        },
+      },
     ]);
   });
 
@@ -548,7 +654,7 @@ describe("ExtractTsContracts lifecycle", () => {
           }),
         ]),
       );
-      expect(bundle.contracts[0]?.endpoints[0]?.requestExample).toBeUndefined();
+      expect(bundle.contracts[0]?.endpoints[0]?.requestExamples).toEqual([]);
       expect(bundle.contracts[0]?.endpoints[0]?.successResponseExample).toBeUndefined();
     },
   );
@@ -743,7 +849,7 @@ describe("ExtractTsContracts lifecycle", () => {
         }),
       ]),
     );
-    expect(bundle.contracts[0]?.endpoints[0]?.requestExample).toBeUndefined();
+    expect(bundle.contracts[0]?.endpoints[0]?.requestExamples).toEqual([]);
     expect(bundle.contracts[0]?.endpoints[0]?.successResponseExample).toBeUndefined();
   });
 
@@ -861,12 +967,14 @@ describe("ExtractTsContracts lifecycle", () => {
     const bundle = await useCase.execute({ entryPath });
 
     expect(bundle.hasErrors).toBe(false);
-    expect(bundle.contracts[0]?.endpoints[0]?.requestExample).toEqual({
-      data: {
-        email: "jane@example.com",
-        role: "admin",
+    expect(bundle.contracts[0]?.endpoints[0]?.requestExamples).toEqual([
+      {
+        data: {
+          email: "jane@example.com",
+          role: "admin",
+        },
       },
-    });
+    ]);
   });
 
   it.each([

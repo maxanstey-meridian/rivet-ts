@@ -33,7 +33,7 @@ describe("Expressive contract lifecycle", () => {
         name: string;
         params: Array<{ name: string; source: string; type: Record<string, unknown> }>;
         responses: Array<{ statusCode: number }>;
-        requestExample?: { data: Record<string, unknown> };
+        requestExamples?: Array<{ json: Record<string, unknown>; mediaType: string }>;
         successResponseExample?: { data: Record<string, unknown> };
       }>;
       types: Array<{
@@ -107,22 +107,25 @@ describe("Expressive contract lifecycle", () => {
         expect.objectContaining({ statusCode: 422 }),
       ]),
     );
-    expect(createEndpoint?.requestExample).toEqual({
-      data: {
-        teamId: "550e8400-e29b-41d4-a716-446655440000",
-        email: "jane@example.com",
-        status: "active",
-        priority: 2,
-        profile: {
-          displayName: "Jane Example",
-          timezone: "Europe/London",
+    expect(createEndpoint?.requestExamples).toEqual([
+      {
+        json: {
+          teamId: "550e8400-e29b-41d4-a716-446655440000",
+          email: "jane@example.com",
+          status: "active",
+          priority: 2,
+          profile: {
+            displayName: "Jane Example",
+            timezone: "Europe/London",
+          },
+          metadata: {
+            invitesSent: 3,
+            logins: 12,
+          },
         },
-        metadata: {
-          invitesSent: 3,
-          logins: 12,
-        },
+        mediaType: "application/json",
       },
-    });
+    ]);
     expect(createEndpoint?.successResponseExample).toEqual({
       data: {
         data: {

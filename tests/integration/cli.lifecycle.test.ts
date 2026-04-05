@@ -129,11 +129,14 @@ describe("CLI lifecycle", () => {
         expect.objectContaining({
           name: "list",
           routeTemplate: "/api/aliased-members",
-          requestExample: {
-            data: {
-              search: "Ada",
+          requestExamples: [
+            {
+              json: {
+                search: "Ada",
+              },
+              mediaType: "application/json",
             },
-          },
+          ],
           successResponseExample: {
             data: [
               {
@@ -174,6 +177,64 @@ describe("CLI lifecycle", () => {
         }),
       ]),
     );
+  });
+
+  it("writes plural requestExamples JSON for the dedicated fixture through the real CLI path", async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-request-examples-"));
+    const outputPath = path.join(tempDirectory, "request-examples-contract.json");
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+
+    const exitCode = await runCli(
+      [
+        "--entry",
+        getFixturePath(path.join("request-examples-contract", "contracts.ts")),
+        "--out",
+        outputPath,
+      ],
+      {
+        stdout: (text) => stdout.push(text),
+        stderr: (text) => stderr.push(text),
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toHaveLength(0);
+    expect(stderr).toHaveLength(0);
+
+    const fileContents = await fs.readFile(outputPath, "utf8");
+    const payload = JSON.parse(fileContents) as unknown;
+
+    expect(payload).toEqual(
+      await readJsonFixture(path.join("request-examples-contract", "golden-contract.json")),
+    );
+
+    const typedPayload = payload as {
+      endpoints: Array<{
+        name: string;
+        requestExamples?: Array<{ json: Record<string, unknown>; mediaType: string }>;
+      }>;
+    };
+
+    expect(typedPayload.endpoints.find((endpoint) => endpoint.name === "create")).toMatchObject({
+      requestExamples: [
+        {
+          json: {
+            email: "jane@example.com",
+            role: "admin",
+          },
+          mediaType: "application/json",
+        },
+        {
+          json: {
+            email: "alex@example.com",
+            role: "reviewer",
+          },
+          mediaType: "application/json",
+        },
+      ],
+    });
+    expect(typedPayload.endpoints.every((endpoint) => !("requestExample" in endpoint))).toBe(true);
   });
 
   it("reports invalid security helper usage through the real CLI path", async () => {
@@ -321,15 +382,17 @@ describe("CLI lifecycle", () => {
 
     const fileContents = await fs.readFile(outputPath, "utf8");
     const payload = JSON.parse(fileContents) as {
-      endpoints: Array<{ name: string; requestExample?: unknown }>;
+      endpoints: Array<{ name: string; requestExamples?: unknown }>;
     };
     expect(payload.endpoints.find((endpoint) => endpoint.name === "create")).not.toHaveProperty(
-      "requestExample",
+      "requestExamples",
     );
   });
 
   it("emits shorthand-property endpoint examples through the real CLI path", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-shorthand-example-cli-"));
+    const tempDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rivet-ts-shorthand-example-cli-"),
+    );
     const entryPath = path.join(tempDirectory, "contracts.ts");
     const outputPath = path.join(tempDirectory, "contract.json");
     const normalizedImportPath = toImportPath(
@@ -382,17 +445,23 @@ describe("CLI lifecycle", () => {
 
     const fileContents = await fs.readFile(outputPath, "utf8");
     const payload = JSON.parse(fileContents) as {
-      endpoints: Array<{ name: string; requestExample?: { data: unknown } }>;
+      endpoints: Array<{
+        name: string;
+        requestExamples?: Array<{ json: unknown; mediaType: string }>;
+      }>;
     };
 
-    expect(payload.endpoints.find((endpoint) => endpoint.name === "create")?.requestExample).toEqual(
+    expect(
+      payload.endpoints.find((endpoint) => endpoint.name === "create")?.requestExamples,
+    ).toEqual([
       {
-        data: {
+        json: {
           email: "jane@example.com",
           role: "admin",
         },
+        mediaType: "application/json",
       },
-    );
+    ]);
   });
 
   it.each([
@@ -557,7 +626,7 @@ describe("CLI lifecycle", () => {
         name: string;
         routeTemplate: string;
         description?: string;
-        requestExample?: { data: Record<string, unknown> };
+        requestExamples?: Array<{ json: Record<string, unknown>; mediaType: string }>;
         successResponseExample?: { data: Record<string, unknown> };
         security?: { isAnonymous: boolean };
         responses: Array<{ statusCode: number; dataType?: { name?: string } }>;
@@ -576,11 +645,14 @@ describe("CLI lifecycle", () => {
           name: "createPing",
           routeTemplate: "/api/ping",
           description: "Installed consumer ping",
-          requestExample: {
-            data: {
-              name: "Ada",
+          requestExamples: [
+            {
+              json: {
+                name: "Ada",
+              },
+              mediaType: "application/json",
             },
-          },
+          ],
           successResponseExample: {
             data: {
               ok: true,

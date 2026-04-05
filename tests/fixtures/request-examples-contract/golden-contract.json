@@ -1,0 +1,96 @@
+{
+  "types": [
+    {
+      "name": "CreateMemberRequest",
+      "typeParameters": [],
+      "properties": [
+        {
+          "name": "email",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "optional": false
+        },
+        {
+          "name": "role",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "optional": false
+        }
+      ]
+    }
+  ],
+  "enums": [],
+  "endpoints": [
+    {
+      "name": "create",
+      "httpMethod": "POST",
+      "routeTemplate": "/api/request-examples",
+      "params": [
+        {
+          "name": "body",
+          "type": {
+            "kind": "ref",
+            "name": "CreateMemberRequest"
+          },
+          "source": "body"
+        }
+      ],
+      "controllerName": "requestExamples",
+      "responses": [
+        {
+          "statusCode": 201
+        }
+      ],
+      "requestExamples": [
+        {
+          "json": {
+            "email": "jane@example.com",
+            "role": "admin"
+          },
+          "mediaType": "application/json"
+        },
+        {
+          "json": {
+            "email": "alex@example.com",
+            "role": "reviewer"
+          },
+          "mediaType": "application/json"
+        }
+      ]
+    },
+    {
+      "name": "legacyCreate",
+      "httpMethod": "POST",
+      "routeTemplate": "/api/request-examples/legacy",
+      "params": [
+        {
+          "name": "body",
+          "type": {
+            "kind": "ref",
+            "name": "CreateMemberRequest"
+          },
+          "source": "body"
+        }
+      ],
+      "controllerName": "requestExamples",
+      "responses": [
+        {
+          "statusCode": 201
+        }
+      ],
+      "requestExamples": [
+        {
+          "json": {
+            "email": "legacy@example.com",
+            "role": "member"
+          },
+          "mediaType": "application/json"
+        }
+      ]
+    }
+  ]
+}
