@@ -499,29 +499,132 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     }
 
     const propertyMap = this.createPropertyMap(node, sourceFile, checker);
-    const jsonNode = propertyMap?.get("json");
-    if (!propertyMap || !jsonNode || propertyMap.size !== 1) {
+    if (!propertyMap) {
       diagnostics.push(
         this.createNodeDiagnostic(
           sourceFile,
           node,
           "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-          `Endpoint "${endpointName}" requestExamples entries must be typeof exportedConst or { json: typeof exportedConst }.`,
+          `Endpoint "${endpointName}" requestExamples entries must be typeof exportedConst or a supported descriptor object.`,
         ),
       );
       return null;
     }
 
-    return this.parseEndpointExample(
-      jsonNode,
-      targetNode,
-      "requestExamples entries",
-      "input",
+    const name = this.parseRequestExampleDescriptorStringLiteral(
+      propertyMap.get("name"),
+      "name",
       sourceFile,
-      checker,
       diagnostics,
       endpointName,
     );
+    const mediaType = this.parseRequestExampleDescriptorStringLiteral(
+      propertyMap.get("mediaType"),
+      "mediaType",
+      sourceFile,
+      diagnostics,
+      endpointName,
+    );
+
+    if (name === null || mediaType === null) {
+      return null;
+    }
+
+    const jsonNode = propertyMap.get("json");
+    const componentExampleIdNode = propertyMap.get("componentExampleId");
+    const resolvedJsonNode = propertyMap.get("resolvedJson");
+
+    if (jsonNode) {
+      if (componentExampleIdNode || resolvedJsonNode) {
+        diagnostics.push(
+          this.createNodeDiagnostic(
+            sourceFile,
+            node,
+            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+            `Endpoint "${endpointName}" requestExamples entries must use either inline json or ref-backed componentExampleId/resolvedJson fields, not both.`,
+          ),
+        );
+        return null;
+      }
+
+      const data = this.parseEndpointExampleData(
+        jsonNode,
+        targetNode,
+        "requestExamples entries.json",
+        "input",
+        sourceFile,
+        checker,
+        diagnostics,
+        endpointName,
+      );
+      if (data === null) {
+        return null;
+      }
+
+      return new EndpointExampleSpec({
+        data,
+        name: name ?? undefined,
+        mediaType: mediaType ?? undefined,
+      });
+    }
+
+    if (componentExampleIdNode || resolvedJsonNode) {
+      if (!componentExampleIdNode || !resolvedJsonNode) {
+        diagnostics.push(
+          this.createNodeDiagnostic(
+            sourceFile,
+            node,
+            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+            `Endpoint "${endpointName}" ref-backed requestExamples entries must declare both componentExampleId and resolvedJson.`,
+          ),
+        );
+        return null;
+      }
+
+      const componentExampleId = this.parseStringLiteral(componentExampleIdNode, sourceFile);
+      if (!componentExampleId) {
+        diagnostics.push(
+          this.createNodeDiagnostic(
+            sourceFile,
+            componentExampleIdNode,
+            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+            `Endpoint "${endpointName}" requestExamples entries must declare componentExampleId as a string literal.`,
+          ),
+        );
+        return null;
+      }
+
+      const resolvedJson = this.parseEndpointExampleData(
+        resolvedJsonNode,
+        targetNode,
+        "requestExamples entries.resolvedJson",
+        "input",
+        sourceFile,
+        checker,
+        diagnostics,
+        endpointName,
+      );
+      if (resolvedJson === null) {
+        return null;
+      }
+
+      return new EndpointExampleSpec({
+        componentExampleId,
+        resolvedJson,
+        name: name ?? undefined,
+        mediaType: mediaType ?? undefined,
+      });
+    }
+
+    diagnostics.push(
+      this.createNodeDiagnostic(
+        sourceFile,
+        node,
+        "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+        `Endpoint "${endpointName}" requestExamples entries must be typeof exportedConst, { json: typeof exportedConst }, or { componentExampleId: \"...\"; resolvedJson: typeof exportedConst }.`,
+      ),
+    );
+    return null;
   }
 
   private parseEndpointExample(
@@ -534,6 +637,30 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     diagnostics: ExtractionDiagnostic[],
     endpointName: string,
   ): EndpointExampleSpec | null {
+    const data = this.parseEndpointExampleData(
+      node,
+      targetNode,
+      propertyName,
+      targetPropertyName,
+      sourceFile,
+      checker,
+      diagnostics,
+      endpointName,
+    );
+
+    return data === null ? null : new EndpointExampleSpec({ data });
+  }
+
+  private parseEndpointExampleData(
+    node: ts.TypeNode | undefined,
+    targetNode: ts.TypeNode | undefined,
+    propertyName: string,
+    targetPropertyName: "input" | "response",
+    sourceFile: ts.SourceFile,
+    checker: ts.TypeChecker,
+    diagnostics: ExtractionDiagnostic[],
+    endpointName: string,
+  ): EndpointExampleValue | null {
     if (!node) {
       return null;
     }
@@ -607,7 +734,34 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       return null;
     }
 
-    return new EndpointExampleSpec({ data });
+    return data;
+  }
+
+  private parseRequestExampleDescriptorStringLiteral(
+    node: ts.TypeNode | undefined,
+    propertyName: "name" | "mediaType",
+    sourceFile: ts.SourceFile,
+    diagnostics: ExtractionDiagnostic[],
+    endpointName: string,
+  ): string | null | undefined {
+    if (!node) {
+      return undefined;
+    }
+
+    const value = this.parseStringLiteral(node, sourceFile);
+    if (value !== null) {
+      return value;
+    }
+
+    diagnostics.push(
+      this.createNodeDiagnostic(
+        sourceFile,
+        node,
+        "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+        `Endpoint "${endpointName}" requestExamples entries must declare ${propertyName} as a string literal when provided.`,
+      ),
+    );
+    return null;
   }
 
   private createPropertyMap(

@@ -2,6 +2,7 @@ import path from "node:path";
 import ts from "typescript";
 import { RivetContractLowerer } from "../../application/ports/rivet-contract-lowerer.js";
 import { ContractBundle } from "../../domain/contract-bundle.js";
+import { EndpointExampleSpec } from "../../domain/contract.js";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import { RivetContractLoweringResult } from "../../domain/rivet-contract-lowering-result.js";
 import {
@@ -26,7 +27,7 @@ type EndpointContext = {
   contractName: string;
   endpointName: string;
   httpMethod: string;
-  requestExamples?: readonly RivetRequestExample[];
+  requestExamples?: readonly EndpointExampleSpec[];
   successResponseExample?: RivetEndpointExample;
 };
 
@@ -376,19 +377,11 @@ export class TypeScriptRivetContractLowerer extends RivetContractLowerer {
           contractName: contract.name,
           endpointName: endpoint.name,
           httpMethod: endpoint.method,
-          requestExamples:
-            endpoint.requestExamples.length > 0
-              ? endpoint.requestExamples.map(
-                  (requestExample) =>
-                    new RivetRequestExample({
-                      json: requestExample.data,
-                      mediaType: DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE,
-                    }),
-                )
+          requestExamples: endpoint.requestExamples.length > 0 ? endpoint.requestExamples : undefined,
+          successResponseExample:
+            endpoint.successResponseExample?.data !== undefined
+              ? new RivetEndpointExample({ data: endpoint.successResponseExample.data })
               : undefined,
-          successResponseExample: endpoint.successResponseExample
-            ? new RivetEndpointExample({ data: endpoint.successResponseExample.data })
-            : undefined,
         });
 
         if (!loweredEndpoint) {
@@ -541,6 +534,9 @@ class TypeEmissionContext {
             scheme: anonymous ? undefined : (securityScheme ?? undefined),
           })
         : undefined;
+    const requestExamples = context.requestExamples
+      ?.map((requestExample) => this.lowerRequestExample(requestExample))
+      .filter((requestExample): requestExample is RivetRequestExample => requestExample !== null);
 
     return new RivetEndpointDefinition({
       name: toCamelCase(context.endpointName),
@@ -552,7 +548,7 @@ class TypeEmissionContext {
       responses,
       summary,
       description,
-      requestExamples: context.requestExamples,
+      requestExamples: requestExamples?.length ? requestExamples : undefined,
       successResponseExample: context.successResponseExample,
       security,
       fileContentType,
@@ -890,6 +886,36 @@ class TypeEmissionContext {
     }
 
     return params;
+  }
+
+  private lowerRequestExample(example: EndpointExampleSpec): RivetRequestExample | null {
+    const mediaType = example.mediaType ?? DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE;
+
+    if (example.data !== undefined) {
+      return new RivetRequestExample({
+        mediaType,
+        json: example.data,
+        name: example.name,
+      });
+    }
+
+    if (example.componentExampleId && example.resolvedJson !== undefined) {
+      return new RivetRequestExample({
+        mediaType,
+        componentExampleId: example.componentExampleId,
+        resolvedJson: example.resolvedJson,
+        name: example.name,
+      });
+    }
+
+    this.diagnostics.push(
+      new ExtractionDiagnostic({
+        severity: "error",
+        code: "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+        message: "Request example must resolve to either inline json or componentExampleId/resolvedJson.",
+      }),
+    );
+    return null;
   }
 
   private getNamedPropertyTypes(inputNode: ts.TypeNode): Map<string, RivetType> {

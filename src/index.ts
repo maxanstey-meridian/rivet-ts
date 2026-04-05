@@ -8,8 +8,12 @@ export type {
   EndpointExampleAuthoringValue,
   EndpointAuthoringSpec,
   EndpointErrorAuthoringSpec,
+  EndpointRequestExampleAuthoringDescriptor,
+  EndpointRequestExampleAuthoringSpec,
   EndpointSecurityAuthoringSpec,
   Format,
+  InlineEndpointRequestExampleAuthoringSpec,
+  RefEndpointRequestExampleAuthoringSpec,
 } from "./domain/authoring-types.js";
 export {
   handle,

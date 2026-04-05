@@ -10,10 +10,40 @@ export type EndpointExampleValue =
   | { readonly [key: string]: EndpointExampleValue };
 
 export class EndpointExampleSpec {
-  public readonly data: EndpointExampleValue;
+  public readonly data?: EndpointExampleValue;
+  public readonly name?: string;
+  public readonly mediaType?: string;
+  public readonly componentExampleId?: string;
+  public readonly resolvedJson?: EndpointExampleValue;
 
-  public constructor(input: { data: EndpointExampleValue }) {
-    this.data = input.data;
+  public constructor(
+    input:
+      | {
+          data: EndpointExampleValue;
+          name?: string;
+          mediaType?: string;
+        }
+      | {
+          componentExampleId: string;
+          resolvedJson: EndpointExampleValue;
+          name?: string;
+          mediaType?: string;
+        },
+  ) {
+    if ("data" in input) {
+      this.data = input.data;
+    } else {
+      this.componentExampleId = input.componentExampleId;
+      this.resolvedJson = input.resolvedJson;
+    }
+
+    if (input.name !== undefined) {
+      this.name = input.name;
+    }
+
+    if (input.mediaType !== undefined) {
+      this.mediaType = input.mediaType;
+    }
   }
 }
 

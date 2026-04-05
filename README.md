@@ -43,6 +43,14 @@ export interface CreateMemberRequest {
   email: string;
 }
 
+export const createMemberRequestExample = {
+  email: "ada@example.com",
+} satisfies CreateMemberRequest;
+
+export const reviewMemberRequestExample = {
+  email: "grace@example.com",
+} satisfies CreateMemberRequest;
+
 export interface ValidationErrorDto {
   message: string;
   fields: Record<string, string[]>;
@@ -63,6 +71,20 @@ export interface MembersContract extends Contract<"MembersContract"> {
     input: CreateMemberRequest;
     response: MemberDto;
     successStatus: 201;
+    requestExamples: [
+      typeof createMemberRequestExample,
+      {
+        name: "review payload";
+        mediaType: "application/json";
+        json: typeof reviewMemberRequestExample;
+      },
+      {
+        name: "component-backed payload";
+        mediaType: "application/json";
+        componentExampleId: "CreateMemberRequestExample";
+        resolvedJson: typeof reviewMemberRequestExample;
+      },
+    ];
     errors: [{ status: 422; response: ValidationErrorDto; description: "Validation failed" }];
     security: { scheme: "admin" };
   }>;
@@ -83,6 +105,12 @@ export interface MembersContract extends Contract<"MembersContract"> {
 pnpm build
 node ./dist/interfaces/cli/main.js --entry ./contracts.ts --out ./contract.json
 ```
+
+`requestExample` still works as a singular shorthand, but the steady-state DSL is plural
+`requestExamples`. Bare `typeof exportedConst` entries are inline JSON shorthand; richer request
+examples use explicit descriptors with optional `name` and `mediaType`, or `componentExampleId`
+plus `resolvedJson` when you want to preserve a component-backed example reference in the emitted
+contract JSON.
 
 ```json
 {

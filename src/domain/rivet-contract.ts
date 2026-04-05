@@ -80,11 +80,37 @@ export class RivetEndpointExample {
 }
 
 export class RivetRequestExample {
-  public readonly json: RivetEndpointExampleValue;
+  public readonly name?: string;
   public readonly mediaType: string;
+  public readonly json?: RivetEndpointExampleValue;
+  public readonly componentExampleId?: string;
+  public readonly resolvedJson?: RivetEndpointExampleValue;
 
-  public constructor(input: { json: RivetEndpointExampleValue; mediaType: string }) {
-    this.json = input.json;
+  public constructor(
+    input:
+      | {
+          mediaType: string;
+          json: RivetEndpointExampleValue;
+          name?: string;
+        }
+      | {
+          mediaType: string;
+          componentExampleId: string;
+          resolvedJson: RivetEndpointExampleValue;
+          name?: string;
+        },
+  ) {
+    if ("json" in input) {
+      this.json = input.json;
+    } else {
+      this.componentExampleId = input.componentExampleId;
+      this.resolvedJson = input.resolvedJson;
+    }
+
+    if (input.name !== undefined) {
+      this.name = input.name;
+    }
+
     this.mediaType = input.mediaType;
   }
 }

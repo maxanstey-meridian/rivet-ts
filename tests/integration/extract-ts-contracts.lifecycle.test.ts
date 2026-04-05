@@ -402,6 +402,97 @@ describe("ExtractTsContracts lifecycle", () => {
     ]);
   });
 
+  it("extracts named inline and ref-backed request example descriptors in authored order", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-request-examples-v2-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        "interface CreateMemberRequest {",
+        "  email: string;",
+        "  role: string;",
+        "}",
+        "",
+        "export const defaultRequestExample = {",
+        '  email: "jane@example.com",',
+        '  role: "admin",',
+        "} satisfies CreateMemberRequest;",
+        "",
+        "export const namedRequestExample = {",
+        '  email: "alex@example.com",',
+        '  role: "reviewer",',
+        "} satisfies CreateMemberRequest;",
+        "",
+        "export const componentResolvedRequestExample = {",
+        '  email: "component@example.com",',
+        '  role: "member",',
+        "} satisfies CreateMemberRequest;",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/temp";',
+        "    input: CreateMemberRequest;",
+        "    response: void;",
+        "    requestExamples: [",
+        "      typeof defaultRequestExample,",
+        '      { name: "plain-text"; mediaType: "text/plain"; json: typeof namedRequestExample },',
+        "      {",
+        '        name: "component-backed";',
+        '        mediaType: "application/json";',
+        '        componentExampleId: "CreateMemberExample";',
+        "        resolvedJson: typeof componentResolvedRequestExample;",
+        "      },",
+        "    ];",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await useCase.execute({ entryPath });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(bundle.diagnostics).toEqual([]);
+    expect(bundle.contracts[0]?.endpoints[0]?.requestExamples).toEqual([
+      {
+        data: {
+          email: "jane@example.com",
+          role: "admin",
+        },
+      },
+      {
+        name: "plain-text",
+        mediaType: "text/plain",
+        data: {
+          email: "alex@example.com",
+          role: "reviewer",
+        },
+      },
+      {
+        name: "component-backed",
+        mediaType: "application/json",
+        componentExampleId: "CreateMemberExample",
+        resolvedJson: {
+          email: "component@example.com",
+          role: "member",
+        },
+      },
+    ]);
+  });
+
   it("extracts contracts from a temp consumer entry without requiring local node ambient types", async () => {
     const frontend = new TypeScriptContractFrontend();
     const useCase = new ExtractTsContracts(frontend);

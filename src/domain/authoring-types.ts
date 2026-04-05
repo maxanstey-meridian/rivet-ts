@@ -36,9 +36,27 @@ export type EndpointExampleAuthoringReference<TExample = EndpointExampleAuthorin
             }
           : never;
 
-export type EndpointRequestExampleAuthoringSpec<TExample = EndpointExampleAuthoringValue> = {
+export type EndpointRequestExampleAuthoringDescriptor = {
+  readonly name?: string;
+  readonly mediaType?: string;
+};
+
+export type InlineEndpointRequestExampleAuthoringSpec<
+  TExample = EndpointExampleAuthoringValue,
+> = EndpointRequestExampleAuthoringDescriptor & {
   readonly json: EndpointExampleAuthoringReference<TExample>;
 };
+
+export type RefEndpointRequestExampleAuthoringSpec<
+  TExample = EndpointExampleAuthoringValue,
+> = EndpointRequestExampleAuthoringDescriptor & {
+  readonly componentExampleId: string;
+  readonly resolvedJson: EndpointExampleAuthoringReference<TExample>;
+};
+
+export type EndpointRequestExampleAuthoringSpec<TExample = EndpointExampleAuthoringValue> =
+  | InlineEndpointRequestExampleAuthoringSpec<TExample>
+  | RefEndpointRequestExampleAuthoringSpec<TExample>;
 
 export type EndpointAuthoringSpec = {
   readonly method: EndpointAuthoringHttpMethod;
@@ -87,14 +105,23 @@ type EndpointRequestExamplesAuthoringEntry<TSpec extends EndpointAuthoringSpec> 
   | EndpointRequestExampleAuthoringSpec<"input" extends keyof TSpec ? TSpec["input"] : never>;
 
 type ExactEndpointRequestExamplesAuthoringEntry<TSpec extends EndpointAuthoringSpec, TEntry> =
-  TEntry extends EndpointRequestExampleAuthoringSpec<unknown>
+  TEntry extends RefEndpointRequestExampleAuthoringSpec<unknown>
     ? ExactAuthoringShape<
         TEntry,
-        EndpointRequestExampleAuthoringSpec<"input" extends keyof TSpec ? TSpec["input"] : never>
+        RefEndpointRequestExampleAuthoringSpec<
+          "input" extends keyof TSpec ? TSpec["input"] : never
+        >
       >
-    : TEntry extends EndpointRequestExamplesAuthoringEntry<TSpec>
-      ? EndpointRequestExamplesAuthoringEntry<TSpec>
-      : TEntry;
+    : TEntry extends InlineEndpointRequestExampleAuthoringSpec<unknown>
+      ? ExactAuthoringShape<
+          TEntry,
+          InlineEndpointRequestExampleAuthoringSpec<
+            "input" extends keyof TSpec ? TSpec["input"] : never
+          >
+        >
+      : TEntry extends EndpointRequestExamplesAuthoringEntry<TSpec>
+        ? EndpointRequestExamplesAuthoringEntry<TSpec>
+        : TEntry;
 
 type ExactEndpointRequestExamplesAuthoringTuple<
   TSpec extends EndpointAuthoringSpec,

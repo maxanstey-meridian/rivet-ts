@@ -167,6 +167,188 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     expect(typedPayload.endpoints.every((endpoint) => !("requestExample" in endpoint))).toBe(true);
   });
 
+  it("lowers named inline and ref-backed request example descriptors without reordering or reshaping them", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const lowerer = new TypeScriptRivetContractLowerer();
+    const extractUseCase = new ExtractTsContracts(frontend);
+    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-request-examples-v2-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        "export interface CreateMemberRequest {",
+        "  email: string;",
+        "  role: string;",
+        "}",
+        "",
+        "export const defaultRequestExample = {",
+        '  email: "jane@example.com",',
+        '  role: "admin",',
+        "} satisfies CreateMemberRequest;",
+        "",
+        "export const namedRequestExample = {",
+        '  email: "alex@example.com",',
+        '  role: "reviewer",',
+        "} satisfies CreateMemberRequest;",
+        "",
+        "export const componentResolvedRequestExample = {",
+        '  email: "component@example.com",',
+        '  role: "member",',
+        "} satisfies CreateMemberRequest;",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/temp";',
+        "    input: CreateMemberRequest;",
+        "    response: void;",
+        "    requestExamples: [",
+        "      typeof defaultRequestExample,",
+        '      { name: "plain-text"; mediaType: "text/plain"; json: typeof namedRequestExample },',
+        "      {",
+        '        name: "component-backed";',
+        '        mediaType: "application/json";',
+        '        componentExampleId: "CreateMemberExample";',
+        "        resolvedJson: typeof componentResolvedRequestExample;",
+        "      },",
+        "    ];",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await extractUseCase.execute({ entryPath });
+    const lowered = await lowerUseCase.execute({ bundle });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(lowered.hasErrors).toBe(false);
+
+    const payload = JSON.parse(lowered.toJson()) as {
+      endpoints: Array<{
+        name: string;
+        requestExamples?: Array<{
+          name?: string;
+          mediaType: string;
+          json?: Record<string, unknown>;
+          componentExampleId?: string;
+          resolvedJson?: Record<string, unknown>;
+        }>;
+      }>;
+    };
+
+    expect(
+      payload.endpoints.find((endpoint) => endpoint.name === "create")?.requestExamples,
+    ).toEqual([
+      {
+        json: {
+          email: "jane@example.com",
+          role: "admin",
+        },
+        mediaType: "application/json",
+      },
+      {
+        name: "plain-text",
+        mediaType: "text/plain",
+        json: {
+          email: "alex@example.com",
+          role: "reviewer",
+        },
+      },
+      {
+        name: "component-backed",
+        mediaType: "application/json",
+        componentExampleId: "CreateMemberExample",
+        resolvedJson: {
+          email: "component@example.com",
+          role: "member",
+        },
+      },
+    ]);
+  });
+
+  it("reports request example descriptors that mix inline and ref-backed fields", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const lowerer = new TypeScriptRivetContractLowerer();
+    const extractUseCase = new ExtractTsContracts(frontend);
+    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+    const tempDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rivet-ts-invalid-request-example-descriptor-"),
+    );
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        "export interface CreateMemberRequest {",
+        "  email: string;",
+        "}",
+        "",
+        "export const createMemberRequestExample = {",
+        '  email: "jane@example.com",',
+        "} satisfies CreateMemberRequest;",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/temp";',
+        "    input: CreateMemberRequest;",
+        "    response: void;",
+        "    requestExamples: [",
+        "      {",
+        '        json: typeof createMemberRequestExample;',
+        '        componentExampleId: "CreateMemberExample";',
+        "        resolvedJson: typeof createMemberRequestExample;",
+        "      },",
+        "    ];",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await extractUseCase.execute({ entryPath });
+    const lowered = await lowerUseCase.execute({ bundle });
+
+    expect(bundle.hasErrors).toBe(true);
+    expect(lowered.hasErrors).toBe(true);
+    expect(lowered.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+          filePath: entryPath,
+        }),
+      ]),
+    );
+
+    const payload = JSON.parse(lowered.toJson()) as {
+      endpoints: Array<{ name: string; requestExamples?: unknown }>;
+    };
+    expect(payload.endpoints.find((endpoint) => endpoint.name === "create")).not.toHaveProperty(
+      "requestExamples",
+    );
+  });
+
   it.each([
     ["readonly-array syntax", "readonly ValidationFailure[]"],
     ["Array helper syntax", "Array<ValidationFailure>"],
