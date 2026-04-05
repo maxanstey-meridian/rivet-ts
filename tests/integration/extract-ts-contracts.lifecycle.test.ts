@@ -223,10 +223,10 @@ describe("ExtractTsContracts lifecycle", () => {
     const payload = JSON.parse(lowered.toJson()) as {
       endpoints: Array<{
         name: string;
-        requestExamples?: Array<{ json: Record<string, unknown>; mediaType: string }>;
+        requestExamples?: Array<{ json: string; mediaType: string }>;
         responses: Array<{
           statusCode: number;
-          examples?: Array<{ mediaType: string; json: Record<string, unknown> }>;
+          examples?: Array<{ mediaType: string; json: string }>;
         }>;
       }>;
     };
@@ -234,7 +234,7 @@ describe("ExtractTsContracts lifecycle", () => {
 
     expect(create?.requestExamples).toEqual([
       {
-        json: {
+        json: JSON.stringify({
           teamId: "550e8400-e29b-41d4-a716-446655440000",
           email: "jane@example.com",
           status: "active",
@@ -247,7 +247,7 @@ describe("ExtractTsContracts lifecycle", () => {
             invitesSent: 3,
             logins: 12,
           },
-        },
+        }),
         mediaType: "application/json",
       },
     ]);
@@ -255,7 +255,7 @@ describe("ExtractTsContracts lifecycle", () => {
     expect(successResponse?.examples).toEqual([
       {
         mediaType: "application/json",
-        json: {
+        json: JSON.stringify({
           data: {
             id: "550e8400-e29b-41d4-a716-446655440001",
             email: "jane@example.com",
@@ -268,7 +268,7 @@ describe("ExtractTsContracts lifecycle", () => {
             },
           },
           included: ["profile", "audit"],
-        },
+        }),
       },
     ]);
     expect(create).not.toHaveProperty("successResponseExample");

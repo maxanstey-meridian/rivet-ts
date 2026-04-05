@@ -82,9 +82,9 @@ export class RivetEndpointExample {
 export class RivetRequestExample {
   public readonly name?: string;
   public readonly mediaType: string;
-  public readonly json?: RivetEndpointExampleValue;
+  public readonly json?: string;
   public readonly componentExampleId?: string;
-  public readonly resolvedJson?: RivetEndpointExampleValue;
+  public readonly resolvedJson?: string;
 
   public constructor(
     input:
@@ -101,10 +101,10 @@ export class RivetRequestExample {
         },
   ) {
     if ("json" in input) {
-      this.json = input.json;
+      this.json = JSON.stringify(input.json);
     } else {
       this.componentExampleId = input.componentExampleId;
-      this.resolvedJson = input.resolvedJson;
+      this.resolvedJson = JSON.stringify(input.resolvedJson);
     }
 
     if (input.name !== undefined) {
@@ -118,9 +118,9 @@ export class RivetRequestExample {
 export class RivetResponseExample {
   public readonly name?: string;
   public readonly mediaType: string;
-  public readonly json?: RivetEndpointExampleValue;
+  public readonly json?: string;
   public readonly componentExampleId?: string;
-  public readonly resolvedJson?: RivetEndpointExampleValue;
+  public readonly resolvedJson?: string;
 
   public constructor(
     input:
@@ -137,10 +137,10 @@ export class RivetResponseExample {
         },
   ) {
     if ("json" in input) {
-      this.json = input.json;
+      this.json = JSON.stringify(input.json);
     } else {
       this.componentExampleId = input.componentExampleId;
-      this.resolvedJson = input.resolvedJson;
+      this.resolvedJson = JSON.stringify(input.resolvedJson);
     }
 
     if (input.name !== undefined) {

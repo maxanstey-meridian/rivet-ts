@@ -34,9 +34,9 @@ describe("Expressive contract lifecycle", () => {
         params: Array<{ name: string; source: string; type: Record<string, unknown> }>;
         responses: Array<{
           statusCode: number;
-          examples?: Array<{ mediaType: string; json: Record<string, unknown> }>;
+          examples?: Array<{ mediaType: string; json: string }>;
         }>;
-        requestExamples?: Array<{ json: Record<string, unknown>; mediaType: string }>;
+        requestExamples?: Array<{ json: string; mediaType: string }>;
       }>;
       types: Array<{
         name: string;
@@ -111,7 +111,7 @@ describe("Expressive contract lifecycle", () => {
     );
     expect(createEndpoint?.requestExamples).toEqual([
       {
-        json: {
+        json: JSON.stringify({
           teamId: "550e8400-e29b-41d4-a716-446655440000",
           email: "jane@example.com",
           status: "active",
@@ -124,7 +124,7 @@ describe("Expressive contract lifecycle", () => {
             invitesSent: 3,
             logins: 12,
           },
-        },
+        }),
         mediaType: "application/json",
       },
     ]);
@@ -134,7 +134,7 @@ describe("Expressive contract lifecycle", () => {
     expect(createSuccessResponse?.examples).toEqual([
       {
         mediaType: "application/json",
-        json: {
+        json: JSON.stringify({
           data: {
             id: "550e8400-e29b-41d4-a716-446655440001",
             email: "jane@example.com",
@@ -147,7 +147,7 @@ describe("Expressive contract lifecycle", () => {
             },
           },
           included: ["profile", "audit"],
-        },
+        }),
       },
     ]);
     expect(createEndpoint).not.toHaveProperty("successResponseExample");

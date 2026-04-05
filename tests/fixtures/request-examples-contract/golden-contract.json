@@ -47,18 +47,12 @@
       ],
       "requestExamples": [
         {
-          "json": {
-            "email": "jane@example.com",
-            "role": "admin"
-          },
-          "mediaType": "application/json"
+          "mediaType": "application/json",
+          "json": "{\"email\":\"jane@example.com\",\"role\":\"admin\"}"
         },
         {
-          "json": {
-            "email": "alex@example.com",
-            "role": "reviewer"
-          },
-          "mediaType": "application/json"
+          "mediaType": "application/json",
+          "json": "{\"email\":\"alex@example.com\",\"role\":\"reviewer\"}"
         }
       ]
     },
@@ -84,11 +78,8 @@
       ],
       "requestExamples": [
         {
-          "json": {
-            "email": "legacy@example.com",
-            "role": "member"
-          },
-          "mediaType": "application/json"
+          "mediaType": "application/json",
+          "json": "{\"email\":\"legacy@example.com\",\"role\":\"member\"}"
         }
       ]
     }

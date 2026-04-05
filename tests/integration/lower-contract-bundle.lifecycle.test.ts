@@ -73,10 +73,10 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     const payload = JSON.parse(lowered.toJson()) as {
       endpoints: Array<{
         name: string;
-        requestExamples?: Array<{ json: Record<string, unknown>; mediaType: string }>;
+        requestExamples?: Array<{ json: string; mediaType: string }>;
         responses: Array<{
           statusCode: number;
-          examples?: Array<{ mediaType: string; json: unknown }>;
+          examples?: Array<{ mediaType: string; json: string }>;
         }>;
       }>;
     };
@@ -85,9 +85,9 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     expect(list).toMatchObject({
       requestExamples: [
         {
-          json: {
+          json: JSON.stringify({
             search: "Ada",
-          },
+          }),
           mediaType: "application/json",
         },
       ],
@@ -96,12 +96,12 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     expect(successResponse?.examples).toEqual([
       {
         mediaType: "application/json",
-        json: [
+        json: JSON.stringify([
           {
             id: "mem_123",
             email: "ada@example.com",
           },
-        ],
+        ]),
       },
     ]);
     expect(list).not.toHaveProperty("successResponseExample");
@@ -138,24 +138,24 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     const typedPayload = payload as {
       endpoints: Array<{
         name: string;
-        requestExamples?: Array<{ json: Record<string, unknown>; mediaType: string }>;
+        requestExamples?: Array<{ json: string; mediaType: string }>;
       }>;
     };
 
     expect(typedPayload.endpoints.find((endpoint) => endpoint.name === "create")).toMatchObject({
       requestExamples: [
         {
-          json: {
+          json: JSON.stringify({
             email: "jane@example.com",
             role: "admin",
-          },
+          }),
           mediaType: "application/json",
         },
         {
-          json: {
+          json: JSON.stringify({
             email: "alex@example.com",
             role: "reviewer",
-          },
+          }),
           mediaType: "application/json",
         },
       ],
@@ -165,10 +165,10 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     ).toMatchObject({
       requestExamples: [
         {
-          json: {
+          json: JSON.stringify({
             email: "legacy@example.com",
             role: "member",
-          },
+          }),
           mediaType: "application/json",
         },
       ],
@@ -250,9 +250,9 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
         requestExamples?: Array<{
           name?: string;
           mediaType: string;
-          json?: Record<string, unknown>;
+          json?: string;
           componentExampleId?: string;
-          resolvedJson?: Record<string, unknown>;
+          resolvedJson?: string;
         }>;
       }>;
     };
@@ -261,28 +261,28 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
       payload.endpoints.find((endpoint) => endpoint.name === "create")?.requestExamples,
     ).toEqual([
       {
-        json: {
+        json: JSON.stringify({
           email: "jane@example.com",
           role: "admin",
-        },
+        }),
         mediaType: "application/json",
       },
       {
         name: "plain-text",
         mediaType: "text/plain",
-        json: {
+        json: JSON.stringify({
           email: "alex@example.com",
           role: "reviewer",
-        },
+        }),
       },
       {
         name: "component-backed",
         mediaType: "application/json",
         componentExampleId: "CreateMemberExample",
-        resolvedJson: {
+        resolvedJson: JSON.stringify({
           email: "component@example.com",
           role: "member",
-        },
+        }),
       },
     ]);
   });
@@ -560,18 +560,18 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
         name: string;
         responses: Array<{
           statusCode: number;
-          examples?: Array<{ mediaType: string; json: unknown }>;
+          examples?: Array<{ mediaType: string; json: string }>;
         }>;
       }>;
     };
 
     const tags = payload.endpoints.find((endpoint) => endpoint.name === "tags");
     expect(tags?.responses.find((r) => r.statusCode === 200)?.examples).toEqual([
-      { mediaType: "application/json", json: ["alpha", "beta"] },
+      { mediaType: "application/json", json: JSON.stringify(["alpha", "beta"]) },
     ]);
     const version = payload.endpoints.find((endpoint) => endpoint.name === "version");
     expect(version?.responses.find((r) => r.statusCode === 200)?.examples).toEqual([
-      { mediaType: "application/json", json: 3 },
+      { mediaType: "application/json", json: JSON.stringify(3) },
     ]);
     expect(tags).not.toHaveProperty("successResponseExample");
     expect(version).not.toHaveProperty("successResponseExample");
@@ -630,7 +630,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     const payload = JSON.parse(lowered.toJson()) as {
       endpoints: Array<{
         name: string;
-        requestExamples?: Array<{ json: unknown; mediaType: string }>;
+        requestExamples?: Array<{ json: string; mediaType: string }>;
       }>;
     };
 
@@ -638,10 +638,10 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
       payload.endpoints.find((endpoint) => endpoint.name === "create")?.requestExamples,
     ).toEqual([
       {
-        json: {
+        json: JSON.stringify({
           email: "jane@example.com",
           role: "admin",
-        },
+        }),
         mediaType: "application/json",
       },
     ]);
@@ -781,7 +781,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
         name: string;
         responses: Array<{
           statusCode: number;
-          examples?: Array<{ mediaType: string; json: Record<string, unknown> }>;
+          examples?: Array<{ mediaType: string; json: string }>;
         }>;
       }>;
     };
@@ -789,12 +789,12 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     const create = typedPayload.endpoints.find((endpoint) => endpoint.name === "create");
     const successResponse = create?.responses.find((response) => response.statusCode === 201);
     expect(successResponse?.examples).toEqual([
-      { mediaType: "application/json", json: { id: "mem_001", email: "jane@example.com" } },
-      { mediaType: "application/json", json: { id: "mem_002", email: "alex@example.com" } },
+      { mediaType: "application/json", json: JSON.stringify({ id: "mem_001", email: "jane@example.com" }) },
+      { mediaType: "application/json", json: JSON.stringify({ id: "mem_002", email: "alex@example.com" }) },
     ]);
     const errorResponse = create?.responses.find((response) => response.statusCode === 422);
     expect(errorResponse?.examples).toEqual([
-      { mediaType: "application/json", json: { message: "Email is required", code: "VALIDATION_ERROR" } },
+      { mediaType: "application/json", json: JSON.stringify({ message: "Email is required", code: "VALIDATION_ERROR" }) },
     ]);
 
     const legacy = typedPayload.endpoints.find((endpoint) => endpoint.name === "legacyCreate");
@@ -802,7 +802,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
       (response) => response.statusCode === 201,
     );
     expect(legacySuccessResponse?.examples).toEqual([
-      { mediaType: "application/json", json: { id: "mem_legacy", email: "legacy@example.com" } },
+      { mediaType: "application/json", json: JSON.stringify({ id: "mem_legacy", email: "legacy@example.com" }) },
     ]);
 
     expect(typedPayload.endpoints.every((endpoint) => !("successResponseExample" in endpoint))).toBe(true);
@@ -937,9 +937,9 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
           examples?: Array<{
             name?: string;
             mediaType: string;
-            json?: Record<string, unknown>;
+            json?: string;
             componentExampleId?: string;
-            resolvedJson?: Record<string, unknown>;
+            resolvedJson?: string;
           }>;
         }>;
       }>;
@@ -951,13 +951,13 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
       {
         name: "default member",
         mediaType: "application/json",
-        json: { id: "mem_1", email: "jane@example.com" },
+        json: JSON.stringify({ id: "mem_1", email: "jane@example.com" }),
       },
       {
         name: "component-backed member",
         mediaType: "application/json",
         componentExampleId: "MemberExample",
-        resolvedJson: { id: "mem_2", email: "component@example.com" },
+        resolvedJson: JSON.stringify({ id: "mem_2", email: "component@example.com" }),
       },
     ]);
     const errorResponse = create?.responses.find((r) => r.statusCode === 422);
@@ -965,7 +965,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
       {
         name: "validation error",
         mediaType: "application/problem+json",
-        json: { message: "Bad request", code: "VALIDATION" },
+        json: JSON.stringify({ message: "Bad request", code: "VALIDATION" }),
       },
     ]);
   });
@@ -1020,7 +1020,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
         responses: Array<{
           statusCode: number;
           dataType?: unknown;
-          examples?: Array<{ mediaType: string; json: unknown }>;
+          examples?: Array<{ mediaType: string; json: string }>;
         }>;
       }>;
     };
@@ -1029,7 +1029,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     const voidResponse = remove?.responses.find((r) => r.statusCode === 204);
     expect(voidResponse?.dataType).toBeUndefined();
     expect(voidResponse?.examples).toEqual([
-      { mediaType: "application/json", json: { deleted: true } },
+      { mediaType: "application/json", json: JSON.stringify({ deleted: true }) },
     ]);
   });
 
@@ -1088,7 +1088,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
         name: string;
         responses: Array<{
           statusCode: number;
-          examples?: Array<{ mediaType: string; json: unknown }>;
+          examples?: Array<{ mediaType: string; json: string }>;
         }>;
       }>;
     };
@@ -1096,11 +1096,11 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     const exportEndpoint = payload.endpoints.find((endpoint) => endpoint.name === "export");
     const successResponse = exportEndpoint?.responses.find((r) => r.statusCode === 200);
     expect(successResponse?.examples).toEqual([
-      { mediaType: "text/csv", json: { url: "https://example.com/file.csv" } },
+      { mediaType: "text/csv", json: JSON.stringify({ url: "https://example.com/file.csv" }) },
     ]);
     const errorResponse = exportEndpoint?.responses.find((r) => r.statusCode === 404);
     expect(errorResponse?.examples).toEqual([
-      { mediaType: "application/json", json: { message: "Not found" } },
+      { mediaType: "application/json", json: JSON.stringify({ message: "Not found" }) },
     ]);
   });
 
@@ -1123,7 +1123,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
         name: string;
         isFormEncoded?: boolean;
         params: Array<{ name: string; source: string }>;
-        requestExamples?: Array<{ mediaType: string; json: Record<string, unknown> }>;
+        requestExamples?: Array<{ mediaType: string; json: string }>;
       }>;
     };
 
@@ -1139,11 +1139,11 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     expect(submitForm?.requestExamples).toEqual([
       {
         mediaType: "application/x-www-form-urlencoded",
-        json: {
+        json: JSON.stringify({
           name: "Jane Doe",
           email: "jane@example.com",
           message: "Hello, world!",
-        },
+        }),
       },
     ]);
   });
@@ -1274,7 +1274,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     ).toEqual([
       {
         mediaType: "multipart/form-data",
-        json: { label: "test" },
+        json: JSON.stringify({ label: "test" }),
       },
     ]);
   });

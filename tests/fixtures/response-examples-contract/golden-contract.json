@@ -98,17 +98,11 @@
           "examples": [
             {
               "mediaType": "application/json",
-              "json": {
-                "id": "mem_001",
-                "email": "jane@example.com"
-              }
+              "json": "{\"id\":\"mem_001\",\"email\":\"jane@example.com\"}"
             },
             {
               "mediaType": "application/json",
-              "json": {
-                "id": "mem_002",
-                "email": "alex@example.com"
-              }
+              "json": "{\"id\":\"mem_002\",\"email\":\"alex@example.com\"}"
             }
           ]
         },
@@ -122,10 +116,7 @@
           "examples": [
             {
               "mediaType": "application/json",
-              "json": {
-                "message": "Email is required",
-                "code": "VALIDATION_ERROR"
-              }
+              "json": "{\"message\":\"Email is required\",\"code\":\"VALIDATION_ERROR\"}"
             }
           ]
         }
@@ -133,10 +124,7 @@
       "requestExamples": [
         {
           "mediaType": "application/json",
-          "json": {
-            "email": "jane@example.com",
-            "role": "admin"
-          }
+          "json": "{\"email\":\"jane@example.com\",\"role\":\"admin\"}"
         }
       ]
     },
@@ -169,10 +157,7 @@
           "examples": [
             {
               "mediaType": "application/json",
-              "json": {
-                "id": "mem_legacy",
-                "email": "legacy@example.com"
-              }
+              "json": "{\"id\":\"mem_legacy\",\"email\":\"legacy@example.com\"}"
             }
           ]
         }

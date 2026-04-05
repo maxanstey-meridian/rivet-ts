@@ -477,23 +477,7 @@
           "examples": [
             {
               "mediaType": "application/json",
-              "json": {
-                "data": {
-                  "id": "550e8400-e29b-41d4-a716-446655440001",
-                  "email": "jane@example.com",
-                  "status": "active",
-                  "priority": 2,
-                  "managerId": null,
-                  "coordinates": {
-                    "lat": 51.5074,
-                    "lng": -0.1278
-                  }
-                },
-                "included": [
-                  "profile",
-                  "audit"
-                ]
-              }
+              "json": "{\"data\":{\"id\":\"550e8400-e29b-41d4-a716-446655440001\",\"email\":\"jane@example.com\",\"status\":\"active\",\"priority\":2,\"managerId\":null,\"coordinates\":{\"lat\":51.5074,\"lng\":-0.1278}},\"included\":[\"profile\",\"audit\"]}"
             }
           ]
         },
@@ -509,20 +493,7 @@
       "requestExamples": [
         {
           "mediaType": "application/json",
-          "json": {
-            "teamId": "550e8400-e29b-41d4-a716-446655440000",
-            "email": "jane@example.com",
-            "status": "active",
-            "priority": 2,
-            "profile": {
-              "displayName": "Jane Example",
-              "timezone": "Europe/London"
-            },
-            "metadata": {
-              "invitesSent": 3,
-              "logins": 12
-            }
-          }
+          "json": "{\"teamId\":\"550e8400-e29b-41d4-a716-446655440000\",\"email\":\"jane@example.com\",\"status\":\"active\",\"priority\":2,\"profile\":{\"displayName\":\"Jane Example\",\"timezone\":\"Europe/London\"},\"metadata\":{\"invitesSent\":3,\"logins\":12}}"
         }
       ],
       "security": {

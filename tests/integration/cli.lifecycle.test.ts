@@ -131,9 +131,9 @@ describe("CLI lifecycle", () => {
           routeTemplate: "/api/aliased-members",
           requestExamples: [
             {
-              json: {
+              json: JSON.stringify({
                 search: "Ada",
-              },
+              }),
               mediaType: "application/json",
             },
           ],
@@ -163,12 +163,12 @@ describe("CLI lifecycle", () => {
               examples: [
                 {
                   mediaType: "application/json",
-                  json: [
+                  json: JSON.stringify([
                     {
                       id: "mem_123",
                       email: "ada@example.com",
                     },
-                  ],
+                  ]),
                 },
               ],
             }),
@@ -215,24 +215,24 @@ describe("CLI lifecycle", () => {
     const typedPayload = payload as {
       endpoints: Array<{
         name: string;
-        requestExamples?: Array<{ json: Record<string, unknown>; mediaType: string }>;
+        requestExamples?: Array<{ json: string; mediaType: string }>;
       }>;
     };
 
     expect(typedPayload.endpoints.find((endpoint) => endpoint.name === "create")).toMatchObject({
       requestExamples: [
         {
-          json: {
+          json: JSON.stringify({
             email: "jane@example.com",
             role: "admin",
-          },
+          }),
           mediaType: "application/json",
         },
         {
-          json: {
+          json: JSON.stringify({
             email: "alex@example.com",
             role: "reviewer",
-          },
+          }),
           mediaType: "application/json",
         },
       ],
@@ -317,9 +317,9 @@ describe("CLI lifecycle", () => {
         requestExamples?: Array<{
           name?: string;
           mediaType: string;
-          json?: Record<string, unknown>;
+          json?: string;
           componentExampleId?: string;
-          resolvedJson?: Record<string, unknown>;
+          resolvedJson?: string;
         }>;
       }>;
     };
@@ -328,28 +328,28 @@ describe("CLI lifecycle", () => {
       payload.endpoints.find((endpoint) => endpoint.name === "create")?.requestExamples,
     ).toEqual([
       {
-        json: {
+        json: JSON.stringify({
           email: "jane@example.com",
           role: "admin",
-        },
+        }),
         mediaType: "application/json",
       },
       {
         name: "plain-text",
         mediaType: "text/plain",
-        json: {
+        json: JSON.stringify({
           email: "alex@example.com",
           role: "reviewer",
-        },
+        }),
       },
       {
         name: "component-backed",
         mediaType: "application/json",
         componentExampleId: "CreateMemberExample",
-        resolvedJson: {
+        resolvedJson: JSON.stringify({
           email: "component@example.com",
           role: "member",
-        },
+        }),
       },
     ]);
   });
@@ -641,10 +641,10 @@ describe("CLI lifecycle", () => {
       payload.endpoints.find((endpoint) => endpoint.name === "create")?.requestExamples,
     ).toEqual([
       {
-        json: {
+        json: JSON.stringify({
           email: "jane@example.com",
           role: "admin",
-        },
+        }),
         mediaType: "application/json",
       },
     ]);
@@ -812,12 +812,12 @@ describe("CLI lifecycle", () => {
         name: string;
         routeTemplate: string;
         description?: string;
-        requestExamples?: Array<{ json: Record<string, unknown>; mediaType: string }>;
+        requestExamples?: Array<{ json: string; mediaType: string }>;
         security?: { isAnonymous: boolean };
         responses: Array<{
           statusCode: number;
           dataType?: { name?: string };
-          examples?: Array<{ mediaType: string; json: Record<string, unknown> }>;
+          examples?: Array<{ mediaType: string; json: string }>;
         }>;
       }>;
     };
@@ -836,9 +836,9 @@ describe("CLI lifecycle", () => {
           description: "Installed consumer ping",
           requestExamples: [
             {
-              json: {
+              json: JSON.stringify({
                 name: "Ada",
-              },
+              }),
               mediaType: "application/json",
             },
           ],
@@ -849,10 +849,10 @@ describe("CLI lifecycle", () => {
               examples: [
                 {
                   mediaType: "application/json",
-                  json: {
+                  json: JSON.stringify({
                     ok: true,
                     echoedName: "Ada",
-                  },
+                  }),
                 },
               ],
             }),
@@ -889,7 +889,7 @@ describe("CLI lifecycle", () => {
       endpoints: Array<{
         name: string;
         isFormEncoded?: boolean;
-        requestExamples?: Array<{ mediaType: string; json: Record<string, unknown> }>;
+        requestExamples?: Array<{ mediaType: string; json: string }>;
       }>;
     };
 
@@ -902,11 +902,11 @@ describe("CLI lifecycle", () => {
     expect(submitForm?.requestExamples).toEqual([
       {
         mediaType: "application/x-www-form-urlencoded",
-        json: {
+        json: JSON.stringify({
           name: "Jane Doe",
           email: "jane@example.com",
           message: "Hello, world!",
-        },
+        }),
       },
     ]);
   });
