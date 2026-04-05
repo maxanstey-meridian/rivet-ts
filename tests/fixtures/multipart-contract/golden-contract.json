@@ -1,0 +1,48 @@
+{
+  "types": [],
+  "enums": [],
+  "endpoints": [
+    {
+      "name": "uploadDocument",
+      "httpMethod": "PUT",
+      "routeTemplate": "/api/documents/{documentId}/upload",
+      "params": [
+        {
+          "name": "documentId",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "source": "route"
+        },
+        {
+          "name": "file",
+          "type": {
+            "kind": "primitive",
+            "type": "File"
+          },
+          "source": "file"
+        },
+        {
+          "name": "title",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "source": "formField"
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "source": "formField"
+        }
+      ],
+      "controllerName": "multipart",
+      "responses": [],
+      "inputTypeName": "UploadDocumentRequest"
+    }
+  ]
+}

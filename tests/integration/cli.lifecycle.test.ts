@@ -910,4 +910,53 @@ describe("CLI lifecycle", () => {
       },
     ]);
   });
+
+  it("writes Rivet contract JSON for a multipart endpoint through the real CLI path", async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-multipart-"));
+    const outputPath = path.join(tempDirectory, "multipart-contract.json");
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+
+    const exitCode = await runCli(
+      [
+        "--entry",
+        getFixturePath(path.join("multipart-contract", "contracts.ts")),
+        "--out",
+        outputPath,
+      ],
+      {
+        stdout: (text) => stdout.push(text),
+        stderr: (text) => stderr.push(text),
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toHaveLength(0);
+
+    const fileContents = await fs.readFile(outputPath, "utf8");
+    const payload = JSON.parse(fileContents) as {
+      endpoints: Array<{
+        name: string;
+        inputTypeName?: string;
+        params: Array<{ name: string; source: string; type: { kind: string; type?: string } }>;
+      }>;
+    };
+
+    expect(payload).toEqual(
+      await readJsonFixture(path.join("multipart-contract", "golden-contract.json")),
+    );
+
+    const upload = payload.endpoints.find((endpoint) => endpoint.name === "uploadDocument");
+    expect(upload?.inputTypeName).toBe("UploadDocumentRequest");
+    expect(upload?.params.map((p) => ({ name: p.name, source: p.source }))).toEqual([
+      { name: "documentId", source: "route" },
+      { name: "file", source: "file" },
+      { name: "title", source: "formField" },
+      { name: "description", source: "formField" },
+    ]);
+    expect(upload?.params.find((p) => p.source === "file")?.type).toEqual({
+      kind: "primitive",
+      type: "File",
+    });
+  });
 });

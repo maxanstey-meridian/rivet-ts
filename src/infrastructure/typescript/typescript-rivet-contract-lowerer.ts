@@ -28,6 +28,7 @@ type EndpointContext = {
   endpointName: string;
   httpMethod: string;
   formEncoded: boolean;
+  acceptsFile: boolean;
   requestExamples?: readonly EndpointExampleSpec[];
   responseExamples?: readonly ResponseExamplesSpec[];
 };
@@ -62,6 +63,7 @@ const AUTHORING_HELPER_TYPE_NAMES = new Set([
   "EndpointSecurityAuthoringSpec",
 ]);
 const BUILTIN_TYPE_NAMES = new Set(["Array", "ReadonlyArray"]);
+const MULTIPART_FILE_TYPE_NAMES = new Set(["Blob", "File"]);
 const DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE = "application/json";
 
 const buildProgram = (entryPath: string): ts.Program =>
@@ -379,6 +381,7 @@ export class TypeScriptRivetContractLowerer extends RivetContractLowerer {
           endpointName: endpoint.name,
           httpMethod: endpoint.method,
           formEncoded: endpoint.formEncoded,
+          acceptsFile: endpoint.acceptsFile,
           requestExamples: endpoint.requestExamples.length > 0 ? endpoint.requestExamples : undefined,
           responseExamples:
             endpoint.responseExamples.length > 0 ? endpoint.responseExamples : undefined,
@@ -535,12 +538,19 @@ class TypeEmissionContext {
             scheme: anonymous ? undefined : (securityScheme ?? undefined),
           })
         : undefined;
-    const requestExampleDefaultMediaType = context.formEncoded
-      ? "application/x-www-form-urlencoded"
-      : DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE;
+    const requestExampleDefaultMediaType = context.acceptsFile
+      ? "multipart/form-data"
+      : context.formEncoded
+        ? "application/x-www-form-urlencoded"
+        : DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE;
     const requestExamples = context.requestExamples
       ?.map((requestExample) => this.lowerRequestExample(requestExample, requestExampleDefaultMediaType))
       .filter((requestExample): requestExample is RivetRequestExample => requestExample !== null);
+
+    const inputTypeName =
+      context.acceptsFile && inputNode && ts.isTypeReferenceNode(inputNode) && !inputNode.typeArguments?.length
+        ? this.resolveTypeName(inputNode.typeName)
+        : undefined;
 
     return new RivetEndpointDefinition({
       name: toCamelCase(context.endpointName),
@@ -555,6 +565,7 @@ class TypeEmissionContext {
       requestExamples: requestExamples?.length ? requestExamples : undefined,
       security,
       fileContentType,
+      inputTypeName,
       isFormEncoded: context.formEncoded || undefined,
     });
   }
@@ -807,6 +818,10 @@ class TypeEmissionContext {
     const params: RivetEndpointParam[] = [];
 
     if (hasBody) {
+      if (context.acceptsFile && inputNode) {
+        return this.buildMultipartParams(routeParamNames, inputNode, context);
+      }
+
       const matchedRouteTypes = inputNode
         ? this.getNamedPropertyTypes(inputNode)
         : new Map<string, RivetType>();
@@ -890,6 +905,105 @@ class TypeEmissionContext {
     }
 
     return params;
+  }
+
+  private buildMultipartParams(
+    routeParamNames: string[],
+    inputNode: ts.TypeNode,
+    context: EndpointContext,
+  ): RivetEndpointParam[] {
+    const objectProperties = this.getObjectProperties(inputNode);
+    if (!objectProperties) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          inputNode,
+          "INVALID_MULTIPART_INPUT",
+          `Endpoint "${context.contractName}.${context.endpointName}" must use an object-like input type for multipart parameters.`,
+        ),
+      );
+      return [];
+    }
+
+    const routeParamNamesLower = new Set(routeParamNames.map((name) => name.toLowerCase()));
+    const params: RivetEndpointParam[] = [];
+    const typeParameterScope = this.getTypeParameterScope(inputNode);
+    let fileProperty: PropertyDescriptor | null = null;
+    const formFieldProperties: PropertyDescriptor[] = [];
+
+    for (const property of objectProperties) {
+      if (routeParamNamesLower.has(property.name.toLowerCase())) {
+        const propertyType = this.lowerTypeNode(property.typeNode, typeParameterScope);
+        params.push(
+          new RivetEndpointParam({
+            name: property.name,
+            type: propertyType ?? { kind: "primitive", type: "string" },
+            source: "route",
+          }),
+        );
+        continue;
+      }
+
+      if (this.isFileTypeNode(property.typeNode)) {
+        if (fileProperty) {
+          this.diagnostics.push(
+            createNodeDiagnostic(
+              inputNode,
+              "INVALID_MULTIPART_INPUT",
+              `Endpoint "${context.contractName}.${context.endpointName}" must have exactly one Blob or File property for multipart upload, but found multiple.`,
+            ),
+          );
+          return params;
+        }
+        fileProperty = property;
+      } else {
+        formFieldProperties.push(property);
+      }
+    }
+
+    if (!fileProperty) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          inputNode,
+          "INVALID_MULTIPART_INPUT",
+          `Endpoint "${context.contractName}.${context.endpointName}" must have exactly one Blob or File property for multipart upload, but found none.`,
+        ),
+      );
+      return params;
+    }
+
+    params.push(
+      new RivetEndpointParam({
+        name: fileProperty.name,
+        type: { kind: "primitive", type: "File" },
+        source: "file",
+      }),
+    );
+
+    for (const property of formFieldProperties) {
+      const propertyType = this.lowerTypeNode(property.typeNode, typeParameterScope);
+      if (!propertyType) {
+        continue;
+      }
+
+      params.push(
+        new RivetEndpointParam({
+          name: property.name,
+          type: propertyType,
+          source: "formField",
+        }),
+      );
+    }
+
+    return params;
+  }
+
+  private isFileTypeNode(typeNode: ts.TypeNode): boolean {
+    if (!ts.isTypeReferenceNode(typeNode)) {
+      return false;
+    }
+
+    const name = this.resolveTypeName(typeNode.typeName);
+    return MULTIPART_FILE_TYPE_NAMES.has(name);
   }
 
   private lowerRequestExample(example: EndpointExampleSpec, defaultMediaType: string): RivetRequestExample | null {

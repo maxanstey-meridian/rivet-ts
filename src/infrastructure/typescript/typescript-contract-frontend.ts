@@ -274,6 +274,8 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     const fileContentType = this.parseStringLiteral(propertyMap.get("fileContentType"), sourceFile);
     const formEncoded =
       this.parseBooleanLiteral(propertyMap.get("formEncoded"), sourceFile) ?? false;
+    const acceptsFile =
+      this.parseBooleanLiteral(propertyMap.get("acceptsFile"), sourceFile) ?? false;
     const successStatus = this.parseNumericLiteral(propertyMap.get("successStatus"), sourceFile);
     const responseExamples = this.parseResponseExamples(
       propertyMap.get("responseExamples"),
@@ -313,6 +315,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       fileResponse,
       fileContentType: fileContentType ?? undefined,
       formEncoded,
+      acceptsFile,
       successStatus: successStatus ?? undefined,
       summary: summary ?? undefined,
       description: description ?? undefined,

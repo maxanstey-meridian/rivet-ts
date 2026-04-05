@@ -1,4 +1,4 @@
-export type RivetPrimitiveTypeName = "boolean" | "number" | "string" | "unknown";
+export type RivetPrimitiveTypeName = "boolean" | "File" | "number" | "string" | "unknown";
 
 export type RivetType =
   | {

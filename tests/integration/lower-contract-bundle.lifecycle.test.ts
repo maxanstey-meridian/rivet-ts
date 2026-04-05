@@ -1173,4 +1173,212 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     expect(create?.isFormEncoded).toBeUndefined();
     expect(create?.requestExamples?.[0]?.mediaType).toBe("application/json");
   });
+
+  it("lowers a multipart endpoint with file, formField, and route params in order", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const lowerer = new TypeScriptRivetContractLowerer();
+    const extractUseCase = new ExtractTsContracts(frontend);
+    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+
+    const bundle = await extractUseCase.execute({
+      entryPath: getFixturePath(path.join("multipart-contract", "contracts.ts")),
+    });
+    const lowered = await lowerUseCase.execute({ bundle });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(lowered.hasErrors).toBe(false);
+
+    const payload = JSON.parse(lowered.toJson()) as {
+      endpoints: Array<{
+        name: string;
+        inputTypeName?: string;
+        params: Array<{ name: string; source: string; type: { kind: string; type?: string } }>;
+      }>;
+    };
+
+    expect(payload).toEqual(
+      await readJsonFixture(path.join("multipart-contract", "golden-contract.json")),
+    );
+
+    const upload = payload.endpoints.find((endpoint) => endpoint.name === "uploadDocument");
+    expect(upload?.inputTypeName).toBe("UploadDocumentRequest");
+    expect(upload?.params).toEqual([
+      expect.objectContaining({ name: "documentId", source: "route" }),
+      expect.objectContaining({ name: "file", source: "file", type: { kind: "primitive", type: "File" } }),
+      expect.objectContaining({ name: "title", source: "formField" }),
+      expect.objectContaining({ name: "description", source: "formField" }),
+    ]);
+  });
+
+  it("defaults request example media type to multipart/form-data for acceptsFile endpoints", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const lowerer = new TypeScriptRivetContractLowerer();
+    const extractUseCase = new ExtractTsContracts(frontend);
+    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-multipart-media-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        "export interface UploadMetadata {",
+        "  label: string;",
+        "}",
+        "",
+        "export const uploadExample = {",
+        '  label: "test",',
+        "} satisfies UploadMetadata;",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Upload: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/upload";',
+        "    input: UploadMetadata;",
+        "    response: void;",
+        "    acceptsFile: true;",
+        "    requestExamples: [typeof uploadExample];",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await extractUseCase.execute({ entryPath });
+    const lowered = await lowerUseCase.execute({ bundle });
+
+    expect(lowered.hasErrors).toBe(true);
+    expect(lowered.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "INVALID_MULTIPART_INPUT" }),
+      ]),
+    );
+
+    const payload = JSON.parse(lowered.toJson()) as {
+      endpoints: Array<{
+        name: string;
+        requestExamples?: Array<{ mediaType: string }>;
+      }>;
+    };
+
+    expect(
+      payload.endpoints.find((endpoint) => endpoint.name === "upload")?.requestExamples,
+    ).toEqual([
+      {
+        mediaType: "multipart/form-data",
+        json: { label: "test" },
+      },
+    ]);
+  });
+
+  it("reports a diagnostic when a multipart endpoint has no file-typed property", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const lowerer = new TypeScriptRivetContractLowerer();
+    const extractUseCase = new ExtractTsContracts(frontend);
+    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-multipart-no-file-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        "export interface NoFileRequest {",
+        "  title: string;",
+        "  description: string;",
+        "}",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Upload: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/upload";',
+        "    input: NoFileRequest;",
+        "    response: void;",
+        "    acceptsFile: true;",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await extractUseCase.execute({ entryPath });
+    const lowered = await lowerUseCase.execute({ bundle });
+
+    expect(lowered.hasErrors).toBe(true);
+    expect(lowered.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "INVALID_MULTIPART_INPUT",
+        }),
+      ]),
+    );
+  });
+
+  it("reports a diagnostic when a multipart endpoint has multiple file-typed properties", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const lowerer = new TypeScriptRivetContractLowerer();
+    const extractUseCase = new ExtractTsContracts(frontend);
+    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-multipart-multi-file-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        "export interface MultiFileRequest {",
+        "  primary: Blob;",
+        "  secondary: File;",
+        "  title: string;",
+        "}",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Upload: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/upload";',
+        "    input: MultiFileRequest;",
+        "    response: void;",
+        "    acceptsFile: true;",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await extractUseCase.execute({ entryPath });
+    const lowered = await lowerUseCase.execute({ bundle });
+
+    expect(lowered.hasErrors).toBe(true);
+    expect(lowered.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "INVALID_MULTIPART_INPUT",
+        }),
+      ]),
+    );
+  });
 });
