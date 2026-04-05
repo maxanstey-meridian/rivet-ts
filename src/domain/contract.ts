@@ -47,6 +47,16 @@ export class EndpointExampleSpec {
   }
 }
 
+export class ResponseExamplesSpec {
+  public readonly status: number;
+  public readonly examples: readonly EndpointExampleSpec[];
+
+  public constructor(input: { status: number; examples: readonly EndpointExampleSpec[] }) {
+    this.status = input.status;
+    this.examples = input.examples;
+  }
+}
+
 export class ErrorResponseSpec {
   public readonly status: number;
   public readonly response?: TypeExpression;
@@ -80,6 +90,7 @@ export class EndpointSpec {
   public readonly description?: string;
   public readonly requestExamples: readonly EndpointExampleSpec[];
   public readonly successResponseExample?: EndpointExampleSpec;
+  public readonly responseExamples: readonly ResponseExamplesSpec[];
   public readonly errors: readonly ErrorResponseSpec[];
   public readonly anonymous: boolean;
   public readonly security?: SecuritySpec;
@@ -97,6 +108,7 @@ export class EndpointSpec {
     description?: string;
     requestExamples?: readonly EndpointExampleSpec[];
     successResponseExample?: EndpointExampleSpec;
+    responseExamples?: readonly ResponseExamplesSpec[];
     errors?: readonly ErrorResponseSpec[];
     anonymous?: boolean;
     security?: SecuritySpec;
@@ -113,6 +125,7 @@ export class EndpointSpec {
     this.description = input.description;
     this.requestExamples = input.requestExamples ?? [];
     this.successResponseExample = input.successResponseExample;
+    this.responseExamples = input.responseExamples ?? [];
     this.errors = input.errors ?? [];
     this.anonymous = input.anonymous ?? false;
     this.security = input.security;

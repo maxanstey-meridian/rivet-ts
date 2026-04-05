@@ -162,11 +162,18 @@ export class RivetResponseType {
   public readonly statusCode: number;
   public readonly dataType?: RivetType;
   public readonly description?: string;
+  public readonly examples?: readonly RivetEndpointExample[];
 
-  public constructor(input: { statusCode: number; dataType?: RivetType; description?: string }) {
+  public constructor(input: {
+    statusCode: number;
+    dataType?: RivetType;
+    description?: string;
+    examples?: readonly RivetEndpointExample[];
+  }) {
     this.statusCode = input.statusCode;
     this.dataType = input.dataType;
     this.description = input.description;
+    this.examples = input.examples;
   }
 }
 
@@ -191,7 +198,6 @@ export class RivetEndpointDefinition {
   public readonly summary?: string;
   public readonly description?: string;
   public readonly requestExamples?: readonly RivetRequestExample[];
-  public readonly successResponseExample?: RivetEndpointExample;
   public readonly security?: RivetEndpointSecurity;
   public readonly fileContentType?: string;
   public readonly inputTypeName?: string;
@@ -208,7 +214,6 @@ export class RivetEndpointDefinition {
     summary?: string;
     description?: string;
     requestExamples?: readonly RivetRequestExample[];
-    successResponseExample?: RivetEndpointExample;
     security?: RivetEndpointSecurity;
     fileContentType?: string;
     inputTypeName?: string;
@@ -224,7 +229,6 @@ export class RivetEndpointDefinition {
     this.summary = input.summary;
     this.description = input.description;
     this.requestExamples = input.requestExamples;
-    this.successResponseExample = input.successResponseExample;
     this.security = input.security;
     this.fileContentType = input.fileContentType;
     this.inputTypeName = input.inputTypeName;

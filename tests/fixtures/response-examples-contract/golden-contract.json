@@ -1,0 +1,178 @@
+{
+  "types": [
+    {
+      "name": "CreateMemberRequest",
+      "typeParameters": [],
+      "properties": [
+        {
+          "name": "email",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "optional": false
+        },
+        {
+          "name": "role",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "MemberDto",
+      "typeParameters": [],
+      "properties": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "optional": false
+        },
+        {
+          "name": "email",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ValidationErrorDto",
+      "typeParameters": [],
+      "properties": [
+        {
+          "name": "message",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "optional": false
+        },
+        {
+          "name": "code",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "optional": false
+        }
+      ]
+    }
+  ],
+  "enums": [],
+  "endpoints": [
+    {
+      "name": "create",
+      "httpMethod": "POST",
+      "routeTemplate": "/api/members",
+      "params": [
+        {
+          "name": "body",
+          "type": {
+            "kind": "ref",
+            "name": "CreateMemberRequest"
+          },
+          "source": "body"
+        }
+      ],
+      "returnType": {
+        "kind": "ref",
+        "name": "MemberDto"
+      },
+      "controllerName": "responseExamples",
+      "responses": [
+        {
+          "statusCode": 201,
+          "dataType": {
+            "kind": "ref",
+            "name": "MemberDto"
+          },
+          "examples": [
+            {
+              "data": {
+                "id": "mem_001",
+                "email": "jane@example.com"
+              }
+            },
+            {
+              "data": {
+                "id": "mem_002",
+                "email": "alex@example.com"
+              }
+            }
+          ]
+        },
+        {
+          "statusCode": 422,
+          "dataType": {
+            "kind": "ref",
+            "name": "ValidationErrorDto"
+          },
+          "description": "Validation failed",
+          "examples": [
+            {
+              "data": {
+                "message": "Email is required",
+                "code": "VALIDATION_ERROR"
+              }
+            }
+          ]
+        }
+      ],
+      "requestExamples": [
+        {
+          "mediaType": "application/json",
+          "json": {
+            "email": "jane@example.com",
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    {
+      "name": "legacyCreate",
+      "httpMethod": "POST",
+      "routeTemplate": "/api/members/legacy",
+      "params": [
+        {
+          "name": "body",
+          "type": {
+            "kind": "ref",
+            "name": "CreateMemberRequest"
+          },
+          "source": "body"
+        }
+      ],
+      "returnType": {
+        "kind": "ref",
+        "name": "MemberDto"
+      },
+      "controllerName": "responseExamples",
+      "responses": [
+        {
+          "statusCode": 201,
+          "dataType": {
+            "kind": "ref",
+            "name": "MemberDto"
+          },
+          "examples": [
+            {
+              "data": {
+                "id": "mem_legacy",
+                "email": "legacy@example.com"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

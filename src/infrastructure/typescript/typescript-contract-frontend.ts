@@ -8,6 +8,7 @@ import {
   type EndpointExampleValue,
   EndpointSpec,
   ErrorResponseSpec,
+  ResponseExamplesSpec,
   SecuritySpec,
   type HttpMethod,
 } from "../../domain/contract.js";
@@ -268,20 +269,21 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       diagnostics,
       endpointName,
     );
-    const successResponseExample = this.parseEndpointExample(
+    const fileResponse =
+      this.parseBooleanLiteral(propertyMap.get("fileResponse"), sourceFile) ?? false;
+    const fileContentType = this.parseStringLiteral(propertyMap.get("fileContentType"), sourceFile);
+    const successStatus = this.parseNumericLiteral(propertyMap.get("successStatus"), sourceFile);
+    const responseExamples = this.parseResponseExamples(
+      propertyMap.get("responseExamples"),
       propertyMap.get("successResponseExample"),
       propertyMap.get("response"),
-      "successResponseExample",
-      "response",
+      method,
+      successStatus,
       sourceFile,
       checker,
       diagnostics,
       endpointName,
     );
-    const fileResponse =
-      this.parseBooleanLiteral(propertyMap.get("fileResponse"), sourceFile) ?? false;
-    const fileContentType = this.parseStringLiteral(propertyMap.get("fileContentType"), sourceFile);
-    const successStatus = this.parseNumericLiteral(propertyMap.get("successStatus"), sourceFile);
     const summary = this.parseStringLiteral(propertyMap.get("summary"), sourceFile);
     const description = this.parseStringLiteral(propertyMap.get("description"), sourceFile);
     const anonymous = this.parseBooleanLiteral(propertyMap.get("anonymous"), sourceFile) ?? false;
@@ -312,7 +314,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       summary: summary ?? undefined,
       description: description ?? undefined,
       requestExamples,
-      successResponseExample: successResponseExample ?? undefined,
+      responseExamples,
       errors,
       anonymous,
       security: securityScheme ? new SecuritySpec({ scheme: securityScheme }) : undefined,
@@ -475,6 +477,227 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     );
 
     return requestExample ? [requestExample] : [];
+  }
+
+  private parseResponseExamples(
+    pluralNode: ts.TypeNode | undefined,
+    legacySingularNode: ts.TypeNode | undefined,
+    targetNode: ts.TypeNode | undefined,
+    method: HttpMethod,
+    successStatus: number | null,
+    sourceFile: ts.SourceFile,
+    checker: ts.TypeChecker,
+    diagnostics: ExtractionDiagnostic[],
+    endpointName: string,
+  ): ResponseExamplesSpec[] {
+    if (pluralNode && legacySingularNode) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          pluralNode,
+          "CONFLICTING_RESPONSE_EXAMPLE_SPEC",
+          `Endpoint "${endpointName}" cannot declare both successResponseExample and responseExamples.`,
+        ),
+      );
+      return [];
+    }
+
+    if (pluralNode) {
+      const entryNodes = this.getRequestExampleEntryNodes(pluralNode, checker);
+      if (!entryNodes) {
+        diagnostics.push(
+          this.createNodeDiagnostic(
+            sourceFile,
+            pluralNode,
+            "INVALID_RESPONSE_EXAMPLES_SPEC",
+            `Endpoint "${endpointName}" must declare responseExamples as an array of { status; examples } entries.`,
+          ),
+        );
+        return [];
+      }
+
+      const result: ResponseExamplesSpec[] = [];
+      for (const entryNode of entryNodes) {
+        const parsed = this.parseResponseExamplesEntry(
+          entryNode,
+          targetNode,
+          sourceFile,
+          checker,
+          diagnostics,
+          endpointName,
+        );
+        if (parsed) {
+          result.push(parsed);
+        }
+      }
+
+      return result;
+    }
+
+    if (legacySingularNode) {
+      const legacyExample = this.parseEndpointExample(
+        legacySingularNode,
+        targetNode,
+        "successResponseExample",
+        "response",
+        sourceFile,
+        checker,
+        diagnostics,
+        endpointName,
+      );
+
+      if (!legacyExample) {
+        return [];
+      }
+
+      const resolvedStatus = successStatus ?? this.getDefaultSuccessStatus(method);
+      return [new ResponseExamplesSpec({ status: resolvedStatus, examples: [legacyExample] })];
+    }
+
+    return [];
+  }
+
+  private parseResponseExamplesEntry(
+    node: ts.TypeNode,
+    targetNode: ts.TypeNode | undefined,
+    sourceFile: ts.SourceFile,
+    checker: ts.TypeChecker,
+    diagnostics: ExtractionDiagnostic[],
+    endpointName: string,
+  ): ResponseExamplesSpec | null {
+    const propertyMap = this.createPropertyMap(node, sourceFile, checker);
+    if (!propertyMap) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          node,
+          "INVALID_RESPONSE_EXAMPLES_ENTRY",
+          `Endpoint "${endpointName}" responseExamples entries must be { status; examples } objects.`,
+        ),
+      );
+      return null;
+    }
+
+    const status = this.parseNumericLiteral(propertyMap.get("status"), sourceFile);
+    if (status === null) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          node,
+          "MISSING_RESPONSE_EXAMPLE_STATUS",
+          `Endpoint "${endpointName}" responseExamples entry must declare a numeric status.`,
+        ),
+      );
+      return null;
+    }
+
+    const examplesNode = propertyMap.get("examples");
+    if (!examplesNode) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          node,
+          "MISSING_RESPONSE_EXAMPLES",
+          `Endpoint "${endpointName}" responseExamples entry for status ${status} must declare an examples array.`,
+        ),
+      );
+      return null;
+    }
+
+    const exampleEntryNodes = this.getRequestExampleEntryNodes(examplesNode, checker);
+    if (!exampleEntryNodes) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          examplesNode,
+          "INVALID_RESPONSE_EXAMPLES",
+          `Endpoint "${endpointName}" responseExamples entry for status ${status} must declare examples as an array of typeof exportedConst entries.`,
+        ),
+      );
+      return null;
+    }
+
+    const examples: EndpointExampleSpec[] = [];
+    for (const exampleNode of exampleEntryNodes) {
+      const example = this.parseResponseExampleValue(
+        exampleNode,
+        `responseExamples[${status}].examples entries`,
+        sourceFile,
+        checker,
+        diagnostics,
+        endpointName,
+      );
+      if (example) {
+        examples.push(example);
+      }
+    }
+
+    return new ResponseExamplesSpec({ status, examples });
+  }
+
+  private parseResponseExampleValue(
+    node: ts.TypeNode,
+    propertyName: string,
+    sourceFile: ts.SourceFile,
+    checker: ts.TypeChecker,
+    diagnostics: ExtractionDiagnostic[],
+    endpointName: string,
+  ): EndpointExampleSpec | null {
+    if (!ts.isTypeQueryNode(node)) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          node,
+          "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+          `Endpoint "${endpointName}" must declare ${propertyName} as typeof exportedConst.`,
+        ),
+      );
+      return null;
+    }
+
+    const declaration = this.resolveExampleDeclaration(node.exprName, checker);
+    if (
+      !declaration ||
+      !declaration.initializer ||
+      !this.isConstVariableDeclaration(declaration) ||
+      !this.isExportedVariableDeclaration(declaration)
+    ) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          node,
+          "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+          `Endpoint "${endpointName}" must declare ${propertyName} as typeof an exported const with an initializer.`,
+        ),
+      );
+      return null;
+    }
+
+    const data = this.parseExampleValue(declaration.initializer, checker);
+    if (data === undefined) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          declaration.initializer,
+          "UNSUPPORTED_ENDPOINT_EXAMPLE_VALUE",
+          `Endpoint "${endpointName}" ${propertyName} must resolve to a JSON-like const initializer.`,
+        ),
+      );
+      return null;
+    }
+
+    return new EndpointExampleSpec({ data });
+  }
+
+  private getDefaultSuccessStatus(method: HttpMethod): number {
+    switch (method) {
+      case "DELETE":
+        return 204;
+      case "POST":
+        return 201;
+      default:
+        return 200;
+    }
   }
 
   private parseRequestExampleEntry(

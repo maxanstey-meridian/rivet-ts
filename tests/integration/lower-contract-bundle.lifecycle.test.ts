@@ -74,11 +74,15 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
       endpoints: Array<{
         name: string;
         requestExamples?: Array<{ json: Record<string, unknown>; mediaType: string }>;
-        successResponseExample?: { data: unknown };
+        responses: Array<{
+          statusCode: number;
+          examples?: Array<{ data: unknown }>;
+        }>;
       }>;
     };
 
-    expect(payload.endpoints.find((endpoint) => endpoint.name === "list")).toMatchObject({
+    const list = payload.endpoints.find((endpoint) => endpoint.name === "list");
+    expect(list).toMatchObject({
       requestExamples: [
         {
           json: {
@@ -87,7 +91,10 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
           mediaType: "application/json",
         },
       ],
-      successResponseExample: {
+    });
+    const successResponse = list?.responses.find((response) => response.statusCode === 200);
+    expect(successResponse?.examples).toEqual([
+      {
         data: [
           {
             id: "mem_123",
@@ -95,7 +102,8 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
           },
         ],
       },
-    });
+    ]);
+    expect(list).not.toHaveProperty("successResponseExample");
   });
 
   it("lowers plural inline request examples from the dedicated fixture", async () => {
@@ -549,20 +557,23 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     const payload = JSON.parse(lowered.toJson()) as {
       endpoints: Array<{
         name: string;
-        successResponseExample?: { data: unknown };
+        responses: Array<{
+          statusCode: number;
+          examples?: Array<{ data: unknown }>;
+        }>;
       }>;
     };
 
-    expect(
-      payload.endpoints.find((endpoint) => endpoint.name === "tags")?.successResponseExample,
-    ).toEqual({
-      data: ["alpha", "beta"],
-    });
-    expect(
-      payload.endpoints.find((endpoint) => endpoint.name === "version")?.successResponseExample,
-    ).toEqual({
-      data: 3,
-    });
+    const tags = payload.endpoints.find((endpoint) => endpoint.name === "tags");
+    expect(tags?.responses.find((r) => r.statusCode === 200)?.examples).toEqual([
+      { data: ["alpha", "beta"] },
+    ]);
+    const version = payload.endpoints.find((endpoint) => endpoint.name === "version");
+    expect(version?.responses.find((r) => r.statusCode === 200)?.examples).toEqual([
+      { data: 3 },
+    ]);
+    expect(tags).not.toHaveProperty("successResponseExample");
+    expect(version).not.toHaveProperty("successResponseExample");
   });
 
   it("lowers shorthand-property endpoint examples through the full bundle pipeline", async () => {
@@ -731,6 +742,119 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
           code: "CONFLICTING_SECURITY_SPEC",
           filePath: entryPath,
           message: expect.stringContaining("cannot declare both anonymous and security"),
+        }),
+      ]),
+    );
+  });
+
+  it("lowers status-scoped response examples from the dedicated fixture", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const lowerer = new TypeScriptRivetContractLowerer();
+    const extractUseCase = new ExtractTsContracts(frontend);
+    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+
+    const bundle = await extractUseCase.execute({
+      entryPath: getFixturePath(path.join("response-examples-contract", "contracts.ts")),
+    });
+    const lowered = await lowerUseCase.execute({ bundle });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(lowered.hasErrors).toBe(false);
+
+    const payload = JSON.parse(lowered.toJson()) as unknown;
+    const writeFixture = process.env.UPDATE_GOLDEN === "1";
+    const goldenPath = getFixturePath(
+      path.join("response-examples-contract", "golden-contract.json"),
+    );
+    if (writeFixture) {
+      await fs.writeFile(goldenPath, `${lowered.toJson()}\n`, "utf8");
+    }
+
+    const expected = await readJsonFixture(
+      path.join("response-examples-contract", "golden-contract.json"),
+    );
+    expect(payload).toEqual(expected);
+
+    const typedPayload = payload as {
+      endpoints: Array<{
+        name: string;
+        responses: Array<{
+          statusCode: number;
+          examples?: Array<{ data: Record<string, unknown> }>;
+        }>;
+      }>;
+    };
+
+    const create = typedPayload.endpoints.find((endpoint) => endpoint.name === "create");
+    const successResponse = create?.responses.find((response) => response.statusCode === 201);
+    expect(successResponse?.examples).toEqual([
+      { data: { id: "mem_001", email: "jane@example.com" } },
+      { data: { id: "mem_002", email: "alex@example.com" } },
+    ]);
+    const errorResponse = create?.responses.find((response) => response.statusCode === 422);
+    expect(errorResponse?.examples).toEqual([
+      { data: { message: "Email is required", code: "VALIDATION_ERROR" } },
+    ]);
+
+    const legacy = typedPayload.endpoints.find((endpoint) => endpoint.name === "legacyCreate");
+    const legacySuccessResponse = legacy?.responses.find(
+      (response) => response.statusCode === 201,
+    );
+    expect(legacySuccessResponse?.examples).toEqual([
+      { data: { id: "mem_legacy", email: "legacy@example.com" } },
+    ]);
+
+    expect(typedPayload.endpoints.every((endpoint) => !("successResponseExample" in endpoint))).toBe(true);
+  });
+
+  it("emits a diagnostic when response examples target an undeclared status", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const lowerer = new TypeScriptRivetContractLowerer();
+    const extractUseCase = new ExtractTsContracts(frontend);
+    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+    const tempDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rivet-ts-unresolved-response-status-"),
+    );
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        "export interface MemberDto { id: string; }",
+        "",
+        "export const example1 = { id: \"mem_1\" } satisfies MemberDto;",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Get: Endpoint<{",
+        '    method: "GET";',
+        '    route: "/api/temp";',
+        "    response: MemberDto;",
+        "    responseExamples: [{ status: 404; examples: [typeof example1] }];",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await extractUseCase.execute({ entryPath });
+    const lowered = await lowerUseCase.execute({ bundle });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(lowered.hasErrors).toBe(true);
+    expect(lowered.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "UNRESOLVED_RESPONSE_EXAMPLE_STATUS",
+          message: expect.stringContaining("status 404"),
         }),
       ]),
     );

@@ -137,14 +137,6 @@ describe("CLI lifecycle", () => {
               mediaType: "application/json",
             },
           ],
-          successResponseExample: {
-            data: [
-              {
-                id: "mem_123",
-                email: "ada@example.com",
-              },
-            ],
-          },
           returnType: {
             kind: "array",
             element: {
@@ -168,6 +160,16 @@ describe("CLI lifecycle", () => {
                   name: "MemberDto",
                 },
               },
+              examples: [
+                {
+                  data: [
+                    {
+                      id: "mem_123",
+                      email: "ada@example.com",
+                    },
+                  ],
+                },
+              ],
             }),
             expect.objectContaining({
               statusCode: 404,
@@ -810,9 +812,12 @@ describe("CLI lifecycle", () => {
         routeTemplate: string;
         description?: string;
         requestExamples?: Array<{ json: Record<string, unknown>; mediaType: string }>;
-        successResponseExample?: { data: Record<string, unknown> };
         security?: { isAnonymous: boolean };
-        responses: Array<{ statusCode: number; dataType?: { name?: string } }>;
+        responses: Array<{
+          statusCode: number;
+          dataType?: { name?: string };
+          examples?: Array<{ data: Record<string, unknown> }>;
+        }>;
       }>;
     };
 
@@ -836,16 +841,18 @@ describe("CLI lifecycle", () => {
               mediaType: "application/json",
             },
           ],
-          successResponseExample: {
-            data: {
-              ok: true,
-              echoedName: "Ada",
-            },
-          },
           responses: expect.arrayContaining([
             expect.objectContaining({
               statusCode: 201,
               dataType: expect.objectContaining({ name: "PingResponse" }),
+              examples: [
+                {
+                  data: {
+                    ok: true,
+                    echoedName: "Ada",
+                  },
+                },
+              ],
             }),
           ]),
         }),

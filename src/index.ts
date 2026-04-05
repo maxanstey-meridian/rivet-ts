@@ -10,6 +10,7 @@ export type {
   EndpointErrorAuthoringSpec,
   EndpointRequestExampleAuthoringDescriptor,
   EndpointRequestExampleAuthoringSpec,
+  EndpointResponseExamplesAuthoringSpec,
   EndpointSecurityAuthoringSpec,
   Format,
   InlineEndpointRequestExampleAuthoringSpec,
@@ -26,6 +27,7 @@ export {
   ContractSpec,
   EndpointSpec,
   ErrorResponseSpec,
+  ResponseExamplesSpec,
   SecuritySpec,
   type HttpMethod,
 } from "./domain/contract.js";

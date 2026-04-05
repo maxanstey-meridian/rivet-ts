@@ -2,7 +2,7 @@ import path from "node:path";
 import ts from "typescript";
 import { RivetContractLowerer } from "../../application/ports/rivet-contract-lowerer.js";
 import { ContractBundle } from "../../domain/contract-bundle.js";
-import { EndpointExampleSpec } from "../../domain/contract.js";
+import { EndpointExampleSpec, type ResponseExamplesSpec } from "../../domain/contract.js";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import { RivetContractLoweringResult } from "../../domain/rivet-contract-lowering-result.js";
 import {
@@ -28,7 +28,7 @@ type EndpointContext = {
   endpointName: string;
   httpMethod: string;
   requestExamples?: readonly EndpointExampleSpec[];
-  successResponseExample?: RivetEndpointExample;
+  responseExamples?: readonly ResponseExamplesSpec[];
 };
 
 type PropertyDescriptor = {
@@ -378,10 +378,8 @@ export class TypeScriptRivetContractLowerer extends RivetContractLowerer {
           endpointName: endpoint.name,
           httpMethod: endpoint.method,
           requestExamples: endpoint.requestExamples.length > 0 ? endpoint.requestExamples : undefined,
-          successResponseExample:
-            endpoint.successResponseExample?.data !== undefined
-              ? new RivetEndpointExample({ data: endpoint.successResponseExample.data })
-              : undefined,
+          responseExamples:
+            endpoint.responseExamples.length > 0 ? endpoint.responseExamples : undefined,
         });
 
         if (!loweredEndpoint) {
@@ -507,7 +505,7 @@ class TypeEmissionContext {
     const responseType = this.lowerOptionalTypeNode(responseNode);
 
     const params = this.buildEndpointParams(routeLiteral, context, inputNode, inputType);
-    const responses = this.buildResponses(
+    const baseResponses = this.buildResponses(
       specNode,
       context,
       successStatus,
@@ -515,6 +513,7 @@ class TypeEmissionContext {
       responseType,
       fileResponse,
     );
+    const responses = this.mergeResponseExamples(baseResponses, context);
 
     if (anonymous && securityScheme) {
       const conflictingNode = propertyMap.get("security") ?? specNode;
@@ -549,7 +548,6 @@ class TypeEmissionContext {
       summary,
       description,
       requestExamples: requestExamples?.length ? requestExamples : undefined,
-      successResponseExample: context.successResponseExample,
       security,
       fileContentType,
     });
@@ -977,6 +975,51 @@ class TypeEmissionContext {
     responses.push(...errorResponses);
     responses.sort((left, right) => left.statusCode - right.statusCode);
     return responses;
+  }
+
+  private mergeResponseExamples(
+    responses: RivetResponseType[],
+    context: EndpointContext,
+  ): RivetResponseType[] {
+    if (!context.responseExamples || context.responseExamples.length === 0) {
+      return responses;
+    }
+
+    const responsesByStatus = new Map<number, number>();
+    for (let i = 0; i < responses.length; i++) {
+      responsesByStatus.set(responses[i]!.statusCode, i);
+    }
+
+    const merged = [...responses];
+    for (const group of context.responseExamples) {
+      const index = responsesByStatus.get(group.status);
+      if (index === undefined) {
+        this.diagnostics.push(
+          new ExtractionDiagnostic({
+            severity: "error",
+            code: "UNRESOLVED_RESPONSE_EXAMPLE_STATUS",
+            message: `Endpoint "${context.contractName}.${context.endpointName}" declares response examples for status ${group.status}, but no matching response exists.`,
+          }),
+        );
+        continue;
+      }
+
+      const existing = merged[index]!;
+      const examples = group.examples
+        .filter((example) => example.data !== undefined)
+        .map((example) => new RivetEndpointExample({ data: example.data! }));
+
+      if (examples.length > 0) {
+        merged[index] = new RivetResponseType({
+          statusCode: existing.statusCode,
+          dataType: existing.dataType,
+          description: existing.description,
+          examples,
+        });
+      }
+    }
+
+    return merged;
   }
 
   private readErrorResponses(node: ts.TypeNode, context: EndpointContext): RivetResponseType[] {

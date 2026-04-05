@@ -58,6 +58,13 @@ export type EndpointRequestExampleAuthoringSpec<TExample = EndpointExampleAuthor
   | InlineEndpointRequestExampleAuthoringSpec<TExample>
   | RefEndpointRequestExampleAuthoringSpec<TExample>;
 
+export type EndpointResponseExamplesAuthoringSpec<
+  TExample = EndpointExampleAuthoringValue,
+> = {
+  readonly status: number;
+  readonly examples: readonly EndpointExampleAuthoringReference<TExample>[];
+};
+
 export type EndpointAuthoringSpec = {
   readonly method: EndpointAuthoringHttpMethod;
   readonly route: string;
@@ -69,6 +76,7 @@ export type EndpointAuthoringSpec = {
     | EndpointRequestExampleAuthoringSpec
   )[];
   readonly successResponseExample?: EndpointExampleAuthoringReference;
+  readonly responseExamples?: readonly EndpointResponseExamplesAuthoringSpec[];
   readonly successStatus?: number;
   readonly summary?: string;
   readonly description?: string;
@@ -142,9 +150,29 @@ type EndpointSuccessResponseExampleAuthoringReference<TSpec extends EndpointAuth
       : EndpointExampleAuthoringReference<TSpec["response"]>
     : never;
 
+type EndpointResponseExamplesAuthoringEntry<TSpec extends EndpointAuthoringSpec> =
+  EndpointResponseExamplesAuthoringSpec<
+    "response" extends keyof TSpec ? TSpec["response"] : never
+  >;
+
+type ExactEndpointResponseExamplesAuthoringTuple<
+  TSpec extends EndpointAuthoringSpec,
+  TExamples,
+> = TExamples extends readonly unknown[]
+  ? {
+      readonly [TIndex in keyof TExamples]: TExamples[TIndex] extends EndpointResponseExamplesAuthoringEntry<TSpec>
+        ? EndpointResponseExamplesAuthoringEntry<TSpec>
+        : TExamples[TIndex];
+    }
+  : TExamples;
+
 type HasSpecificEndpointExampleAuthoringReference<
   TSpec extends EndpointAuthoringSpec,
-  TKey extends "requestExample" | "requestExamples" | "successResponseExample",
+  TKey extends
+    | "requestExample"
+    | "requestExamples"
+    | "successResponseExample"
+    | "responseExamples",
 > = EndpointAuthoringSpec[TKey] extends TSpec[TKey] ? false : true;
 
 type ExactEndpointAuthoringSpec<TSpec extends EndpointAuthoringSpec> = ExactAuthoringShape<
@@ -173,6 +201,12 @@ type ExactEndpointAuthoringSpec<TSpec extends EndpointAuthoringSpec> = ExactAuth
   > extends true
     ? EndpointSuccessResponseExampleAuthoringReference<TSpec>
     : TSpec["successResponseExample"];
+  readonly responseExamples?: HasSpecificEndpointExampleAuthoringReference<
+    TSpec,
+    "responseExamples"
+  > extends true
+    ? ExactEndpointResponseExamplesAuthoringTuple<TSpec, TSpec["responseExamples"]>
+    : TSpec["responseExamples"];
 };
 
 export type Endpoint<TSpec extends ExactEndpointAuthoringSpec<TSpec>> = {

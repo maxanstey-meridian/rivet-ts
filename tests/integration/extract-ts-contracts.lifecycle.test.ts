@@ -142,20 +142,29 @@ describe("ExtractTsContracts lifecycle", () => {
         },
       },
     ]);
-    expect(create?.successResponseExample?.data).toEqual({
-      data: {
-        id: "550e8400-e29b-41d4-a716-446655440001",
-        email: "jane@example.com",
-        status: "active",
-        priority: 2,
-        managerId: null,
-        coordinates: {
-          lat: 51.5074,
-          lng: -0.1278,
-        },
+    expect(create?.responseExamples).toEqual([
+      {
+        status: 201,
+        examples: [
+          {
+            data: {
+              data: {
+                id: "550e8400-e29b-41d4-a716-446655440001",
+                email: "jane@example.com",
+                status: "active",
+                priority: 2,
+                managerId: null,
+                coordinates: {
+                  lat: 51.5074,
+                  lng: -0.1278,
+                },
+              },
+              included: ["profile", "audit"],
+            },
+          },
+        ],
       },
-      included: ["profile", "audit"],
-    });
+    ]);
     expect(create?.errors).toEqual([
       expect.objectContaining({
         status: 422,
@@ -215,7 +224,10 @@ describe("ExtractTsContracts lifecycle", () => {
       endpoints: Array<{
         name: string;
         requestExamples?: Array<{ json: Record<string, unknown>; mediaType: string }>;
-        successResponseExample?: { data: Record<string, unknown> };
+        responses: Array<{
+          statusCode: number;
+          examples?: Array<{ data: Record<string, unknown> }>;
+        }>;
       }>;
     };
     const create = payload.endpoints.find((endpoint) => endpoint.name === "create");
@@ -239,22 +251,26 @@ describe("ExtractTsContracts lifecycle", () => {
         mediaType: "application/json",
       },
     ]);
-    expect(create?.successResponseExample).toEqual({
-      data: {
+    const successResponse = create?.responses.find((response) => response.statusCode === 201);
+    expect(successResponse?.examples).toEqual([
+      {
         data: {
-          id: "550e8400-e29b-41d4-a716-446655440001",
-          email: "jane@example.com",
-          status: "active",
-          priority: 2,
-          managerId: null,
-          coordinates: {
-            lat: 51.5074,
-            lng: -0.1278,
+          data: {
+            id: "550e8400-e29b-41d4-a716-446655440001",
+            email: "jane@example.com",
+            status: "active",
+            priority: 2,
+            managerId: null,
+            coordinates: {
+              lat: 51.5074,
+              lng: -0.1278,
+            },
           },
+          included: ["profile", "audit"],
         },
-        included: ["profile", "audit"],
       },
-    });
+    ]);
+    expect(create).not.toHaveProperty("successResponseExample");
   });
 
   it("extracts aliased endpoint authoring specs exported from the public DSL", async () => {
@@ -293,10 +309,19 @@ describe("ExtractTsContracts lifecycle", () => {
         },
       },
     ]);
-    expect(contract.endpoints[0]?.successResponseExample?.data).toEqual([
+    expect(contract.endpoints[0]?.responseExamples).toEqual([
       {
-        id: "mem_123",
-        email: "ada@example.com",
+        status: 200,
+        examples: [
+          {
+            data: [
+              {
+                id: "mem_123",
+                email: "ada@example.com",
+              },
+            ],
+          },
+        ],
       },
     ]);
     expect(contract.endpoints[0]?.errors).toEqual([
@@ -1194,6 +1219,111 @@ describe("ExtractTsContracts lifecycle", () => {
             path.join("tests", "fixtures", "invalid-authoring-contract", "contracts.ts"),
           ),
           message: expect.stringContaining("errorExtra"),
+        }),
+      ]),
+    );
+  });
+
+  it("extracts status-scoped response examples from the dedicated fixture", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+
+    const bundle = await useCase.execute({
+      entryPath: getFixturePath(path.join("response-examples-contract", "contracts.ts")),
+    });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(bundle.diagnostics).toEqual([]);
+
+    const contract = bundle.contracts[0];
+    const create = contract?.endpoints.find((endpoint) => endpoint.name === "Create");
+
+    expect(create?.responseExamples).toEqual([
+      {
+        status: 201,
+        examples: [
+          { data: { id: "mem_001", email: "jane@example.com" } },
+          { data: { id: "mem_002", email: "alex@example.com" } },
+        ],
+      },
+      {
+        status: 422,
+        examples: [
+          { data: { message: "Email is required", code: "VALIDATION_ERROR" } },
+        ],
+      },
+    ]);
+  });
+
+  it("normalizes legacy successResponseExample into status-scoped responseExamples", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+
+    const bundle = await useCase.execute({
+      entryPath: getFixturePath(path.join("response-examples-contract", "contracts.ts")),
+    });
+
+    expect(bundle.hasErrors).toBe(false);
+
+    const contract = bundle.contracts[0];
+    const legacy = contract?.endpoints.find((endpoint) => endpoint.name === "LegacyCreate");
+
+    expect(legacy?.responseExamples).toEqual([
+      {
+        status: 201,
+        examples: [
+          { data: { id: "mem_legacy", email: "legacy@example.com" } },
+        ],
+      },
+    ]);
+    expect(legacy?.successResponseExample).toBeUndefined();
+  });
+
+  it("reports a diagnostic when both successResponseExample and responseExamples are declared", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+    const tempDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rivet-ts-conflicting-response-examples-"),
+    );
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        "export interface MemberDto { id: string; }",
+        "",
+        "export const example1 = { id: \"mem_1\" } satisfies MemberDto;",
+        "export const example2 = { id: \"mem_2\" } satisfies MemberDto;",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Get: Endpoint<{",
+        '    method: "GET";',
+        '    route: "/api/temp";',
+        "    response: MemberDto;",
+        "    successResponseExample: typeof example1;",
+        "    responseExamples: [{ status: 200; examples: [typeof example2] }];",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await useCase.execute({ entryPath });
+
+    expect(bundle.hasErrors).toBe(true);
+    expect(bundle.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "CONFLICTING_RESPONSE_EXAMPLE_SPEC",
         }),
       ]),
     );

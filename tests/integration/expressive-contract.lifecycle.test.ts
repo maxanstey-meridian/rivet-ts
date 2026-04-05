@@ -32,9 +32,11 @@ describe("Expressive contract lifecycle", () => {
       endpoints: Array<{
         name: string;
         params: Array<{ name: string; source: string; type: Record<string, unknown> }>;
-        responses: Array<{ statusCode: number }>;
+        responses: Array<{
+          statusCode: number;
+          examples?: Array<{ data: Record<string, unknown> }>;
+        }>;
         requestExamples?: Array<{ json: Record<string, unknown>; mediaType: string }>;
-        successResponseExample?: { data: Record<string, unknown> };
       }>;
       types: Array<{
         name: string;
@@ -126,22 +128,28 @@ describe("Expressive contract lifecycle", () => {
         mediaType: "application/json",
       },
     ]);
-    expect(createEndpoint?.successResponseExample).toEqual({
-      data: {
+    const createSuccessResponse = createEndpoint?.responses.find(
+      (response) => response.statusCode === 201,
+    );
+    expect(createSuccessResponse?.examples).toEqual([
+      {
         data: {
-          id: "550e8400-e29b-41d4-a716-446655440001",
-          email: "jane@example.com",
-          status: "active",
-          priority: 2,
-          managerId: null,
-          coordinates: {
-            lat: 51.5074,
-            lng: -0.1278,
+          data: {
+            id: "550e8400-e29b-41d4-a716-446655440001",
+            email: "jane@example.com",
+            status: "active",
+            priority: 2,
+            managerId: null,
+            coordinates: {
+              lat: 51.5074,
+              lng: -0.1278,
+            },
           },
+          included: ["profile", "audit"],
         },
-        included: ["profile", "audit"],
       },
-    });
+    ]);
+    expect(createEndpoint).not.toHaveProperty("successResponseExample");
 
     const memberDto = payload.types.find((type) => type.name === "MemberDto");
     expect(memberDto?.properties).toEqual(
