@@ -51,6 +51,11 @@ export const reviewMemberRequestExample = {
   email: "grace@example.com",
 } satisfies CreateMemberRequest;
 
+export const createMemberResponseExample = {
+  id: "mem_456",
+  email: "ada@example.com",
+} satisfies MemberDto;
+
 export interface ValidationErrorDto {
   message: string;
   fields: Record<string, string[]>;
@@ -84,6 +89,9 @@ export interface MembersContract extends Contract<"MembersContract"> {
         componentExampleId: "CreateMemberRequestExample";
         resolvedJson: typeof reviewMemberRequestExample;
       },
+    ];
+    responseExamples: [
+      { status: 201; examples: [typeof createMemberResponseExample] },
     ];
     errors: [{ status: 422; response: ValidationErrorDto; description: "Validation failed" }];
     security: { scheme: "admin" };
@@ -234,7 +242,16 @@ contract JSON.
           "dataType": {
             "kind": "ref",
             "name": "MemberDto"
-          }
+          },
+          "examples": [
+            {
+              "mediaType": "application/json",
+              "json": {
+                "id": "mem_456",
+                "email": "ada@example.com"
+              }
+            }
+          ]
         },
         {
           "statusCode": 422,
@@ -243,6 +260,29 @@ contract JSON.
             "name": "ValidationErrorDto"
           },
           "description": "Validation failed"
+        }
+      ],
+      "requestExamples": [
+        {
+          "mediaType": "application/json",
+          "json": {
+            "email": "ada@example.com"
+          }
+        },
+        {
+          "name": "review payload",
+          "mediaType": "application/json",
+          "json": {
+            "email": "grace@example.com"
+          }
+        },
+        {
+          "name": "component-backed payload",
+          "mediaType": "application/json",
+          "componentExampleId": "CreateMemberRequestExample",
+          "resolvedJson": {
+            "email": "grace@example.com"
+          }
         }
       ],
       "security": {
@@ -364,6 +404,8 @@ Supported endpoint keys today:
 - `security`
 - `fileResponse`
 - `fileContentType`
+- `formEncoded`
+- `acceptsFile`
 
 Notes:
 
@@ -377,6 +419,9 @@ Notes:
 - Response example entries support the same descriptor forms as request examples: bare `typeof exportedConst`, inline `{ name?; mediaType?; json }`, and ref-backed `{ name?; mediaType?; componentExampleId; resolvedJson }`.
 - Response media types default to `application/json`; success examples on file endpoints default to the endpoint's `fileContentType`.
 - Examples are preserved in the extracted frontend `ContractBundle` and in the lowered Rivet contract document.
+- `formEncoded: true` marks an endpoint as form-encoded; request examples default to `application/x-www-form-urlencoded` instead of `application/json`.
+- `acceptsFile: true` enables multipart upload handling; the input DTO must include exactly one `Blob` or `File` property (lowered as a `file` param) and the remaining non-route properties lower as `formField` params. Request examples default to `multipart/form-data`.
+- Property-level schema metadata and controller/decorator-based endpoint authoring are not supported yet; endpoint/content example parity lands first.
 - This package still stops at the Rivet JSON seam; downstream Rivet/OpenAPI emission must consume those lowered example fields before examples appear in generated OpenAPI.
 - `errors` should be authored as an inline tuple of inline object literals.
 - `security` should be authored as an inline object literal with a `scheme` property.
@@ -389,8 +434,8 @@ Notes:
 - `Brand<T, "...">`
 - `Format<T, "...">`
 - endpoint metadata: `method`, `route`, `input`, `response`, `successStatus`, `summary`, `description`, `errors`,
-  `anonymous`, `security`, `fileResponse`, `fileContentType`, `requestExample`, `requestExamples`,
-  `successResponseExample`, `responseExamples`
+  `anonymous`, `security`, `fileResponse`, `fileContentType`, `formEncoded`, `acceptsFile`, `requestExample`,
+  `requestExamples`, `successResponseExample`, `responseExamples`
 
 Explicitly not the goal:
 

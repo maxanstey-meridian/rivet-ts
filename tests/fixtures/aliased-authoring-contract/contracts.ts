@@ -40,8 +40,8 @@ export type ListMembersSpec = EndpointAuthoringSpec & {
   route: "/api/aliased-members";
   input: ListMembersQuery;
   response: MemberDto[];
-  requestExample: typeof listMembersRequestExample;
-  successResponseExample: typeof listMembersResponseExample;
+  requestExamples: [typeof listMembersRequestExample];
+  responseExamples: [{ status: 200; examples: [typeof listMembersResponseExample] }];
   summary: "List aliased members";
   description: "List members from an aliased endpoint spec";
   security: AdminSecurity;
