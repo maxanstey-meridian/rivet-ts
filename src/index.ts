@@ -41,6 +41,7 @@ export {
   type RivetEndpointExampleValue,
   RivetEndpointParam,
   RivetEndpointSecurity,
+  RivetRequestExample,
   RivetResponseExample,
   RivetResponseType,
   type RivetType,

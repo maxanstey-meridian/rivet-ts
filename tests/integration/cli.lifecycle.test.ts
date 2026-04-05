@@ -240,6 +240,82 @@ describe("CLI lifecycle", () => {
     expect(typedPayload.endpoints.every((endpoint) => !("requestExample" in endpoint))).toBe(true);
   });
 
+  it("writes status-scoped response examples JSON for the dedicated fixture through the real CLI path", async () => {
+    const tempDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rivet-ts-response-examples-cli-"),
+    );
+    const outputPath = path.join(tempDirectory, "response-examples-contract.json");
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+
+    const exitCode = await runCli(
+      [
+        "--entry",
+        getFixturePath(path.join("response-examples-contract", "contracts.ts")),
+        "--out",
+        outputPath,
+      ],
+      {
+        stdout: (text) => stdout.push(text),
+        stderr: (text) => stderr.push(text),
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toHaveLength(0);
+    expect(stderr).toHaveLength(0);
+
+    const fileContents = await fs.readFile(outputPath, "utf8");
+    const payload = JSON.parse(fileContents) as unknown;
+
+    expect(payload).toEqual(
+      await readJsonFixture(path.join("response-examples-contract", "golden-contract.json")),
+    );
+
+    const typedPayload = payload as {
+      endpoints: Array<{
+        name: string;
+        responses: Array<{
+          statusCode: number;
+          examples?: Array<{ mediaType: string; json: string }>;
+        }>;
+      }>;
+    };
+
+    const create = typedPayload.endpoints.find((endpoint) => endpoint.name === "create");
+    const create201 = create?.responses.find((r) => r.statusCode === 201);
+    expect(create201?.examples).toEqual([
+      {
+        mediaType: "application/json",
+        json: JSON.stringify({ id: "mem_001", email: "jane@example.com" }),
+      },
+      {
+        mediaType: "application/json",
+        json: JSON.stringify({ id: "mem_002", email: "alex@example.com" }),
+      },
+    ]);
+    const create422 = create?.responses.find((r) => r.statusCode === 422);
+    expect(create422?.examples).toEqual([
+      {
+        mediaType: "application/json",
+        json: JSON.stringify({ message: "Email is required", code: "VALIDATION_ERROR" }),
+      },
+    ]);
+
+    const legacy = typedPayload.endpoints.find((endpoint) => endpoint.name === "legacyCreate");
+    const legacy201 = legacy?.responses.find((r) => r.statusCode === 201);
+    expect(legacy201?.examples).toEqual([
+      {
+        mediaType: "application/json",
+        json: JSON.stringify({ id: "mem_legacy", email: "legacy@example.com" }),
+      },
+    ]);
+
+    expect(
+      typedPayload.endpoints.every((endpoint) => !("successResponseExample" in endpoint)),
+    ).toBe(true);
+  });
+
   it("writes named inline and ref-backed request examples through the real CLI path", async () => {
     const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-request-examples-v2-"));
     const entryPath = path.join(tempDirectory, "contracts.ts");
