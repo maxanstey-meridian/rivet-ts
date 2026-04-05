@@ -816,7 +816,7 @@ describe("ExtractTsContracts lifecycle", () => {
     );
   });
 
-  it.fails("extracts shorthand-property example objects", async () => {
+  it("extracts shorthand-property example objects", async () => {
     const frontend = new TypeScriptContractFrontend();
     const useCase = new ExtractTsContracts(frontend);
     const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-examples-shorthand-"));

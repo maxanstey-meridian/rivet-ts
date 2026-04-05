@@ -674,21 +674,12 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     if (ts.isObjectLiteralExpression(unwrapped)) {
       const value: Record<string, EndpointExampleValue> = {};
       for (const property of unwrapped.properties) {
-        if (!ts.isPropertyAssignment(property)) {
+        const entry = this.parseExampleObjectProperty(property, checker);
+        if (!entry) {
           return undefined;
         }
 
-        const propertyName = this.getExamplePropertyName(property.name);
-        if (!propertyName) {
-          return undefined;
-        }
-
-        const propertyValue = this.parseExampleValue(property.initializer, checker);
-        if (propertyValue === undefined) {
-          return undefined;
-        }
-
-        value[propertyName] = propertyValue;
+        value[entry.name] = entry.value;
       }
 
       return value;
@@ -696,6 +687,52 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
 
     const literalValue = this.parseLiteralValueFromType(unwrapped, checker);
     return literalValue;
+  }
+
+  private parseExampleObjectProperty(
+    property: ts.ObjectLiteralElementLike,
+    checker: ts.TypeChecker,
+  ): { name: string; value: EndpointExampleValue } | null {
+    if (ts.isPropertyAssignment(property)) {
+      const propertyName = this.getExamplePropertyName(property.name);
+      if (!propertyName) {
+        return null;
+      }
+
+      const propertyValue = this.parseExampleValue(property.initializer, checker);
+      return propertyValue === undefined ? null : { name: propertyName, value: propertyValue };
+    }
+
+    if (ts.isShorthandPropertyAssignment(property)) {
+      const propertyValue = this.parseShorthandExampleValue(property, checker);
+      return propertyValue === undefined ? null : { name: property.name.text, value: propertyValue };
+    }
+
+    return null;
+  }
+
+  private parseShorthandExampleValue(
+    property: ts.ShorthandPropertyAssignment,
+    checker: ts.TypeChecker,
+  ): EndpointExampleValue | undefined {
+    const symbol = checker.getShorthandAssignmentValueSymbol(property);
+    if (!symbol) {
+      return undefined;
+    }
+
+    const resolvedSymbol =
+      (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(symbol) : symbol;
+
+    for (const declaration of resolvedSymbol.getDeclarations() ?? []) {
+      if (ts.isVariableDeclaration(declaration) && declaration.initializer) {
+        return this.parseExampleValue(declaration.initializer, checker);
+      }
+    }
+
+    return this.parseLiteralValueFromTsType(
+      checker.getTypeOfSymbolAtLocation(resolvedSymbol, property.name),
+      checker,
+    );
   }
 
   private unwrapExampleExpression(expression: ts.Expression): ts.Expression {
@@ -724,6 +761,13 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     checker: ts.TypeChecker,
   ): string | number | boolean | undefined {
     const type = checker.getTypeAtLocation(expression);
+    return this.parseLiteralValueFromTsType(type, checker);
+  }
+
+  private parseLiteralValueFromTsType(
+    type: ts.Type,
+    checker: ts.TypeChecker,
+  ): string | number | boolean | undefined {
     if ((type.flags & ts.TypeFlags.StringLiteral) !== 0) {
       return (type as ts.StringLiteralType).value;
     }
