@@ -26,6 +26,11 @@ interface DirectoryStatusResponse {
   readonly status: "ok";
 }
 
+interface FormSubmission {
+  readonly name: string;
+  readonly email: string;
+}
+
 interface DirectoryContract extends Contract<"DirectoryContract"> {
   Search: Endpoint<{
     method: "POST";
@@ -47,6 +52,14 @@ interface DirectoryContract extends Contract<"DirectoryContract"> {
     response: void;
     fileResponse: true;
     fileContentType: "text/csv";
+  }>;
+
+  SubmitForm: Endpoint<{
+    method: "POST";
+    route: "/api/directory/form";
+    input: FormSubmission;
+    response: void;
+    formEncoded: true;
   }>;
 }
 
@@ -102,11 +115,27 @@ test("handle maps file responses to Blob", async () => {
   expectTypeOf(blob).toEqualTypeOf<Blob>();
 });
 
+test("handle receives { body: TInput } for form-encoded endpoints", async () => {
+  const submit = handle<DirectoryContract, "SubmitForm">(async ({ body }) => {
+    expectTypeOf(body).toEqualTypeOf<FormSubmission>();
+    void body;
+  });
+
+  expectTypeOf(submit).toEqualTypeOf<RivetHandler<DirectoryContract, "SubmitForm">>();
+
+  await submit({
+    body: {
+      name: "Jane",
+      email: "jane@example.com",
+    },
+  });
+});
+
 test("contract helpers expose only endpoint keys", () => {
   type EndpointKeys = ContractEndpointKey<DirectoryContract>;
   type SearchSpec = EndpointSpecOf<DirectoryContract, "Search">;
 
-  expectTypeOf<EndpointKeys>().toEqualTypeOf<"Search" | "Health" | "Export">();
+  expectTypeOf<EndpointKeys>().toEqualTypeOf<"Search" | "Health" | "Export" | "SubmitForm">();
   expectTypeOf<SearchSpec>().toEqualTypeOf<{
     method: "POST";
     route: "/api/directory/search";

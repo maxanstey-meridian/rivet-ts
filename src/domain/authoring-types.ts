@@ -88,6 +88,7 @@ export type EndpointAuthoringSpec = {
   readonly security?: EndpointSecurityAuthoringSpec;
   readonly fileResponse?: boolean;
   readonly fileContentType?: string;
+  readonly formEncoded?: boolean;
 };
 
 type ExactAuthoringShape<TActual, TShape> = TShape & {

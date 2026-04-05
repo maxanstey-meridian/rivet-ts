@@ -1329,4 +1329,40 @@ describe("ExtractTsContracts lifecycle", () => {
       ]),
     );
   });
+
+  it("extracts formEncoded flag from a form-encoded endpoint", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+
+    const bundle = await useCase.execute({
+      entryPath: getFixturePath(path.join("form-encoded-contract", "contracts.ts")),
+    });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(bundle.contracts).toHaveLength(1);
+
+    const [contract] = bundle.contracts;
+    const submitForm = contract.endpoints.find((endpoint) => endpoint.name === "SubmitForm");
+    expect(submitForm).toMatchObject({
+      method: "POST",
+      route: "/api/forms",
+      formEncoded: true,
+    });
+  });
+
+  it("defaults formEncoded to false when not declared", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+
+    const bundle = await useCase.execute({
+      entryPath: getFixturePath(path.join("request-examples-contract", "contracts.ts")),
+    });
+
+    expect(bundle.hasErrors).toBe(false);
+
+    const [contract] = bundle.contracts;
+    for (const endpoint of contract.endpoints) {
+      expect(endpoint.formEncoded).toBe(false);
+    }
+  });
 });

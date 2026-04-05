@@ -27,6 +27,7 @@ type EndpointContext = {
   contractName: string;
   endpointName: string;
   httpMethod: string;
+  formEncoded: boolean;
   requestExamples?: readonly EndpointExampleSpec[];
   responseExamples?: readonly ResponseExamplesSpec[];
 };
@@ -377,6 +378,7 @@ export class TypeScriptRivetContractLowerer extends RivetContractLowerer {
           contractName: contract.name,
           endpointName: endpoint.name,
           httpMethod: endpoint.method,
+          formEncoded: endpoint.formEncoded,
           requestExamples: endpoint.requestExamples.length > 0 ? endpoint.requestExamples : undefined,
           responseExamples:
             endpoint.responseExamples.length > 0 ? endpoint.responseExamples : undefined,
@@ -533,8 +535,11 @@ class TypeEmissionContext {
             scheme: anonymous ? undefined : (securityScheme ?? undefined),
           })
         : undefined;
+    const requestExampleDefaultMediaType = context.formEncoded
+      ? "application/x-www-form-urlencoded"
+      : DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE;
     const requestExamples = context.requestExamples
-      ?.map((requestExample) => this.lowerRequestExample(requestExample))
+      ?.map((requestExample) => this.lowerRequestExample(requestExample, requestExampleDefaultMediaType))
       .filter((requestExample): requestExample is RivetRequestExample => requestExample !== null);
 
     return new RivetEndpointDefinition({
@@ -550,6 +555,7 @@ class TypeEmissionContext {
       requestExamples: requestExamples?.length ? requestExamples : undefined,
       security,
       fileContentType,
+      isFormEncoded: context.formEncoded || undefined,
     });
   }
 
@@ -886,8 +892,8 @@ class TypeEmissionContext {
     return params;
   }
 
-  private lowerRequestExample(example: EndpointExampleSpec): RivetRequestExample | null {
-    const mediaType = example.mediaType ?? DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE;
+  private lowerRequestExample(example: EndpointExampleSpec, defaultMediaType: string): RivetRequestExample | null {
+    const mediaType = example.mediaType ?? defaultMediaType;
 
     if (example.data !== undefined) {
       return new RivetRequestExample({

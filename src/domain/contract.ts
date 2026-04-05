@@ -85,6 +85,7 @@ export class EndpointSpec {
   public readonly response?: TypeExpression;
   public readonly fileResponse: boolean;
   public readonly fileContentType?: string;
+  public readonly formEncoded: boolean;
   public readonly successStatus?: number;
   public readonly summary?: string;
   public readonly description?: string;
@@ -103,6 +104,7 @@ export class EndpointSpec {
     response?: TypeExpression;
     fileResponse?: boolean;
     fileContentType?: string;
+    formEncoded?: boolean;
     successStatus?: number;
     summary?: string;
     description?: string;
@@ -120,6 +122,7 @@ export class EndpointSpec {
     this.response = input.response;
     this.fileResponse = input.fileResponse ?? false;
     this.fileContentType = input.fileContentType;
+    this.formEncoded = input.formEncoded ?? false;
     this.successStatus = input.successStatus;
     this.summary = input.summary;
     this.description = input.description;

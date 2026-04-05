@@ -861,4 +861,53 @@ describe("CLI lifecycle", () => {
       ]),
     );
   }, 60000);
+
+  it("writes Rivet contract JSON for a form-encoded endpoint through the real CLI path", async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-form-encoded-"));
+    const outputPath = path.join(tempDirectory, "form-encoded-contract.json");
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+
+    const exitCode = await runCli(
+      [
+        "--entry",
+        getFixturePath(path.join("form-encoded-contract", "contracts.ts")),
+        "--out",
+        outputPath,
+      ],
+      {
+        stdout: (text) => stdout.push(text),
+        stderr: (text) => stderr.push(text),
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toHaveLength(0);
+
+    const fileContents = await fs.readFile(outputPath, "utf8");
+    const payload = JSON.parse(fileContents) as {
+      endpoints: Array<{
+        name: string;
+        isFormEncoded?: boolean;
+        requestExamples?: Array<{ mediaType: string; json: Record<string, unknown> }>;
+      }>;
+    };
+
+    expect(payload).toEqual(
+      await readJsonFixture(path.join("form-encoded-contract", "golden-contract.json")),
+    );
+
+    const submitForm = payload.endpoints.find((endpoint) => endpoint.name === "submitForm");
+    expect(submitForm?.isFormEncoded).toBe(true);
+    expect(submitForm?.requestExamples).toEqual([
+      {
+        mediaType: "application/x-www-form-urlencoded",
+        json: {
+          name: "Jane Doe",
+          email: "jane@example.com",
+          message: "Hello, world!",
+        },
+      },
+    ]);
+  });
 });

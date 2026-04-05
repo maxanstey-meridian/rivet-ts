@@ -1103,4 +1103,74 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
       { mediaType: "application/json", json: { message: "Not found" } },
     ]);
   });
+
+  it("lowers a form-encoded endpoint with isFormEncoded and form-urlencoded request example media type", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const lowerer = new TypeScriptRivetContractLowerer();
+    const extractUseCase = new ExtractTsContracts(frontend);
+    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+
+    const bundle = await extractUseCase.execute({
+      entryPath: getFixturePath(path.join("form-encoded-contract", "contracts.ts")),
+    });
+    const lowered = await lowerUseCase.execute({ bundle });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(lowered.hasErrors).toBe(false);
+
+    const payload = JSON.parse(lowered.toJson()) as {
+      endpoints: Array<{
+        name: string;
+        isFormEncoded?: boolean;
+        params: Array<{ name: string; source: string }>;
+        requestExamples?: Array<{ mediaType: string; json: Record<string, unknown> }>;
+      }>;
+    };
+
+    expect(payload).toEqual(
+      await readJsonFixture(path.join("form-encoded-contract", "golden-contract.json")),
+    );
+
+    const submitForm = payload.endpoints.find((endpoint) => endpoint.name === "submitForm");
+    expect(submitForm?.isFormEncoded).toBe(true);
+    expect(submitForm?.params).toEqual([
+      expect.objectContaining({ name: "body", source: "body" }),
+    ]);
+    expect(submitForm?.requestExamples).toEqual([
+      {
+        mediaType: "application/x-www-form-urlencoded",
+        json: {
+          name: "Jane Doe",
+          email: "jane@example.com",
+          message: "Hello, world!",
+        },
+      },
+    ]);
+  });
+
+  it("defaults request example media type to application/json for non-form-encoded endpoints", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const lowerer = new TypeScriptRivetContractLowerer();
+    const extractUseCase = new ExtractTsContracts(frontend);
+    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+
+    const bundle = await extractUseCase.execute({
+      entryPath: getFixturePath(path.join("request-examples-contract", "contracts.ts")),
+    });
+    const lowered = await lowerUseCase.execute({ bundle });
+
+    expect(lowered.hasErrors).toBe(false);
+
+    const payload = JSON.parse(lowered.toJson()) as {
+      endpoints: Array<{
+        name: string;
+        isFormEncoded?: boolean;
+        requestExamples?: Array<{ mediaType: string }>;
+      }>;
+    };
+
+    const create = payload.endpoints.find((endpoint) => endpoint.name === "create");
+    expect(create?.isFormEncoded).toBeUndefined();
+    expect(create?.requestExamples?.[0]?.mediaType).toBe("application/json");
+  });
 });

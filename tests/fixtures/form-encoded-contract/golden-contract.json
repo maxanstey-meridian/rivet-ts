@@ -1,0 +1,69 @@
+{
+  "types": [
+    {
+      "name": "SubmitFormRequest",
+      "typeParameters": [],
+      "properties": [
+        {
+          "name": "name",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "optional": false
+        },
+        {
+          "name": "email",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "optional": false
+        },
+        {
+          "name": "message",
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          },
+          "optional": false
+        }
+      ]
+    }
+  ],
+  "enums": [],
+  "endpoints": [
+    {
+      "name": "submitForm",
+      "httpMethod": "POST",
+      "routeTemplate": "/api/forms",
+      "params": [
+        {
+          "name": "body",
+          "type": {
+            "kind": "ref",
+            "name": "SubmitFormRequest"
+          },
+          "source": "body"
+        }
+      ],
+      "controllerName": "formEncoded",
+      "responses": [
+        {
+          "statusCode": 201
+        }
+      ],
+      "requestExamples": [
+        {
+          "mediaType": "application/x-www-form-urlencoded",
+          "json": {
+            "name": "Jane Doe",
+            "email": "jane@example.com",
+            "message": "Hello, world!"
+          }
+        }
+      ],
+      "isFormEncoded": true
+    }
+  ]
+}
