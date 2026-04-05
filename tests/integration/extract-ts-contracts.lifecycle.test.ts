@@ -1277,6 +1277,57 @@ describe("ExtractTsContracts lifecycle", () => {
     ]);
   });
 
+  it("reports a diagnostic when both requestExample and requestExamples are declared", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+    const tempDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rivet-ts-conflicting-request-examples-"),
+    );
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        "export interface CreateRequest { email: string; }",
+        "",
+        'export const example1 = { email: "a@example.com" } satisfies CreateRequest;',
+        'export const example2 = { email: "b@example.com" } satisfies CreateRequest;',
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/temp";',
+        "    input: CreateRequest;",
+        "    response: void;",
+        "    requestExample: typeof example1;",
+        "    requestExamples: [typeof example2];",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await useCase.execute({ entryPath });
+
+    expect(bundle.hasErrors).toBe(true);
+    expect(bundle.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "CONFLICTING_REQUEST_EXAMPLE_SPEC",
+        }),
+      ]),
+    );
+  });
+
   it("reports a diagnostic when both successResponseExample and responseExamples are declared", async () => {
     const frontend = new TypeScriptContractFrontend();
     const useCase = new ExtractTsContracts(frontend);
