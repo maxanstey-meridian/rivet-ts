@@ -91,7 +91,6 @@ export class EndpointSpec {
   public readonly summary?: string;
   public readonly description?: string;
   public readonly requestExamples: readonly EndpointExampleSpec[];
-  public readonly successResponseExample?: EndpointExampleSpec;
   public readonly responseExamples: readonly ResponseExamplesSpec[];
   public readonly errors: readonly ErrorResponseSpec[];
   public readonly anonymous: boolean;
@@ -111,7 +110,6 @@ export class EndpointSpec {
     summary?: string;
     description?: string;
     requestExamples?: readonly EndpointExampleSpec[];
-    successResponseExample?: EndpointExampleSpec;
     responseExamples?: readonly ResponseExamplesSpec[];
     errors?: readonly ErrorResponseSpec[];
     anonymous?: boolean;
@@ -130,7 +128,6 @@ export class EndpointSpec {
     this.summary = input.summary;
     this.description = input.description;
     this.requestExamples = input.requestExamples ?? [];
-    this.successResponseExample = input.successResponseExample;
     this.responseExamples = input.responseExamples ?? [];
     this.errors = input.errors ?? [];
     this.anonymous = input.anonymous ?? false;

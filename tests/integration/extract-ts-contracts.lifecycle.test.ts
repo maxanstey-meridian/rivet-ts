@@ -772,7 +772,6 @@ describe("ExtractTsContracts lifecycle", () => {
         ]),
       );
       expect(bundle.contracts[0]?.endpoints[0]?.requestExamples).toEqual([]);
-      expect(bundle.contracts[0]?.endpoints[0]?.successResponseExample).toBeUndefined();
     },
   );
 
@@ -967,7 +966,6 @@ describe("ExtractTsContracts lifecycle", () => {
       ]),
     );
     expect(bundle.contracts[0]?.endpoints[0]?.requestExamples).toEqual([]);
-    expect(bundle.contracts[0]?.endpoints[0]?.successResponseExample).toBeUndefined();
   });
 
   it("attributes imported malformed example diagnostics to the source module that declares the initializer", async () => {
@@ -1277,7 +1275,6 @@ describe("ExtractTsContracts lifecycle", () => {
         ],
       },
     ]);
-    expect(legacy?.successResponseExample).toBeUndefined();
   });
 
   it("reports a diagnostic when both successResponseExample and responseExamples are declared", async () => {
