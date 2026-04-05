@@ -289,17 +289,52 @@ export const listMembersResponseExample = {
   totalCount: 1,
 } satisfies PagedResult<MemberDto>;
 
+export const validationErrorExample = {
+  message: "Email is required",
+  code: "VALIDATION_ERROR",
+} satisfies ValidationErrorDto;
+
 export interface MembersContract extends Contract<"MembersContract"> {
   List: Endpoint<{
     method: "GET";
     route: "/api/members";
     response: PagedResult<MemberDto>;
-    successResponseExample: typeof listMembersResponseExample;
+    responseExamples: [
+      {
+        status: 200;
+        examples: [typeof listMembersResponseExample];
+      },
+    ];
     summary: "List members";
     description: "List all members";
   }>;
+
+  Create: Endpoint<{
+    method: "POST";
+    route: "/api/members";
+    input: CreateMemberRequest;
+    response: MemberDto;
+    successStatus: 201;
+    errors: [{ status: 422; response: ValidationErrorDto; description: "Validation failed" }];
+    responseExamples: [
+      {
+        status: 201;
+        examples: [
+          { name: "default member"; json: typeof listMembersResponseExample },
+        ];
+      },
+      {
+        status: 422;
+        examples: [
+          { name: "validation error"; mediaType: "application/problem+json"; json: typeof validationErrorExample },
+        ];
+      },
+    ];
+  }>;
 }
 ```
+
+`successResponseExample` still works as singular legacy sugar but the steady-state DSL is `responseExamples`.
 
 Supported today:
 
@@ -317,8 +352,10 @@ Supported endpoint keys today:
 - `route`
 - `input`
 - `response`
-- `requestExample`
-- `successResponseExample`
+- `requestExample` (legacy sugar — use `requestExamples`)
+- `requestExamples`
+- `successResponseExample` (legacy sugar — use `responseExamples`)
+- `responseExamples`
 - `successStatus`
 - `summary`
 - `description`
@@ -335,7 +372,10 @@ Notes:
 - Examples must be authored as real exported `const` values and referenced from endpoint metadata with `typeof someExample`.
 - Example references are constrained to JSON-like value shapes in the public DSL; functions and other non-serializable value shapes should fail at compile time.
 - Validate example values with `satisfies` against the DTO you want to model; the extractor serializes the const initializer, not an invented type-only example bag.
-- The current scope is one `requestExample` and one `successResponseExample` per endpoint.
+- `requestExamples` and `responseExamples` are the plural steady-state DSL. Singular `requestExample` and `successResponseExample` remain as backward-compatible sugar.
+- Response examples are status-scoped: each entry targets a specific HTTP status code and attaches examples to the matching response node.
+- Response example entries support the same descriptor forms as request examples: bare `typeof exportedConst`, inline `{ name?; mediaType?; json }`, and ref-backed `{ name?; mediaType?; componentExampleId; resolvedJson }`.
+- Response media types default to `application/json`; success examples on file endpoints default to the endpoint's `fileContentType`.
 - Examples are preserved in the extracted frontend `ContractBundle` and in the lowered Rivet contract document.
 - This package still stops at the Rivet JSON seam; downstream Rivet/OpenAPI emission must consume those lowered example fields before examples appear in generated OpenAPI.
 - `errors` should be authored as an inline tuple of inline object literals.
@@ -349,7 +389,8 @@ Notes:
 - `Brand<T, "...">`
 - `Format<T, "...">`
 - endpoint metadata: `method`, `route`, `input`, `response`, `successStatus`, `summary`, `description`, `errors`,
-  `anonymous`, `security`, `fileResponse`, `fileContentType`, `requestExample`, `successResponseExample`
+  `anonymous`, `security`, `fileResponse`, `fileContentType`, `requestExample`, `requestExamples`,
+  `successResponseExample`, `responseExamples`
 
 Explicitly not the goal:
 

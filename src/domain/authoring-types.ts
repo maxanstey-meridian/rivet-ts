@@ -62,7 +62,10 @@ export type EndpointResponseExamplesAuthoringSpec<
   TExample = EndpointExampleAuthoringValue,
 > = {
   readonly status: number;
-  readonly examples: readonly EndpointExampleAuthoringReference<TExample>[];
+  readonly examples: readonly (
+    | EndpointExampleAuthoringReference<TExample>
+    | EndpointRequestExampleAuthoringSpec<TExample>
+  )[];
 };
 
 export type EndpointAuthoringSpec = {
@@ -150,18 +153,13 @@ type EndpointSuccessResponseExampleAuthoringReference<TSpec extends EndpointAuth
       : EndpointExampleAuthoringReference<TSpec["response"]>
     : never;
 
-type EndpointResponseExamplesAuthoringEntry<TSpec extends EndpointAuthoringSpec> =
-  EndpointResponseExamplesAuthoringSpec<
-    "response" extends keyof TSpec ? TSpec["response"] : never
-  >;
-
 type ExactEndpointResponseExamplesAuthoringTuple<
-  TSpec extends EndpointAuthoringSpec,
+  _TSpec extends EndpointAuthoringSpec,
   TExamples,
 > = TExamples extends readonly unknown[]
   ? {
-      readonly [TIndex in keyof TExamples]: TExamples[TIndex] extends EndpointResponseExamplesAuthoringEntry<TSpec>
-        ? EndpointResponseExamplesAuthoringEntry<TSpec>
+      readonly [TIndex in keyof TExamples]: TExamples[TIndex] extends EndpointResponseExamplesAuthoringSpec
+        ? EndpointResponseExamplesAuthoringSpec
         : TExamples[TIndex];
     }
   : TExamples;

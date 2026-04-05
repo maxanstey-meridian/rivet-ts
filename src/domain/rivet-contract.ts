@@ -115,6 +115,42 @@ export class RivetRequestExample {
   }
 }
 
+export class RivetResponseExample {
+  public readonly name?: string;
+  public readonly mediaType: string;
+  public readonly json?: RivetEndpointExampleValue;
+  public readonly componentExampleId?: string;
+  public readonly resolvedJson?: RivetEndpointExampleValue;
+
+  public constructor(
+    input:
+      | {
+          mediaType: string;
+          json: RivetEndpointExampleValue;
+          name?: string;
+        }
+      | {
+          mediaType: string;
+          componentExampleId: string;
+          resolvedJson: RivetEndpointExampleValue;
+          name?: string;
+        },
+  ) {
+    if ("json" in input) {
+      this.json = input.json;
+    } else {
+      this.componentExampleId = input.componentExampleId;
+      this.resolvedJson = input.resolvedJson;
+    }
+
+    if (input.name !== undefined) {
+      this.name = input.name;
+    }
+
+    this.mediaType = input.mediaType;
+  }
+}
+
 export class RivetTypeDefinition {
   public readonly name: string;
   public readonly typeParameters: readonly string[];
@@ -162,13 +198,13 @@ export class RivetResponseType {
   public readonly statusCode: number;
   public readonly dataType?: RivetType;
   public readonly description?: string;
-  public readonly examples?: readonly RivetEndpointExample[];
+  public readonly examples?: readonly RivetResponseExample[];
 
   public constructor(input: {
     statusCode: number;
     dataType?: RivetType;
     description?: string;
-    examples?: readonly RivetEndpointExample[];
+    examples?: readonly RivetResponseExample[];
   }) {
     this.statusCode = input.statusCode;
     this.dataType = input.dataType;

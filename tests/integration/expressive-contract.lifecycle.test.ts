@@ -34,7 +34,7 @@ describe("Expressive contract lifecycle", () => {
         params: Array<{ name: string; source: string; type: Record<string, unknown> }>;
         responses: Array<{
           statusCode: number;
-          examples?: Array<{ data: Record<string, unknown> }>;
+          examples?: Array<{ mediaType: string; json: Record<string, unknown> }>;
         }>;
         requestExamples?: Array<{ json: Record<string, unknown>; mediaType: string }>;
       }>;
@@ -133,7 +133,8 @@ describe("Expressive contract lifecycle", () => {
     );
     expect(createSuccessResponse?.examples).toEqual([
       {
-        data: {
+        mediaType: "application/json",
+        json: {
           data: {
             id: "550e8400-e29b-41d4-a716-446655440001",
             email: "jane@example.com",

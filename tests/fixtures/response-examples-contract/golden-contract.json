@@ -97,13 +97,15 @@
           },
           "examples": [
             {
-              "data": {
+              "mediaType": "application/json",
+              "json": {
                 "id": "mem_001",
                 "email": "jane@example.com"
               }
             },
             {
-              "data": {
+              "mediaType": "application/json",
+              "json": {
                 "id": "mem_002",
                 "email": "alex@example.com"
               }
@@ -119,7 +121,8 @@
           "description": "Validation failed",
           "examples": [
             {
-              "data": {
+              "mediaType": "application/json",
+              "json": {
                 "message": "Email is required",
                 "code": "VALIDATION_ERROR"
               }
@@ -165,7 +168,8 @@
           },
           "examples": [
             {
-              "data": {
+              "mediaType": "application/json",
+              "json": {
                 "id": "mem_legacy",
                 "email": "legacy@example.com"
               }

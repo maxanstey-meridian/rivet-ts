@@ -619,7 +619,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
 
     const examples: EndpointExampleSpec[] = [];
     for (const exampleNode of exampleEntryNodes) {
-      const example = this.parseResponseExampleValue(
+      const example = this.parseResponseExampleEntry(
         exampleNode,
         `responseExamples[${status}].examples entries`,
         sourceFile,
@@ -635,7 +635,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     return new ResponseExamplesSpec({ status, examples });
   }
 
-  private parseResponseExampleValue(
+  private parseResponseExampleEntry(
     node: ts.TypeNode,
     propertyName: string,
     sourceFile: ts.SourceFile,
@@ -643,6 +643,174 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     diagnostics: ExtractionDiagnostic[],
     endpointName: string,
   ): EndpointExampleSpec | null {
+    if (ts.isTypeQueryNode(node)) {
+      const declaration = this.resolveExampleDeclaration(node.exprName, checker);
+      if (
+        !declaration ||
+        !declaration.initializer ||
+        !this.isConstVariableDeclaration(declaration) ||
+        !this.isExportedVariableDeclaration(declaration)
+      ) {
+        diagnostics.push(
+          this.createNodeDiagnostic(
+            sourceFile,
+            node,
+            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+            `Endpoint "${endpointName}" must declare ${propertyName} as typeof an exported const with an initializer.`,
+          ),
+        );
+        return null;
+      }
+
+      const data = this.parseExampleValue(declaration.initializer, checker);
+      if (data === undefined) {
+        diagnostics.push(
+          this.createNodeDiagnostic(
+            sourceFile,
+            declaration.initializer,
+            "UNSUPPORTED_ENDPOINT_EXAMPLE_VALUE",
+            `Endpoint "${endpointName}" ${propertyName} must resolve to a JSON-like const initializer.`,
+          ),
+        );
+        return null;
+      }
+
+      return new EndpointExampleSpec({ data });
+    }
+
+    const propertyMap = this.createPropertyMap(node, sourceFile, checker);
+    if (!propertyMap) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          node,
+          "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+          `Endpoint "${endpointName}" ${propertyName} must be typeof exportedConst or a supported descriptor object.`,
+        ),
+      );
+      return null;
+    }
+
+    const name = this.parseRequestExampleDescriptorStringLiteral(
+      propertyMap.get("name"),
+      "name",
+      sourceFile,
+      diagnostics,
+      endpointName,
+    );
+    const mediaType = this.parseRequestExampleDescriptorStringLiteral(
+      propertyMap.get("mediaType"),
+      "mediaType",
+      sourceFile,
+      diagnostics,
+      endpointName,
+    );
+
+    if (name === null || mediaType === null) {
+      return null;
+    }
+
+    const jsonNode = propertyMap.get("json");
+    const componentExampleIdNode = propertyMap.get("componentExampleId");
+    const resolvedJsonNode = propertyMap.get("resolvedJson");
+
+    if (jsonNode) {
+      if (componentExampleIdNode || resolvedJsonNode) {
+        diagnostics.push(
+          this.createNodeDiagnostic(
+            sourceFile,
+            node,
+            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+            `Endpoint "${endpointName}" ${propertyName} must use either inline json or ref-backed componentExampleId/resolvedJson fields, not both.`,
+          ),
+        );
+        return null;
+      }
+
+      const data = this.parseResponseExampleData(
+        jsonNode,
+        `${propertyName}.json`,
+        sourceFile,
+        checker,
+        diagnostics,
+        endpointName,
+      );
+      if (data === null) {
+        return null;
+      }
+
+      return new EndpointExampleSpec({
+        data,
+        name: name ?? undefined,
+        mediaType: mediaType ?? undefined,
+      });
+    }
+
+    if (componentExampleIdNode || resolvedJsonNode) {
+      if (!componentExampleIdNode || !resolvedJsonNode) {
+        diagnostics.push(
+          this.createNodeDiagnostic(
+            sourceFile,
+            node,
+            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+            `Endpoint "${endpointName}" ref-backed ${propertyName} must declare both componentExampleId and resolvedJson.`,
+          ),
+        );
+        return null;
+      }
+
+      const componentExampleId = this.parseStringLiteral(componentExampleIdNode, sourceFile);
+      if (!componentExampleId) {
+        diagnostics.push(
+          this.createNodeDiagnostic(
+            sourceFile,
+            componentExampleIdNode,
+            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+            `Endpoint "${endpointName}" ${propertyName} must declare componentExampleId as a string literal.`,
+          ),
+        );
+        return null;
+      }
+
+      const resolvedJson = this.parseResponseExampleData(
+        resolvedJsonNode,
+        `${propertyName}.resolvedJson`,
+        sourceFile,
+        checker,
+        diagnostics,
+        endpointName,
+      );
+      if (resolvedJson === null) {
+        return null;
+      }
+
+      return new EndpointExampleSpec({
+        componentExampleId,
+        resolvedJson,
+        name: name ?? undefined,
+        mediaType: mediaType ?? undefined,
+      });
+    }
+
+    diagnostics.push(
+      this.createNodeDiagnostic(
+        sourceFile,
+        node,
+        "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+        `Endpoint "${endpointName}" ${propertyName} descriptor must declare json or componentExampleId/resolvedJson.`,
+      ),
+    );
+    return null;
+  }
+
+  private parseResponseExampleData(
+    node: ts.TypeNode,
+    propertyName: string,
+    sourceFile: ts.SourceFile,
+    checker: ts.TypeChecker,
+    diagnostics: ExtractionDiagnostic[],
+    endpointName: string,
+  ): EndpointExampleValue | null {
     if (!ts.isTypeQueryNode(node)) {
       diagnostics.push(
         this.createNodeDiagnostic(
@@ -686,7 +854,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       return null;
     }
 
-    return new EndpointExampleSpec({ data });
+    return data;
   }
 
   private getDefaultSuccessStatus(method: HttpMethod): number {

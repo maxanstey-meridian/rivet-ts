@@ -226,7 +226,7 @@ describe("ExtractTsContracts lifecycle", () => {
         requestExamples?: Array<{ json: Record<string, unknown>; mediaType: string }>;
         responses: Array<{
           statusCode: number;
-          examples?: Array<{ data: Record<string, unknown> }>;
+          examples?: Array<{ mediaType: string; json: Record<string, unknown> }>;
         }>;
       }>;
     };
@@ -254,7 +254,8 @@ describe("ExtractTsContracts lifecycle", () => {
     const successResponse = create?.responses.find((response) => response.statusCode === 201);
     expect(successResponse?.examples).toEqual([
       {
-        data: {
+        mediaType: "application/json",
+        json: {
           data: {
             id: "550e8400-e29b-41d4-a716-446655440001",
             email: "jane@example.com",

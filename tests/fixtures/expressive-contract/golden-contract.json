@@ -476,7 +476,8 @@
           },
           "examples": [
             {
-              "data": {
+              "mediaType": "application/json",
+              "json": {
                 "data": {
                   "id": "550e8400-e29b-41d4-a716-446655440001",
                   "email": "jane@example.com",

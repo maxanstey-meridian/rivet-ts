@@ -8,10 +8,10 @@ import { RivetContractLoweringResult } from "../../domain/rivet-contract-lowerin
 import {
   RivetContractDocument,
   type RivetContractEnum,
-  RivetEndpointExample,
   RivetEndpointDefinition,
   RivetEndpointParam,
   RivetRequestExample,
+  RivetResponseExample,
   RivetEndpointSecurity,
   RivetResponseType,
   type RivetType,
@@ -513,7 +513,7 @@ class TypeEmissionContext {
       responseType,
       fileResponse,
     );
-    const responses = this.mergeResponseExamples(baseResponses, context);
+    const responses = this.mergeResponseExamples(baseResponses, context, fileContentType);
 
     if (anonymous && securityScheme) {
       const conflictingNode = propertyMap.get("security") ?? specNode;
@@ -980,6 +980,7 @@ class TypeEmissionContext {
   private mergeResponseExamples(
     responses: RivetResponseType[],
     context: EndpointContext,
+    fileContentType: string | undefined,
   ): RivetResponseType[] {
     if (!context.responseExamples || context.responseExamples.length === 0) {
       return responses;
@@ -1006,8 +1007,10 @@ class TypeEmissionContext {
 
       const existing = merged[index]!;
       const examples = group.examples
-        .filter((example) => example.data !== undefined)
-        .map((example) => new RivetEndpointExample({ data: example.data! }));
+        .map((example) => this.lowerResponseExample(example, group.status, fileContentType))
+        .filter(
+          (example): example is RivetResponseExample => example !== null,
+        );
 
       if (examples.length > 0) {
         merged[index] = new RivetResponseType({
@@ -1020,6 +1023,45 @@ class TypeEmissionContext {
     }
 
     return merged;
+  }
+
+  private lowerResponseExample(
+    example: EndpointExampleSpec,
+    statusCode: number,
+    fileContentType: string | undefined,
+  ): RivetResponseExample | null {
+    const isSuccessStatus = statusCode >= 200 && statusCode < 300;
+    const defaultMediaType =
+      isSuccessStatus && fileContentType
+        ? fileContentType
+        : DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE;
+    const mediaType = example.mediaType ?? defaultMediaType;
+
+    if (example.data !== undefined) {
+      return new RivetResponseExample({
+        mediaType,
+        json: example.data,
+        name: example.name,
+      });
+    }
+
+    if (example.componentExampleId && example.resolvedJson !== undefined) {
+      return new RivetResponseExample({
+        mediaType,
+        componentExampleId: example.componentExampleId,
+        resolvedJson: example.resolvedJson,
+        name: example.name,
+      });
+    }
+
+    this.diagnostics.push(
+      new ExtractionDiagnostic({
+        severity: "error",
+        code: "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+        message: "Response example must resolve to either inline json or componentExampleId/resolvedJson.",
+      }),
+    );
+    return null;
   }
 
   private readErrorResponses(node: ts.TypeNode, context: EndpointContext): RivetResponseType[] {

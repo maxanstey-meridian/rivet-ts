@@ -162,7 +162,8 @@ describe("CLI lifecycle", () => {
               },
               examples: [
                 {
-                  data: [
+                  mediaType: "application/json",
+                  json: [
                     {
                       id: "mem_123",
                       email: "ada@example.com",
@@ -816,7 +817,7 @@ describe("CLI lifecycle", () => {
         responses: Array<{
           statusCode: number;
           dataType?: { name?: string };
-          examples?: Array<{ data: Record<string, unknown> }>;
+          examples?: Array<{ mediaType: string; json: Record<string, unknown> }>;
         }>;
       }>;
     };
@@ -847,7 +848,8 @@ describe("CLI lifecycle", () => {
               dataType: expect.objectContaining({ name: "PingResponse" }),
               examples: [
                 {
-                  data: {
+                  mediaType: "application/json",
+                  json: {
                     ok: true,
                     echoedName: "Ada",
                   },
