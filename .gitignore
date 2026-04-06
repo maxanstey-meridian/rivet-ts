@@ -6,3 +6,4 @@ coverage
 .plans
 .idea
 .orch
+.orchrc.json
