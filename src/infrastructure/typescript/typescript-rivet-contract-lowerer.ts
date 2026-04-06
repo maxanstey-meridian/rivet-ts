@@ -382,7 +382,8 @@ export class TypeScriptRivetContractLowerer extends RivetContractLowerer {
           httpMethod: endpoint.method,
           formEncoded: endpoint.formEncoded,
           acceptsFile: endpoint.acceptsFile,
-          requestExamples: endpoint.requestExamples.length > 0 ? endpoint.requestExamples : undefined,
+          requestExamples:
+            endpoint.requestExamples.length > 0 ? endpoint.requestExamples : undefined,
           responseExamples:
             endpoint.responseExamples.length > 0 ? endpoint.responseExamples : undefined,
         });
@@ -544,11 +545,16 @@ class TypeEmissionContext {
         ? "application/x-www-form-urlencoded"
         : DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE;
     const requestExamples = context.requestExamples
-      ?.map((requestExample) => this.lowerRequestExample(requestExample, requestExampleDefaultMediaType))
+      ?.map((requestExample) =>
+        this.lowerRequestExample(requestExample, requestExampleDefaultMediaType),
+      )
       .filter((requestExample): requestExample is RivetRequestExample => requestExample !== null);
 
     const inputTypeName =
-      context.acceptsFile && inputNode && ts.isTypeReferenceNode(inputNode) && !inputNode.typeArguments?.length
+      context.acceptsFile &&
+      inputNode &&
+      ts.isTypeReferenceNode(inputNode) &&
+      !inputNode.typeArguments?.length
         ? this.resolveTypeName(inputNode.typeName)
         : undefined;
 
@@ -1006,7 +1012,10 @@ class TypeEmissionContext {
     return MULTIPART_FILE_TYPE_NAMES.has(name);
   }
 
-  private lowerRequestExample(example: EndpointExampleSpec, defaultMediaType: string): RivetRequestExample | null {
+  private lowerRequestExample(
+    example: EndpointExampleSpec,
+    defaultMediaType: string,
+  ): RivetRequestExample | null {
     const mediaType = example.mediaType ?? defaultMediaType;
 
     if (example.data !== undefined) {
@@ -1030,7 +1039,8 @@ class TypeEmissionContext {
       new ExtractionDiagnostic({
         severity: "error",
         code: "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-        message: "Request example must resolve to either inline json or componentExampleId/resolvedJson.",
+        message:
+          "Request example must resolve to either inline json or componentExampleId/resolvedJson.",
       }),
     );
     return null;
@@ -1128,9 +1138,7 @@ class TypeEmissionContext {
       const existing = merged[index]!;
       const examples = group.examples
         .map((example) => this.lowerResponseExample(example, group.status, fileContentType))
-        .filter(
-          (example): example is RivetResponseExample => example !== null,
-        );
+        .filter((example): example is RivetResponseExample => example !== null);
 
       if (examples.length > 0) {
         merged[index] = new RivetResponseType({
@@ -1152,9 +1160,7 @@ class TypeEmissionContext {
   ): RivetResponseExample | null {
     const isSuccessStatus = statusCode >= 200 && statusCode < 300;
     const defaultMediaType =
-      isSuccessStatus && fileContentType
-        ? fileContentType
-        : DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE;
+      isSuccessStatus && fileContentType ? fileContentType : DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE;
     const mediaType = example.mediaType ?? defaultMediaType;
 
     if (example.data !== undefined) {
@@ -1178,7 +1184,8 @@ class TypeEmissionContext {
       new ExtractionDiagnostic({
         severity: "error",
         code: "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-        message: "Response example must resolve to either inline json or componentExampleId/resolvedJson.",
+        message:
+          "Response example must resolve to either inline json or componentExampleId/resolvedJson.",
       }),
     );
     return null;

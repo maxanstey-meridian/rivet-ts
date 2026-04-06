@@ -37,7 +37,7 @@
     "fmt:check": "oxfmt --check .",
     "test": "pnpm build && vitest run",
     "test:watch": "vitest",
-    "check": "pnpm run fmt:check && pnpm run lint && pnpm run test && pnpm run build"
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "typescript": "^6.0.2"

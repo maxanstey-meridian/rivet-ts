@@ -32,9 +32,7 @@ export type CreateEndpointAuthoringPreview = EndpointAuthoringSpec & {
   readonly input: CreateMemberRequest;
   readonly response: MemberEnvelope<MemberDto>;
   readonly requestExamples: [typeof createMemberRequestExample];
-  readonly responseExamples: [
-    { status: 201; examples: [typeof createMemberResponseExample] },
-  ];
+  readonly responseExamples: [{ status: 201; examples: [typeof createMemberResponseExample] }];
   readonly successStatus: 201;
   readonly errors: [ValidationFailure];
   readonly security: AdminSecurity;

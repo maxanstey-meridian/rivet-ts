@@ -1,7 +1,6 @@
 import type { Contract, Endpoint } from "../../../dist/index.js";
 import type {
   CreateItemRequest,
-  DeleteAckDto,
   ItemDto,
   SubmitFormRequest,
   UploadDocumentRequest,

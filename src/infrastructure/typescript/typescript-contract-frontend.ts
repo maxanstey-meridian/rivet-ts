@@ -1018,7 +1018,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
         sourceFile,
         node,
         "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-        `Endpoint "${endpointName}" requestExamples entries must be typeof exportedConst, { json: typeof exportedConst }, or { componentExampleId: \"...\"; resolvedJson: typeof exportedConst }.`,
+        `Endpoint "${endpointName}" requestExamples entries must be typeof exportedConst, { json: typeof exportedConst }, or { componentExampleId: "..."; resolvedJson: typeof exportedConst }.`,
       ),
     );
     return null;
@@ -1385,8 +1385,46 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       return value;
     }
 
+    if (ts.isIdentifier(unwrapped)) {
+      return this.resolveIdentifierExampleValue(unwrapped, checker);
+    }
+
+    if (
+      ts.isBinaryExpression(unwrapped) &&
+      unwrapped.operatorToken.kind === ts.SyntaxKind.PlusToken
+    ) {
+      const left = this.parseExampleValue(unwrapped.left, checker);
+      const right = this.parseExampleValue(unwrapped.right, checker);
+      if (typeof left === "string" && typeof right === "string") {
+        return left + right;
+      }
+
+      return undefined;
+    }
+
     const literalValue = this.parseLiteralValueFromType(unwrapped, checker);
     return literalValue;
+  }
+
+  private resolveIdentifierExampleValue(
+    identifier: ts.Identifier,
+    checker: ts.TypeChecker,
+  ): EndpointExampleValue | undefined {
+    const symbol = checker.getSymbolAtLocation(identifier);
+    if (!symbol) {
+      return undefined;
+    }
+
+    const resolvedSymbol =
+      (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(symbol) : symbol;
+
+    for (const declaration of resolvedSymbol.getDeclarations() ?? []) {
+      if (ts.isVariableDeclaration(declaration) && declaration.initializer) {
+        return this.parseExampleValue(declaration.initializer, checker);
+      }
+    }
+
+    return undefined;
   }
 
   private parseExampleObjectProperty(

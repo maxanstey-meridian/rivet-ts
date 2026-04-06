@@ -1,7 +1,7 @@
 import type { Endpoint } from "./authoring-types.js";
 
 export type ContractEndpointKey<TContract> = {
-  readonly [TKey in keyof TContract]: TContract[TKey] extends Endpoint<any> ? TKey : never;
+  [TKey in keyof TContract]-?: TContract[TKey] extends Endpoint<any> ? TKey : never;
 }[keyof TContract];
 
 export type EndpointSpecOf<TContract, TKey extends ContractEndpointKey<TContract>> =

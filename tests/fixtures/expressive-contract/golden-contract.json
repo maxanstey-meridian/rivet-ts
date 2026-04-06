@@ -157,9 +157,7 @@
     },
     {
       "name": "MemberEnvelope",
-      "typeParameters": [
-        "TData"
-      ],
+      "typeParameters": ["TData"],
       "properties": [
         {
           "name": "data",
@@ -235,9 +233,7 @@
     },
     {
       "name": "PagedResult",
-      "typeParameters": [
-        "TItem"
-      ],
+      "typeParameters": ["TItem"],
       "properties": [
         {
           "name": "items",
@@ -315,25 +311,15 @@
   "enums": [
     {
       "name": "MemberPriority",
-      "intValues": [
-        1,
-        2,
-        3
-      ]
+      "intValues": [1, 2, 3]
     },
     {
       "name": "MemberStatus",
-      "values": [
-        "active",
-        "suspended"
-      ]
+      "values": ["active", "suspended"]
     },
     {
       "name": "SortDirection",
-      "values": [
-        "asc",
-        "desc"
-      ]
+      "values": ["asc", "desc"]
     }
   ],
   "endpoints": [

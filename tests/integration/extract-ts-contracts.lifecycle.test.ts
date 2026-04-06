@@ -1092,6 +1092,111 @@ describe("ExtractTsContracts lifecycle", () => {
     ]);
   });
 
+  it("resolves identifier references to other const initializers in example values", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-examples-identifier-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        "interface ItemDto { name: string; tags: string[]; }",
+        "interface ResponseDto { item: ItemDto; total: number; }",
+        "",
+        'const item = { name: "widget", tags: ["a", "b"] };',
+        "export const responseExample = { item, total: 1 } satisfies ResponseDto;",
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Get: Endpoint<{",
+        '    method: "GET";',
+        '    route: "/api/temp";',
+        "    response: ResponseDto;",
+        "    responseExamples: [{ status: 200; examples: [typeof responseExample] }];",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await useCase.execute({ entryPath });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(bundle.contracts[0]?.endpoints[0]?.responseExamples).toEqual([
+      {
+        status: 200,
+        examples: [
+          {
+            data: {
+              item: { name: "widget", tags: ["a", "b"] },
+              total: 1,
+            },
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("resolves string concatenation in example values", async () => {
+    const frontend = new TypeScriptContractFrontend();
+    const useCase = new ExtractTsContracts(frontend);
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-examples-concat-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const normalizedImportPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+
+    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
+
+    await fs.writeFile(
+      entryPath,
+      [
+        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
+        "",
+        "interface CsvDto { content: string; }",
+        "",
+        'export const csvExample = { content: "a,b\\n" + "1,2\\n" } satisfies CsvDto;',
+        "",
+        'export interface TempContract extends Contract<"TempContract"> {',
+        "  Get: Endpoint<{",
+        '    method: "GET";',
+        '    route: "/api/temp";',
+        "    response: CsvDto;",
+        "    responseExamples: [{ status: 200; examples: [typeof csvExample] }];",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const bundle = await useCase.execute({ entryPath });
+
+    expect(bundle.hasErrors).toBe(false);
+    expect(bundle.contracts[0]?.endpoints[0]?.responseExamples).toEqual([
+      {
+        status: 200,
+        examples: [
+          {
+            data: {
+              content: "a,b\n1,2\n",
+            },
+          },
+        ],
+      },
+    ]);
+  });
+
   it.each([
     ["non-array errors type", "string", "INVALID_ERRORS_SPEC"],
     ["non-object error entry", "Array<string>", "INVALID_ERROR_ENTRY"],
@@ -1247,9 +1352,7 @@ describe("ExtractTsContracts lifecycle", () => {
       },
       {
         status: 422,
-        examples: [
-          { data: { message: "Email is required", code: "VALIDATION_ERROR" } },
-        ],
+        examples: [{ data: { message: "Email is required", code: "VALIDATION_ERROR" } }],
       },
     ]);
   });
@@ -1270,9 +1373,7 @@ describe("ExtractTsContracts lifecycle", () => {
     expect(legacy?.responseExamples).toEqual([
       {
         status: 201,
-        examples: [
-          { data: { id: "mem_legacy", email: "legacy@example.com" } },
-        ],
+        examples: [{ data: { id: "mem_legacy", email: "legacy@example.com" } }],
       },
     ]);
   });
@@ -1349,8 +1450,8 @@ describe("ExtractTsContracts lifecycle", () => {
         "",
         "export interface MemberDto { id: string; }",
         "",
-        "export const example1 = { id: \"mem_1\" } satisfies MemberDto;",
-        "export const example2 = { id: \"mem_2\" } satisfies MemberDto;",
+        'export const example1 = { id: "mem_1" } satisfies MemberDto;',
+        'export const example2 = { id: "mem_2" } satisfies MemberDto;',
         "",
         'export interface TempContract extends Contract<"TempContract"> {',
         "  Get: Endpoint<{",

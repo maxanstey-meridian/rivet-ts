@@ -1,60 +1,44 @@
-# rivet-ts
+<h1 align="center">rivet-ts</h1>
+<p align="center">
+  <a href="https://github.com/maxanstey-meridian/rivet-ts/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License" /></a>
+</p>
 
-**Extract a Rivet contract JSON document from a constrained TypeScript contract DSL.**
+**Define your API surface in type-only TypeScript, extract a Rivet contract, get OpenAPI, typed clients, and validators downstream.** No decorators, no runtime, no codegen config.
 
-Define your API surface in type-only TypeScript, run the extractor, get a JSON contract that
-[Rivet](https://github.com/maxanstey-meridian/rivet) can turn into TypeScript clients, OpenAPI specs, JSON Schema,
-and generated C# contracts downstream.
+> [Rivet](https://github.com/maxanstey-meridian/rivet) gives you end-to-end type safety from .NET to TypeScript. rivet-ts lets you author that same contract natively in TypeScript — same pipeline, same outputs, TypeScript-first DX.
 
 ## Install
 
-This repo is not published on npm yet. Install it directly from GitHub:
-
 ```bash
-pnpm add -D github:maxanstey-meridian/rivet-ts
+pnpm add -D github:maxanstey-meridian/rivet-ts#v0.3
 ```
 
-You can also pin a branch, tag, or commit:
+Pin a specific tag, branch, or commit:
 
 ```bash
 pnpm add -D github:maxanstey-meridian/rivet-ts#main
-pnpm add -D github:maxanstey-meridian/rivet-ts#v0.1.0
-pnpm add -D github:maxanstey-meridian/rivet-ts#<commit>
+pnpm add -D github:maxanstey-meridian/rivet-ts#v0.3
 ```
 
-After install, use the CLI from your consumer repo:
-
-```bash
-pnpm exec rivet-reflect-ts --entry ./contracts.ts --out ./contract.json
-```
-
-## Define TS contracts -> get a JSON contract
+## Define contracts → get contract JSON
 
 ```ts
-// contracts.ts
 import type { Contract, Endpoint } from "rivet-ts";
 
 export interface MemberDto {
   id: string;
   email: string;
+  role: MemberRole;
+}
+
+export enum MemberRole {
+  Admin = "admin",
+  Member = "member",
 }
 
 export interface CreateMemberRequest {
   email: string;
 }
-
-export const createMemberRequestExample = {
-  email: "ada@example.com",
-} satisfies CreateMemberRequest;
-
-export const reviewMemberRequestExample = {
-  email: "grace@example.com",
-} satisfies CreateMemberRequest;
-
-export const createMemberResponseExample = {
-  id: "mem_456",
-  email: "ada@example.com",
-} satisfies MemberDto;
 
 export interface ValidationErrorDto {
   message: string;
@@ -66,7 +50,6 @@ export interface MembersContract extends Contract<"MembersContract"> {
     method: "GET";
     route: "/api/members";
     response: MemberDto[];
-    summary: "List members";
     description: "List all members";
   }>;
 
@@ -76,279 +59,56 @@ export interface MembersContract extends Contract<"MembersContract"> {
     input: CreateMemberRequest;
     response: MemberDto;
     successStatus: 201;
-    requestExamples: [
-      typeof createMemberRequestExample,
-      {
-        name: "review payload";
-        mediaType: "application/json";
-        json: typeof reviewMemberRequestExample;
-      },
-      {
-        name: "component-backed payload";
-        mediaType: "application/json";
-        componentExampleId: "CreateMemberRequestExample";
-        resolvedJson: typeof reviewMemberRequestExample;
-      },
-    ];
-    responseExamples: [
-      { status: 201; examples: [typeof createMemberResponseExample] },
-    ];
     errors: [{ status: 422; response: ValidationErrorDto; description: "Validation failed" }];
     security: { scheme: "admin" };
   }>;
-
-  Export: Endpoint<{
-    method: "GET";
-    route: "/api/members/export";
-    fileResponse: true;
-    fileContentType: "text/csv";
-    summary: "Export members";
-    description: "Download members as CSV";
-    security: { scheme: "admin" };
-  }>;
 }
 ```
 
 ```bash
-pnpm build
-node ./dist/interfaces/cli/main.js --entry ./contracts.ts --out ./contract.json
+pnpm exec rivet-reflect-ts --entry ./contracts.ts --out ./contract.json
 ```
 
-`requestExample` still works as a singular shorthand, but the steady-state DSL is plural
-`requestExamples`. Bare `typeof exportedConst` entries are inline JSON shorthand; richer request
-examples use explicit descriptors with optional `name` and `mediaType`, or `componentExampleId`
-plus `resolvedJson` when you want to preserve a component-backed example reference in the emitted
-contract JSON.
-
-```json
-{
-  "types": [
-    {
-      "name": "CreateMemberRequest",
-      "typeParameters": [],
-      "properties": [
-        {
-          "name": "email",
-          "type": {
-            "kind": "primitive",
-            "type": "string"
-          },
-          "optional": false
-        }
-      ]
-    },
-    {
-      "name": "MemberDto",
-      "typeParameters": [],
-      "properties": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "primitive",
-            "type": "string"
-          },
-          "optional": false
-        },
-        {
-          "name": "email",
-          "type": {
-            "kind": "primitive",
-            "type": "string"
-          },
-          "optional": false
-        }
-      ]
-    },
-    {
-      "name": "ValidationErrorDto",
-      "typeParameters": [],
-      "properties": [
-        {
-          "name": "message",
-          "type": {
-            "kind": "primitive",
-            "type": "string"
-          },
-          "optional": false
-        },
-        {
-          "name": "fields",
-          "type": {
-            "kind": "dictionary",
-            "value": {
-              "kind": "array",
-              "element": {
-                "kind": "primitive",
-                "type": "string"
-              }
-            }
-          },
-          "optional": false
-        }
-      ]
-    }
-  ],
-  "enums": [],
-  "endpoints": [
-    {
-      "name": "list",
-      "httpMethod": "GET",
-      "routeTemplate": "/api/members",
-      "params": [],
-      "controllerName": "members",
-      "returnType": {
-        "kind": "array",
-        "element": {
-          "kind": "ref",
-          "name": "MemberDto"
-        }
-      },
-      "responses": [
-        {
-          "statusCode": 200,
-          "dataType": {
-            "kind": "array",
-            "element": {
-              "kind": "ref",
-              "name": "MemberDto"
-            }
-          }
-        }
-      ],
-      "description": "List all members"
-    },
-    {
-      "name": "create",
-      "httpMethod": "POST",
-      "routeTemplate": "/api/members",
-      "params": [
-        {
-          "name": "body",
-          "type": {
-            "kind": "ref",
-            "name": "CreateMemberRequest"
-          },
-          "source": "body"
-        }
-      ],
-      "controllerName": "members",
-      "returnType": {
-        "kind": "ref",
-        "name": "MemberDto"
-      },
-      "responses": [
-        {
-          "statusCode": 201,
-          "dataType": {
-            "kind": "ref",
-            "name": "MemberDto"
-          },
-          "examples": [
-            {
-              "mediaType": "application/json",
-              "json": {
-                "id": "mem_456",
-                "email": "ada@example.com"
-              }
-            }
-          ]
-        },
-        {
-          "statusCode": 422,
-          "dataType": {
-            "kind": "ref",
-            "name": "ValidationErrorDto"
-          },
-          "description": "Validation failed"
-        }
-      ],
-      "requestExamples": [
-        {
-          "mediaType": "application/json",
-          "json": {
-            "email": "ada@example.com"
-          }
-        },
-        {
-          "name": "review payload",
-          "mediaType": "application/json",
-          "json": {
-            "email": "grace@example.com"
-          }
-        },
-        {
-          "name": "component-backed payload",
-          "mediaType": "application/json",
-          "componentExampleId": "CreateMemberRequestExample",
-          "resolvedJson": {
-            "email": "grace@example.com"
-          }
-        }
-      ],
-      "security": {
-        "isAnonymous": false,
-        "scheme": "admin"
-      }
-    }
-  ]
-}
-```
-
-## Feed the contract to Rivet -> get TypeScript
-
-Generate the contract JSON here, then hand it to the main Rivet tool:
+## Feed the contract to Rivet → get TypeScript + OpenAPI
 
 ```bash
-dotnet rivet --from contract.json --output ./generated
+# TypeScript types, typed client, OpenAPI spec
+dotnet rivet --from contract.json --output ./generated --openapi openapi.json
+
+# With security scheme definitions
+dotnet rivet --from contract.json --output ./generated --openapi openapi.json \
+  --security admin:bearer
+
+# With Zod validators
+dotnet rivet --from contract.json --output ./generated --compile
+
+# JSON Schema only
+dotnet rivet --from contract.json --output ./generated --jsonschema
 ```
 
-Rivet will emit the same downstream artifacts it emits for C# and PHP sources:
+Downstream Rivet emits the same artifacts it emits for C# sources: TypeScript types, typed clients, OpenAPI specs, JSON Schema, Zod validators, and generated C# DTOs.
 
-- TypeScript types
-- typed TS clients
-- OpenAPI
-- JSON Schema and optional Zod validators
-- generated C# DTOs, enums, and contracts
+## Add examples → get OpenAPI examples for Prism mocking
 
-## Feed the contract to Rivet -> get OpenAPI
-
-```bash
-dotnet rivet --from contract.json --openapi openapi.json --output ./generated
-```
-
-This package stops at the JSON contract seam. OpenAPI emission, client generation, validator generation, and C#
-reconstruction remain downstream Rivet responsibilities.
-
-## Current TS DSL
-
-The supported authoring DSL is intentionally narrow and explicit:
+Author example data as plain `const` values, reference them with `typeof`:
 
 ```ts
-export const listMembersResponseExample = {
-  items: [{ id: "mem_123", email: "jane@example.com" }],
-  totalCount: 1,
-} satisfies PagedResult<MemberDto>;
+export const createMemberRequest = {
+  email: "ada@example.com",
+} satisfies CreateMemberRequest;
 
-export const validationErrorExample = {
+export const memberResponse = {
+  id: "mem_456",
+  email: "ada@example.com",
+  role: "member" as MemberRole,
+} satisfies MemberDto;
+
+export const validationError = {
   message: "Email is required",
-  code: "VALIDATION_ERROR",
+  fields: { email: ["Required"] },
 } satisfies ValidationErrorDto;
 
 export interface MembersContract extends Contract<"MembersContract"> {
-  List: Endpoint<{
-    method: "GET";
-    route: "/api/members";
-    response: PagedResult<MemberDto>;
-    responseExamples: [
-      {
-        status: 200;
-        examples: [typeof listMembersResponseExample];
-      },
-    ];
-    summary: "List members";
-    description: "List all members";
-  }>;
-
   Create: Endpoint<{
     method: "POST";
     route: "/api/members";
@@ -356,109 +116,200 @@ export interface MembersContract extends Contract<"MembersContract"> {
     response: MemberDto;
     successStatus: 201;
     errors: [{ status: 422; response: ValidationErrorDto; description: "Validation failed" }];
+    requestExamples: [typeof createMemberRequest];
     responseExamples: [
-      {
-        status: 201;
-        examples: [
-          { name: "default member"; json: typeof listMembersResponseExample },
-        ];
-      },
-      {
-        status: 422;
-        examples: [
-          { name: "validation error"; mediaType: "application/problem+json"; json: typeof validationErrorExample },
-        ];
-      },
+      { status: 201; examples: [typeof memberResponse] },
+      { status: 422; examples: [typeof validationError] },
     ];
   }>;
 }
 ```
 
-`successResponseExample` still works as singular legacy sugar but the steady-state DSL is `responseExamples`.
+Examples flow through to OpenAPI `examples` blocks, which tools like [Prism](https://github.com/stoplightio/prism) serve as static mock responses:
 
-Supported today:
+```bash
+pnpm exec rivet-reflect-ts --entry ./contracts.ts --out ./contract.json
+dotnet rivet --from contract.json --openapi openapi.json --output ./generated
+npx @stoplight/prism-cli mock openapi.json -h 127.0.0.1 -p 4010
+```
 
-- `Contract<"...">`
-- `Endpoint<{ ... }>`
-- `EndpointExampleAuthoringReference`
-- `EndpointExampleAuthoringValue`
-- `EndpointAuthoringSpec`
-- `EndpointErrorAuthoringSpec`
-- `EndpointSecurityAuthoringSpec`
+## Endpoint options
 
-Supported endpoint keys today:
+Every endpoint is an `Endpoint<{ ... }>` type literal. These are the supported keys:
 
-- `method`
-- `route`
-- `input`
-- `response`
-- `requestExample` (legacy sugar — use `requestExamples`)
-- `requestExamples`
-- `successResponseExample` (legacy sugar — use `responseExamples`)
-- `responseExamples`
-- `successStatus`
-- `summary`
-- `description`
-- `errors`
-- `anonymous`
-- `security`
-- `fileResponse`
-- `fileContentType`
-- `formEncoded`
-- `acceptsFile`
+| Key                      | Type                                              | Required | Description                                                               |
+| ------------------------ | ------------------------------------------------- | -------- | ------------------------------------------------------------------------- |
+| `method`                 | `"GET" \| "POST" \| "PUT" \| "PATCH" \| "DELETE"` | Yes      | HTTP method                                                               |
+| `route`                  | `string`                                          | Yes      | Route template, e.g. `"/api/members/{id}"`                                |
+| `input`                  | type reference                                    |          | Request body (POST/PUT/PATCH) or query params (GET/DELETE)                |
+| `response`               | type reference                                    |          | Success response body type. Omit or use `void` for no-content             |
+| `successStatus`          | `number`                                          |          | Override default success status (200 GET/PUT/PATCH, 201 POST, 204 DELETE) |
+| `errors`                 | tuple of error specs                              |          | Error responses with status codes and optional types                      |
+| `summary`                | `string`                                          |          | Short endpoint summary                                                    |
+| `description`            | `string`                                          |          | Long-form endpoint description                                            |
+| `security`               | `{ scheme: string }`                              |          | Security scheme reference                                                 |
+| `anonymous`              | `boolean`                                         |          | Mark endpoint as public (mutually exclusive with `security`)              |
+| `fileResponse`           | `boolean`                                         |          | Response is a file download                                               |
+| `fileContentType`        | `string`                                          |          | MIME type for file response (e.g. `"text/csv"`)                           |
+| `formEncoded`            | `boolean`                                         |          | Request body is `application/x-www-form-urlencoded`                       |
+| `acceptsFile`            | `boolean`                                         |          | Multipart file upload. Input must have exactly one `Blob`/`File` property |
+| `requestExamples`        | tuple of example refs                             |          | Request body examples                                                     |
+| `responseExamples`       | tuple of status-scoped specs                      |          | Response examples grouped by status code                                  |
+| `requestExample`         | `typeof someConst`                                |          | Legacy singular sugar. Use `requestExamples`                              |
+| `successResponseExample` | `typeof someConst`                                |          | Legacy singular sugar. Use `responseExamples`                             |
 
-Notes:
+## Supported types
 
-- `EndpointAuthoringSpec`, `EndpointExampleAuthoringReference`, `EndpointExampleAuthoringValue`, `EndpointErrorAuthoringSpec`, and `EndpointSecurityAuthoringSpec` are exported so the supported surface is visible in autocomplete and type navigation.
-- Endpoint specs are currently extracted from inline `Endpoint<{ ... }>` type literals.
-- Examples must be authored as real exported `const` values and referenced from endpoint metadata with `typeof someExample`.
-- Example references are constrained to JSON-like value shapes in the public DSL; functions and other non-serializable value shapes should fail at compile time.
-- Validate example values with `satisfies` against the DTO you want to model; the extractor serializes the const initializer, not an invented type-only example bag.
-- `requestExamples` and `responseExamples` are the plural steady-state DSL. Singular `requestExample` and `successResponseExample` remain as backward-compatible sugar.
-- Response examples are status-scoped: each entry targets a specific HTTP status code and attaches examples to the matching response node.
-- Response example entries support the same descriptor forms as request examples: bare `typeof exportedConst`, inline `{ name?; mediaType?; json }`, and ref-backed `{ name?; mediaType?; componentExampleId; resolvedJson }`.
-- Response media types default to `application/json`; success examples on file endpoints default to the endpoint's `fileContentType`.
-- Examples are preserved in the extracted frontend `ContractBundle` and in the lowered Rivet contract document.
-- `formEncoded: true` marks an endpoint as form-encoded; request examples default to `application/x-www-form-urlencoded` instead of `application/json`.
-- `acceptsFile: true` enables multipart upload handling; the input DTO must include exactly one `Blob` or `File` property (lowered as a `file` param) and the remaining non-route properties lower as `formField` params. Request examples default to `multipart/form-data`.
-- Property-level schema metadata and controller/decorator-based endpoint authoring are not supported yet; endpoint/content example parity lands first.
-- This package still stops at the Rivet JSON seam; downstream Rivet/OpenAPI emission must consume those lowered example fields before examples appear in generated OpenAPI.
-- `errors` should be authored as an inline tuple of inline object literals.
-- `security` should be authored as an inline object literal with a `scheme` property.
-- exported `interface`, `type`, and `enum` declarations
-- primitives, arrays, `Record<string, T>`, object types
-- generic definitions and generic application
-- string and numeric literal unions
-- nullable `T | null`
-- optional and readonly properties
-- `Brand<T, "...">`
-- `Format<T, "...">`
-- endpoint metadata: `method`, `route`, `input`, `response`, `successStatus`, `summary`, `description`, `errors`,
-  `anonymous`, `security`, `fileResponse`, `fileContentType`, `formEncoded`, `acceptsFile`, `requestExample`,
-  `requestExamples`, `successResponseExample`, `responseExamples`
+rivet-ts reflects TypeScript types into Rivet's intermediate contract format. The type system is intentionally narrow — it maps exactly what survives a JSON boundary.
 
-Explicitly not the goal:
+### Type support matrix
 
-- arbitrary advanced TS metaprogramming
-- conditional types
-- mapped types
-- indexed access tricks
-- namespace/class/decorator-based authoring
-- turning this package into a runtime framework or a wrapper around `dotnet rivet`
+| TypeScript construct                    | Rivet kind            | OpenAPI                | Notes                                                         |
+| --------------------------------------- | --------------------- | ---------------------- | ------------------------------------------------------------- |
+| `string`                                | `primitive`           | `string`               |                                                               |
+| `number`                                | `primitive`           | `number`               |                                                               |
+| `boolean`                               | `primitive`           | `boolean`              |                                                               |
+| `unknown`                               | `primitive`           | `{}`                   | Escape hatch for truly dynamic data                           |
+| `T[]` / `Array<T>` / `ReadonlyArray<T>` | `array`               | `array`                |                                                               |
+| `Record<string, T>`                     | `dictionary`          | `additionalProperties` | String keys only                                              |
+| `T \| null`                             | nullable wrapper      | `nullable: true`       |                                                               |
+| `"a" \| "b" \| "c"`                     | `stringLiteralUnion`  | `enum`                 | String literal union types                                    |
+| `1 \| 2 \| 3`                           | `numericLiteralUnion` | `enum`                 | Numeric literal union types                                   |
+| `enum E { A = "a" }`                    | `enum`                | `enum`                 | Explicit string or numeric values required                    |
+| `interface Foo { ... }`                 | `ref` (+ type def)    | `$ref`                 | Exported interfaces become named schemas                      |
+| `type Foo = { ... }`                    | `ref` (+ type def)    | `$ref`                 | Exported type aliases with object shapes                      |
+| `Brand<string, "Email">`                | branded primitive     | `string`               | Nominal typing — emits `string & { __brand: "Email" }`        |
+| `Format<string, "uuid">`                | primitive + format    | `string` + `format`    | Attaches format metadata (`uuid`, `date-time`, `email`, etc.) |
+| Generic types                           | parameterised ref     | Resolved inline        | `Paginated<T>` → concrete `Paginated<MemberDto>`              |
+| Optional properties (`?`)               | `optional: true`      | not in `required`      |                                                               |
+| Readonly properties                     | preserved             | no effect              | Informational only                                            |
+| Inline object types                     | `inlineObject`        | `object`               | Anonymous nested objects                                      |
 
-Unsupported constructs should produce explicit diagnostics rather than loose fallbacks.
+### Not supported
+
+These TypeScript constructs are explicitly out of scope. Using them in contract types produces diagnostics:
+
+- Conditional types (`T extends U ? A : B`)
+- Mapped types (`{ [K in keyof T]: ... }`)
+- Indexed access types (`T["key"]`)
+- Intersection types (`A & B`) — except `Brand` and `Format` utilities
+- Tuple types
+- Function types
+- `any`, `never`, `void` as property types
+- Namespace or class-based contracts
+- Decorator-based endpoint authoring
+
+## Example authoring
+
+Examples must be exported `const` values with initializers. Use `satisfies` for type safety without widening.
+
+### Supported AST constructs in examples
+
+| Construct               | Example                         | Supported       |
+| ----------------------- | ------------------------------- | --------------- |
+| String literals         | `"hello"`                       | Yes             |
+| Number literals         | `42`, `-3.14`                   | Yes             |
+| Boolean literals        | `true`, `false`                 | Yes             |
+| Null literal            | `null`                          | Yes             |
+| Template literals       | `` `hello` ``                   | Yes             |
+| Array literals          | `[1, 2, 3]`                     | Yes             |
+| Object literals         | `{ key: "value" }`              | Yes             |
+| Shorthand properties    | `{ x }` (where `x` is a const)  | Yes             |
+| String concatenation    | `"a" + "b"`                     | Yes             |
+| Identifier references   | `items: someOtherConst`         | Yes             |
+| `satisfies` expressions | `value satisfies Type`          | Yes (unwrapped) |
+| `as` expressions        | `value as Type`                 | Yes (unwrapped) |
+| Prefix unary            | `-5`, `+3`                      | Yes             |
+| Nested structures       | Objects and arrays at any depth | Yes             |
+| Spread elements         | `{ ...other }`                  | No              |
+| Function calls          | `buildTaxonomy("gb")`           | No              |
+| Computed values         | `Date.now()`                    | No              |
+
+### Example descriptor forms
+
+Request and response examples support three forms:
+
+```ts
+// 1. Bare reference — inline JSON shorthand
+requestExamples: [typeof myExample]
+
+// 2. Inline descriptor — optional name and media type
+requestExamples: [{ json: typeof myExample; name: "with admin role"; mediaType: "application/json" }]
+
+// 3. Component-backed reference — preserves component ID in OpenAPI
+requestExamples: [{
+  componentExampleId: "CreateMember";
+  resolvedJson: typeof myExample;
+  name: "standard request";
+}]
+```
+
+Response examples are grouped by status code:
+
+```ts
+responseExamples: [
+  { status: 200; examples: [typeof successExample] },
+  { status: 422; examples: [typeof validationError, typeof otherError] },
+]
+```
+
+### Media type defaults
+
+| Endpoint type        | Default request media type          | Default response media type  |
+| -------------------- | ----------------------------------- | ---------------------------- |
+| Standard JSON        | `application/json`                  | `application/json`           |
+| `formEncoded: true`  | `application/x-www-form-urlencoded` | `application/json`           |
+| `acceptsFile: true`  | `multipart/form-data`               | `application/json`           |
+| `fileResponse: true` | —                                   | Endpoint's `fileContentType` |
+
+## Type-safe handlers
+
+rivet-ts exports handler types for implementing endpoints with compile-time enforcement:
+
+```ts
+import type { RivetHandler, ContractEndpointKey } from "rivet-ts";
+import { handle } from "rivet-ts";
+import type { MembersContract } from "./contracts.js";
+
+// Option 1: Type annotation
+const listMembers: RivetHandler<MembersContract, "List"> = async () => {
+  return await db.members.findAll();
+};
+
+// Option 2: handle() helper
+const createMember = handle<MembersContract, "Create">(async ({ body }) => {
+  return await db.members.create(body);
+});
+```
+
+## CLI
+
+```
+rivet-reflect-ts --entry <path> [--out <file>]
+```
+
+| Flag      | Required | Description                                          |
+| --------- | -------- | ---------------------------------------------------- |
+| `--entry` | Yes      | TypeScript entry file containing contract interfaces |
+| `--out`   |          | Output path for contract JSON. Defaults to stdout    |
+
+Diagnostics are written to stderr. Unsupported constructs produce explicit error or warning diagnostics rather than silent fallbacks.
 
 ## Development
 
 ```bash
-pnpm test
-pnpm build
-pnpm run lint
-pnpm run fmt:check
-pnpm run check
+pnpm test          # run tests
+pnpm build         # compile
+pnpm run lint      # lint with oxlint
+pnpm run fmt:check # format check with oxfmt
+pnpm run check     # all of the above
 ```
 
 ## Related repos
 
-- [Rivet core](https://github.com/maxanstey-meridian/rivet)
-- [rivet-php](https://github.com/maxanstey-meridian/rivet-php)
+- [Rivet](https://github.com/maxanstey-meridian/rivet) — .NET core: attributes, contracts, OpenAPI, client gen, validators
+- [rivet-php](https://github.com/maxanstey-meridian/rivet-php) — PHP contract frontend
+
+## License
+
+MIT

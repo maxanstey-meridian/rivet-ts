@@ -466,7 +466,7 @@ describe("CLI lifecycle", () => {
         "    response: void;",
         "    requestExamples: [",
         "      {",
-        '        json: typeof createMemberRequestExample;',
+        "        json: typeof createMemberRequestExample;",
         '        componentExampleId: "CreateMemberExample";',
         "        resolvedJson: typeof createMemberRequestExample;",
         "      },",

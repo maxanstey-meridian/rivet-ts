@@ -324,7 +324,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
         "    response: void;",
         "    requestExamples: [",
         "      {",
-        '        json: typeof createMemberRequestExample;',
+        "        json: typeof createMemberRequestExample;",
         '        componentExampleId: "CreateMemberExample";',
         "        resolvedJson: typeof createMemberRequestExample;",
         "      },",
@@ -789,23 +789,35 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     const create = typedPayload.endpoints.find((endpoint) => endpoint.name === "create");
     const successResponse = create?.responses.find((response) => response.statusCode === 201);
     expect(successResponse?.examples).toEqual([
-      { mediaType: "application/json", json: JSON.stringify({ id: "mem_001", email: "jane@example.com" }) },
-      { mediaType: "application/json", json: JSON.stringify({ id: "mem_002", email: "alex@example.com" }) },
+      {
+        mediaType: "application/json",
+        json: JSON.stringify({ id: "mem_001", email: "jane@example.com" }),
+      },
+      {
+        mediaType: "application/json",
+        json: JSON.stringify({ id: "mem_002", email: "alex@example.com" }),
+      },
     ]);
     const errorResponse = create?.responses.find((response) => response.statusCode === 422);
     expect(errorResponse?.examples).toEqual([
-      { mediaType: "application/json", json: JSON.stringify({ message: "Email is required", code: "VALIDATION_ERROR" }) },
+      {
+        mediaType: "application/json",
+        json: JSON.stringify({ message: "Email is required", code: "VALIDATION_ERROR" }),
+      },
     ]);
 
     const legacy = typedPayload.endpoints.find((endpoint) => endpoint.name === "legacyCreate");
-    const legacySuccessResponse = legacy?.responses.find(
-      (response) => response.statusCode === 201,
-    );
+    const legacySuccessResponse = legacy?.responses.find((response) => response.statusCode === 201);
     expect(legacySuccessResponse?.examples).toEqual([
-      { mediaType: "application/json", json: JSON.stringify({ id: "mem_legacy", email: "legacy@example.com" }) },
+      {
+        mediaType: "application/json",
+        json: JSON.stringify({ id: "mem_legacy", email: "legacy@example.com" }),
+      },
     ]);
 
-    expect(typedPayload.endpoints.every((endpoint) => !("successResponseExample" in endpoint))).toBe(true);
+    expect(
+      typedPayload.endpoints.every((endpoint) => !("successResponseExample" in endpoint)),
+    ).toBe(true);
   });
 
   it("emits a diagnostic when response examples target an undeclared status", async () => {
@@ -831,7 +843,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
         "",
         "export interface MemberDto { id: string; }",
         "",
-        "export const example1 = { id: \"mem_1\" } satisfies MemberDto;",
+        'export const example1 = { id: "mem_1" } satisfies MemberDto;',
         "",
         'export interface TempContract extends Contract<"TempContract"> {',
         "  Get: Endpoint<{",
@@ -885,9 +897,9 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
         "export interface MemberDto { id: string; email: string; }",
         "export interface ValidationErrorDto { message: string; code: string; }",
         "",
-        "export const successExample = { id: \"mem_1\", email: \"jane@example.com\" } satisfies MemberDto;",
-        "export const errorExample = { message: \"Bad request\", code: \"VALIDATION\" } satisfies ValidationErrorDto;",
-        "export const componentExample = { id: \"mem_2\", email: \"component@example.com\" } satisfies MemberDto;",
+        'export const successExample = { id: "mem_1", email: "jane@example.com" } satisfies MemberDto;',
+        'export const errorExample = { message: "Bad request", code: "VALIDATION" } satisfies ValidationErrorDto;',
+        'export const componentExample = { id: "mem_2", email: "component@example.com" } satisfies MemberDto;',
         "",
         'export interface TempContract extends Contract<"TempContract"> {',
         "  Create: Endpoint<{",
@@ -896,14 +908,14 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
         "    input: MemberDto;",
         "    response: MemberDto;",
         "    successStatus: 201;",
-        "    errors: [{ status: 422; response: ValidationErrorDto; description: \"Validation failed\" }];",
+        '    errors: [{ status: 422; response: ValidationErrorDto; description: "Validation failed" }];',
         "    responseExamples: [",
         "      {",
         "        status: 201;",
         "        examples: [",
-        "          { name: \"default member\"; json: typeof successExample },",
+        '          { name: "default member"; json: typeof successExample },',
         "          {",
-        "            name: \"component-backed member\";",
+        '            name: "component-backed member";',
         '            componentExampleId: "MemberExample";',
         "            resolvedJson: typeof componentExample;",
         "          },",
@@ -912,7 +924,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
         "      {",
         "        status: 422;",
         "        examples: [",
-        "          { name: \"validation error\"; mediaType: \"application/problem+json\"; json: typeof errorExample },",
+        '          { name: "validation error"; mediaType: "application/problem+json"; json: typeof errorExample },',
         "        ];",
         "      },",
         "    ];",
@@ -1056,8 +1068,8 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
         "",
         "export interface ErrorDto { message: string; }",
         "",
-        "export const fileSuccessExample = { url: \"https://example.com/file.csv\" } satisfies { url: string };",
-        "export const fileErrorExample = { message: \"Not found\" } satisfies ErrorDto;",
+        'export const fileSuccessExample = { url: "https://example.com/file.csv" } satisfies { url: string };',
+        'export const fileErrorExample = { message: "Not found" } satisfies ErrorDto;',
         "",
         'export interface TempContract extends Contract<"TempContract"> {',
         "  Export: Endpoint<{",
@@ -1065,7 +1077,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
         '    route: "/api/export";',
         "    fileResponse: true;",
         '    fileContentType: "text/csv";',
-        "    errors: [{ status: 404; response: ErrorDto; description: \"Not found\" }];",
+        '    errors: [{ status: 404; response: ErrorDto; description: "Not found" }];',
         "    responseExamples: [",
         "      { status: 200; examples: [typeof fileSuccessExample] },",
         "      { status: 404; examples: [typeof fileErrorExample] },",
@@ -1133,9 +1145,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
 
     const submitForm = payload.endpoints.find((endpoint) => endpoint.name === "submitForm");
     expect(submitForm?.isFormEncoded).toBe(true);
-    expect(submitForm?.params).toEqual([
-      expect.objectContaining({ name: "body", source: "body" }),
-    ]);
+    expect(submitForm?.params).toEqual([expect.objectContaining({ name: "body", source: "body" })]);
     expect(submitForm?.requestExamples).toEqual([
       {
         mediaType: "application/x-www-form-urlencoded",
@@ -1204,7 +1214,11 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     expect(upload?.inputTypeName).toBe("UploadDocumentRequest");
     expect(upload?.params).toEqual([
       expect.objectContaining({ name: "documentId", source: "route" }),
-      expect.objectContaining({ name: "file", source: "file", type: { kind: "primitive", type: "File" } }),
+      expect.objectContaining({
+        name: "file",
+        source: "file",
+        type: { kind: "primitive", type: "File" },
+      }),
       expect.objectContaining({ name: "title", source: "formField" }),
       expect.objectContaining({ name: "description", source: "formField" }),
     ]);
@@ -1257,9 +1271,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
 
     expect(lowered.hasErrors).toBe(true);
     expect(lowered.diagnostics).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ code: "INVALID_MULTIPART_INPUT" }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ code: "INVALID_MULTIPART_INPUT" })]),
     );
 
     const payload = JSON.parse(lowered.toJson()) as {
@@ -1335,7 +1347,9 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     const lowerer = new TypeScriptRivetContractLowerer();
     const extractUseCase = new ExtractTsContracts(frontend);
     const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-multipart-multi-file-"));
+    const tempDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rivet-ts-multipart-multi-file-"),
+    );
     const entryPath = path.join(tempDirectory, "contracts.ts");
     const normalizedImportPath = toImportPath(
       tempDirectory,
