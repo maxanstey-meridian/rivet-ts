@@ -31,10 +31,8 @@ export interface MemberDto {
   role: MemberRole;
 }
 
-export enum MemberRole {
-  Admin = "admin",
-  Member = "member",
-}
+export type MemberRole = "admin" | "member";
+// or: export enum MemberRole { Admin = "admin", Member = "member" }
 
 export interface CreateMemberRequest {
   email: string;
@@ -173,9 +171,9 @@ rivet-ts reflects TypeScript types into Rivet's intermediate contract format. Th
 | `T[]` / `Array<T>` / `ReadonlyArray<T>` | `array`               | `array`                |                                                               |
 | `Record<string, T>`                     | `dictionary`          | `additionalProperties` | String keys only                                              |
 | `T \| null`                             | nullable wrapper      | `nullable: true`       |                                                               |
-| `"a" \| "b" \| "c"`                     | `stringLiteralUnion`  | `enum`                 | String literal union types                                    |
+| `"a" \| "b" \| "c"`                     | `stringLiteralUnion`  | `enum`                 | Preferred form for string enums                               |
 | `1 \| 2 \| 3`                           | `numericLiteralUnion` | `enum`                 | Numeric literal union types                                   |
-| `enum E { A = "a" }`                    | `enum`                | `enum`                 | Explicit string or numeric values required                    |
+| `enum E { A = "a" }`                    | `enum`                | `enum`                 | Also supported — produces identical output to string unions    |
 | `interface Foo { ... }`                 | `ref` (+ type def)    | `$ref`                 | Exported interfaces become named schemas                      |
 | `type Foo = { ... }`                    | `ref` (+ type def)    | `$ref`                 | Exported type aliases with object shapes                      |
 | `Brand<string, "Email">`                | branded primitive     | `string`               | Nominal typing — emits `string & { __brand: "Email" }`        |
