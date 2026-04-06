@@ -10,14 +10,7 @@
 ## Install
 
 ```bash
-pnpm add -D github:maxanstey-meridian/rivet-ts#v0.3
-```
-
-Pin a specific tag, branch, or commit:
-
-```bash
-pnpm add -D github:maxanstey-meridian/rivet-ts#main
-pnpm add -D github:maxanstey-meridian/rivet-ts#v0.3
+pnpm add -D github:maxanstey-meridian/rivet-ts
 ```
 
 ## Define contracts → get contract JSON
