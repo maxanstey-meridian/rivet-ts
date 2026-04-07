@@ -84,6 +84,7 @@ export type EndpointAuthoringSpec = {
   readonly security?: EndpointSecurityAuthoringSpec;
   readonly fileResponse?: boolean;
   readonly fileContentType?: string;
+  readonly queryAuth?: string | true;
   readonly formEncoded?: boolean;
   readonly acceptsFile?: boolean;
 };

@@ -95,6 +95,7 @@ export class EndpointSpec {
   public readonly errors: readonly ErrorResponseSpec[];
   public readonly anonymous: boolean;
   public readonly security?: SecuritySpec;
+  public readonly queryAuth?: string;
 
   public constructor(input: {
     name: string;
@@ -114,6 +115,7 @@ export class EndpointSpec {
     errors?: readonly ErrorResponseSpec[];
     anonymous?: boolean;
     security?: SecuritySpec;
+    queryAuth?: string;
   }) {
     this.name = input.name;
     this.method = input.method;
@@ -132,6 +134,7 @@ export class EndpointSpec {
     this.errors = input.errors ?? [];
     this.anonymous = input.anonymous ?? false;
     this.security = input.security;
+    this.queryAuth = input.queryAuth;
   }
 }
 

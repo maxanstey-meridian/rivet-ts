@@ -272,6 +272,10 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     const fileResponse =
       this.parseBooleanLiteral(propertyMap.get("fileResponse"), sourceFile) ?? false;
     const fileContentType = this.parseStringLiteral(propertyMap.get("fileContentType"), sourceFile);
+    const queryAuthNode = propertyMap.get("queryAuth");
+    const queryAuthBool = this.parseBooleanLiteral(queryAuthNode, sourceFile);
+    const queryAuthString = this.parseStringLiteral(queryAuthNode, sourceFile);
+    const queryAuth = queryAuthBool === true ? "token" : (queryAuthString ?? undefined);
     const formEncoded =
       this.parseBooleanLiteral(propertyMap.get("formEncoded"), sourceFile) ?? false;
     const acceptsFile =
@@ -324,6 +328,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       errors,
       anonymous,
       security: securityScheme ? new SecuritySpec({ scheme: securityScheme }) : undefined,
+      queryAuth,
     });
   }
 

@@ -559,7 +559,10 @@
         "isAnonymous": false,
         "scheme": "admin"
       },
-      "fileContentType": "text/csv"
+      "fileContentType": "text/csv",
+      "queryAuth": {
+        "parameterName": "token"
+      }
     },
     {
       "name": "ping",

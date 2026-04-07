@@ -74,6 +74,7 @@ export interface MembersContract extends Contract<"MembersContract"> {
     route: "/api/teams/{teamId}/members/export";
     fileResponse: true;
     fileContentType: "text/csv";
+    queryAuth: "token";
     summary: "Export members";
     description: "Download members as CSV";
     security: { scheme: "admin" };

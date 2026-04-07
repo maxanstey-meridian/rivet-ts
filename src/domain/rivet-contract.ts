@@ -238,6 +238,7 @@ export class RivetEndpointDefinition {
   public readonly fileContentType?: string;
   public readonly inputTypeName?: string;
   public readonly isFormEncoded?: boolean;
+  public readonly queryAuth?: { parameterName: string };
 
   public constructor(input: {
     name: string;
@@ -254,6 +255,7 @@ export class RivetEndpointDefinition {
     fileContentType?: string;
     inputTypeName?: string;
     isFormEncoded?: boolean;
+    queryAuth?: { parameterName: string };
   }) {
     this.name = input.name;
     this.httpMethod = input.httpMethod;
@@ -269,6 +271,7 @@ export class RivetEndpointDefinition {
     this.fileContentType = input.fileContentType;
     this.inputTypeName = input.inputTypeName;
     this.isFormEncoded = input.isFormEncoded;
+    this.queryAuth = input.queryAuth;
   }
 }
 

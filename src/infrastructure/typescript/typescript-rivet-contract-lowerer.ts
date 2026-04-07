@@ -507,6 +507,13 @@ class TypeEmissionContext {
     const fileContentType = fileResponse
       ? (this.readStringLiteral(propertyMap.get("fileContentType")) ?? "application/octet-stream")
       : undefined;
+    const queryAuthBool = this.readBooleanLiteral(propertyMap.get("queryAuth"));
+    const queryAuthString = this.readStringLiteral(propertyMap.get("queryAuth"));
+    const queryAuth = queryAuthBool === true
+      ? { parameterName: "token" }
+      : queryAuthString
+        ? { parameterName: queryAuthString }
+        : undefined;
     const inputType = this.lowerOptionalTypeNode(inputNode);
     const responseType = this.lowerOptionalTypeNode(responseNode);
 
@@ -573,6 +580,7 @@ class TypeEmissionContext {
       fileContentType,
       inputTypeName,
       isFormEncoded: context.formEncoded || undefined,
+      queryAuth,
     });
   }
 
