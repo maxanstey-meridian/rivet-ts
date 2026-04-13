@@ -47,13 +47,29 @@ export type RivetHandlerMap<TContract> = {
   readonly [K in ContractEndpointKey<TContract>]: RivetHandler<TContract, K>;
 };
 
+export type EndpointMetaMap<TContract> = {
+  readonly [K in ContractEndpointKey<TContract>]?: {
+    readonly successStatus?: number;
+  };
+};
+
+const RIVET_META_KEY = "__rivetMeta";
+
 export const defineHandlers =
   <TContract>() =>
   <THandlers extends RivetHandlerMap<TContract>>(
     handlers: THandlers &
       Record<Exclude<keyof THandlers, ContractEndpointKey<TContract>>, never>,
-  ): THandlers =>
-    handlers;
+    meta?: EndpointMetaMap<TContract>,
+  ): THandlers => {
+    if (meta) {
+      Object.defineProperty(handlers, RIVET_META_KEY, {
+        value: meta,
+        enumerable: false,
+      });
+    }
+    return handlers;
+  };
 
 type UnwrapFalseOption = { readonly unwrap: false };
 
@@ -78,8 +94,11 @@ const isUnwrapFalseOption = (value: unknown): value is UnwrapFalseOption =>
 
 export const createDirectClient = <TContract>(
   handlers: RivetHandlerMap<TContract>,
-): DirectClient<TContract> =>
-  new Proxy({} as DirectClient<TContract>, {
+): DirectClient<TContract> => {
+  const meta = (handlers as Record<string, unknown>)[RIVET_META_KEY] as
+    | Record<string, { successStatus?: number }>
+    | undefined;
+  return new Proxy({} as DirectClient<TContract>, {
     get(_, key) {
       if (typeof key !== "string") {
         return undefined;
@@ -103,8 +122,9 @@ export const createDirectClient = <TContract>(
         if (!unwrapFalse) {
           return call();
         }
+        const successStatus = meta?.[key]?.successStatus ?? 200;
         return (call() as Promise<unknown>).then(
-          (result) => ({ status: 200, data: result }),
+          (result) => ({ status: successStatus, data: result }),
           (error: unknown) => {
             if (error instanceof RivetError) {
               return error.result;
@@ -115,6 +135,7 @@ export const createDirectClient = <TContract>(
       };
     },
   });
+};
 
 export class RivetError extends Error {
   public readonly result: RivetResult<unknown>;

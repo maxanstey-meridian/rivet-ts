@@ -504,3 +504,35 @@ test("discriminated union narrows correctly by status", async () => {
     expect(result.data).toEqual({ message: "division by zero" });
   }
 });
+
+test("unwrap: false uses custom successStatus from defineHandlers metadata", async () => {
+  const handlers = defineHandlers<CreatedContract>()(
+    {
+      Create: handle<CreatedContract, "Create">(async ({ body }) => ({
+        id: `created-${body.name}`,
+      })),
+    },
+    { Create: { successStatus: 201 } },
+  );
+
+  const client = createDirectClient<CreatedContract>(handlers);
+  const result = await client.Create({ name: "test" }, { unwrap: false });
+
+  expect(result).toEqual({ status: 201, data: { id: "created-test" } });
+  if (result.status === 201) {
+    expectTypeOf(result.data).toEqualTypeOf<CreateResponse>();
+  }
+});
+
+test("unwrap: false defaults to 200 when no metadata provided", async () => {
+  const handlers = defineHandlers<MathContract>()({
+    Add: handle<MathContract, "Add">(async ({ body }) => ({
+      sum: body.a + body.b,
+    })),
+  });
+
+  const client = createDirectClient<MathContract>(handlers);
+  const result = await client.Add({ a: 1, b: 2 }, { unwrap: false });
+
+  expect(result.status).toBe(200);
+});
