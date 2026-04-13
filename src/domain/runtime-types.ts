@@ -81,22 +81,34 @@ export const createDirectClient = <TContract>(
 ): DirectClient<TContract> =>
   new Proxy({} as DirectClient<TContract>, {
     get(_, key) {
-      if (typeof key !== "string") return undefined;
+      if (typeof key !== "string") {
+        return undefined;
+      }
       const handler = (handlers as Record<string, (...args: readonly unknown[]) => unknown>)[key];
-      if (!handler) return undefined;
+      if (!handler) {
+        return undefined;
+      }
       return (...args: unknown[]) => {
         const lastArg = args.at(-1);
         const unwrapFalse = isUnwrapFalseOption(lastArg);
         const input = unwrapFalse
           ? args.length > 1 ? args[0] : undefined
           : args[0];
-        const call = () =>
-          input !== undefined ? handler({ body: input }) : handler();
-        if (!unwrapFalse) return call();
+        const call = () => {
+          if (input !== undefined) {
+            return handler({ body: input });
+          }
+          return handler();
+        };
+        if (!unwrapFalse) {
+          return call();
+        }
         return (call() as Promise<unknown>).then(
           (result) => ({ status: 200, data: result }),
           (error: unknown) => {
-            if (error instanceof RivetError) return error.result;
+            if (error instanceof RivetError) {
+              return error.result;
+            }
             throw error;
           },
         );

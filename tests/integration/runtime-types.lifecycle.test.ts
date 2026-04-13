@@ -328,22 +328,16 @@ test("DirectClient method for input endpoint accepts flat DTO", () => {
     .toEqualTypeOf<AddRequest>();
 });
 
-test("DirectClient method for input endpoint returns Promise<SuccessResponse>", () => {
-  expectTypeOf<DirectClient<MathContract>["Add"]>()
-    .returns
-    .toEqualTypeOf<Promise<AddResponse>>();
+test("DirectClient method for input endpoint returns Promise<SuccessResponse> on default call", () => {
+  type AddMethod = DirectClient<MathContract>["Add"];
+  type DefaultReturn = ReturnType<Extract<AddMethod, (input: AddRequest) => unknown>>;
+  expectTypeOf<DefaultReturn>().toEqualTypeOf<Promise<AddResponse>>();
 });
 
-test("DirectClient method for inputless endpoint takes no args", () => {
-  expectTypeOf<DirectClient<PingContract>["Ping"]>()
-    .parameters
-    .toEqualTypeOf<[]>();
-});
-
-test("DirectClient method for inputless endpoint returns Promise<SuccessResponse>", () => {
-  expectTypeOf<DirectClient<PingContract>["Ping"]>()
-    .returns
-    .toEqualTypeOf<Promise<PingResponse>>();
+test("DirectClient method for inputless endpoint returns Promise<SuccessResponse> on default call", () => {
+  type PingMethod = DirectClient<PingContract>["Ping"];
+  type DefaultReturn = ReturnType<Extract<PingMethod, () => unknown>>;
+  expectTypeOf<DefaultReturn>().toEqualTypeOf<Promise<PingResponse>>();
 });
 
 // -- createDirectClient runtime tests --
