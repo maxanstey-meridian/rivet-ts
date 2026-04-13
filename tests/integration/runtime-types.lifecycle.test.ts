@@ -428,6 +428,19 @@ test("unwrap: false on inputless endpoint returns RivetEndpointResult", () => {
   >();
 });
 
+test("unwrap: false on inputless endpoint returns success envelope without forwarding options as input", async () => {
+  const handlers = defineHandlers<PingContract>()({
+    Ping: handle<PingContract, "Ping">(async () => ({
+      pong: true as const,
+    })),
+  });
+
+  const client = createDirectClient<PingContract>(handlers);
+  const result = await client.Ping({ unwrap: false });
+
+  expect(result).toEqual({ status: 200, data: { pong: true } });
+});
+
 test("default unwrap still returns the DTO directly", () => {
   const handlers = defineHandlers<MathContract>()({
     Add: handle<MathContract, "Add">(async ({ body }) => ({
