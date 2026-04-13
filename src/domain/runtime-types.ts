@@ -1,4 +1,4 @@
-import type { ContractEndpointKey, EndpointSpecOf } from "./handler-types.js";
+import type { ContractEndpointKey, EndpointSpecOf, RivetHandler } from "./handler-types.js";
 
 export type RivetResult<TData> = {
   readonly status: number;
@@ -42,6 +42,18 @@ export type RivetEndpointResult<
   TContract,
   TKey extends ContractEndpointKey<TContract>,
 > = RivetSuccessResult<TContract, TKey> | RivetErrorResultUnion<EndpointSpecOf<TContract, TKey>>;
+
+export type RivetHandlerMap<TContract> = {
+  readonly [K in ContractEndpointKey<TContract>]: RivetHandler<TContract, K>;
+};
+
+export const defineHandlers =
+  <TContract>() =>
+  <THandlers extends RivetHandlerMap<TContract>>(
+    handlers: THandlers &
+      Record<Exclude<keyof THandlers, ContractEndpointKey<TContract>>, never>,
+  ): THandlers =>
+    handlers;
 
 export class RivetError extends Error {
   public readonly result: RivetResult<unknown>;

@@ -1,8 +1,15 @@
 import { expect, expectTypeOf, test } from "vitest";
 import type { Contract, Endpoint } from "../../src/domain/authoring-types.js";
 import {
+  handle,
+  type ContractEndpointKey,
+  type RivetHandler,
+} from "../../src/domain/handler-types.js";
+import {
   RivetError,
+  defineHandlers,
   type RivetEndpointResult,
+  type RivetHandlerMap,
   type RivetResult,
   type RivetSuccessResult,
 } from "../../src/domain/runtime-types.js";
@@ -146,6 +153,143 @@ test("RivetResult is a simple status+data envelope", () => {
     readonly status: number;
     readonly data: string;
   }>();
+});
+
+// -- Runtime tests --
+
+// -- defineHandlers DTOs + Contract --
+
+interface DirectorySearchRequest {
+  readonly query: string;
+  readonly page: number;
+}
+
+interface DirectorySearchResponse {
+  readonly items: readonly { readonly id: string; readonly displayName: string }[];
+  readonly totalCount: number;
+}
+
+interface DirectoryStatusResponse {
+  readonly status: "ok";
+}
+
+interface FormSubmission {
+  readonly name: string;
+  readonly email: string;
+}
+
+interface DirectoryContract extends Contract<"DirectoryContract"> {
+  Search: Endpoint<{
+    method: "POST";
+    route: "/api/directory/search";
+    input: DirectorySearchRequest;
+    response: DirectorySearchResponse;
+  }>;
+
+  Health: Endpoint<{
+    method: "GET";
+    route: "/api/directory/health";
+    response: DirectoryStatusResponse;
+  }>;
+
+  Export: Endpoint<{
+    method: "POST";
+    route: "/api/directory/export";
+    input: DirectorySearchRequest;
+    response: void;
+    fileResponse: true;
+    fileContentType: "text/csv";
+  }>;
+
+  SubmitForm: Endpoint<{
+    method: "POST";
+    route: "/api/directory/form";
+    input: FormSubmission;
+    response: void;
+    formEncoded: true;
+  }>;
+}
+
+// -- defineHandlers tests --
+
+test("defineHandlers compiles with all endpoint handlers", () => {
+  const handlers = defineHandlers<DirectoryContract>()({
+    Search: handle<DirectoryContract, "Search">(async ({ body }) => ({
+      items: [{ id: "1", displayName: body.query }],
+      totalCount: body.page,
+    })),
+    Health: handle<DirectoryContract, "Health">(async () => ({
+      status: "ok" as const,
+    })),
+    Export: handle<DirectoryContract, "Export">(async ({ body }) =>
+      new Blob([body.query], { type: "text/csv" }),
+    ),
+    SubmitForm: handle<DirectoryContract, "SubmitForm">(async () => {
+      void 0;
+    }),
+  });
+
+  expectTypeOf(handlers.Search).toEqualTypeOf<RivetHandler<DirectoryContract, "Search">>();
+  expectTypeOf(handlers.Health).toEqualTypeOf<RivetHandler<DirectoryContract, "Health">>();
+});
+
+test("RivetHandlerMap has a key for each contract endpoint", () => {
+  type Keys = keyof RivetHandlerMap<DirectoryContract>;
+  expectTypeOf<Keys>().toEqualTypeOf<ContractEndpointKey<DirectoryContract>>();
+});
+
+test("defineHandlers rejects missing keys, extra keys, and wrong return types", () => {
+  void 0;
+
+  // @ts-expect-error missing Health key
+  defineHandlers<DirectoryContract>()({
+    Search: handle<DirectoryContract, "Search">(async ({ body }) => ({
+      items: [{ id: "1", displayName: body.query }],
+      totalCount: body.page,
+    })),
+    Export: handle<DirectoryContract, "Export">(async ({ body }) =>
+      new Blob([body.query], { type: "text/csv" }),
+    ),
+    SubmitForm: handle<DirectoryContract, "SubmitForm">(async () => {
+      void 0;
+    }),
+  });
+
+  // @ts-expect-error extra Bogus key not in contract
+  defineHandlers<DirectoryContract>()({
+    Search: handle<DirectoryContract, "Search">(async ({ body }) => ({
+      items: [{ id: "1", displayName: body.query }],
+      totalCount: body.page,
+    })),
+    Health: handle<DirectoryContract, "Health">(async () => ({
+      status: "ok" as const,
+    })),
+    Export: handle<DirectoryContract, "Export">(async ({ body }) =>
+      new Blob([body.query], { type: "text/csv" }),
+    ),
+    SubmitForm: handle<DirectoryContract, "SubmitForm">(async () => {
+      void 0;
+    }),
+    Bogus: handle<DirectoryContract, "Health">(async () => ({
+      status: "ok" as const,
+    })),
+  });
+
+  defineHandlers<DirectoryContract>()({
+    // @ts-expect-error wrong return type for Search handler
+    Search: handle<DirectoryContract, "Search">(async () => ({
+      wrong: true,
+    })),
+    Health: handle<DirectoryContract, "Health">(async () => ({
+      status: "ok" as const,
+    })),
+    Export: handle<DirectoryContract, "Export">(async ({ body }) =>
+      new Blob([body.query], { type: "text/csv" }),
+    ),
+    SubmitForm: handle<DirectoryContract, "SubmitForm">(async () => {
+      void 0;
+    }),
+  });
 });
 
 // -- Runtime tests --
