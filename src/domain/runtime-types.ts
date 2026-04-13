@@ -55,16 +55,26 @@ export const defineHandlers =
   ): THandlers =>
     handlers;
 
+type UnwrapFalseOption = { readonly unwrap: false };
+
 export type DirectClientMethod<
   TContract,
   TKey extends ContractEndpointKey<TContract>,
 > = EndpointSpecOf<TContract, TKey> extends { readonly input: infer TInput }
-  ? (input: TInput) => Promise<SuccessResponseType<EndpointSpecOf<TContract, TKey>>>
-  : () => Promise<SuccessResponseType<EndpointSpecOf<TContract, TKey>>>;
+  ? ((input: TInput) => Promise<SuccessResponseType<EndpointSpecOf<TContract, TKey>>>) &
+      ((input: TInput, options: UnwrapFalseOption) => Promise<RivetEndpointResult<TContract, TKey>>)
+  : (() => Promise<SuccessResponseType<EndpointSpecOf<TContract, TKey>>>) &
+      ((options: UnwrapFalseOption) => Promise<RivetEndpointResult<TContract, TKey>>);
 
 export type DirectClient<TContract> = {
   readonly [K in ContractEndpointKey<TContract>]: DirectClientMethod<TContract, K>;
 };
+
+const isUnwrapFalseOption = (value: unknown): value is UnwrapFalseOption =>
+  typeof value === "object" &&
+  value !== null &&
+  "unwrap" in value &&
+  (value as Record<string, unknown>).unwrap === false;
 
 export const createDirectClient = <TContract>(
   handlers: RivetHandlerMap<TContract>,
@@ -74,8 +84,23 @@ export const createDirectClient = <TContract>(
       if (typeof key !== "string") return undefined;
       const handler = (handlers as Record<string, (...args: readonly unknown[]) => unknown>)[key];
       if (!handler) return undefined;
-      return (input?: unknown) =>
-        input !== undefined ? handler({ body: input }) : handler();
+      return (...args: unknown[]) => {
+        const lastArg = args.at(-1);
+        const unwrapFalse = isUnwrapFalseOption(lastArg);
+        const input = unwrapFalse
+          ? args.length > 1 ? args[0] : undefined
+          : args[0];
+        const call = () =>
+          input !== undefined ? handler({ body: input }) : handler();
+        if (!unwrapFalse) return call();
+        return (call() as Promise<unknown>).then(
+          (result) => ({ status: 200, data: result }),
+          (error: unknown) => {
+            if (error instanceof RivetError) return error.result;
+            throw error;
+          },
+        );
+      };
     },
   });
 

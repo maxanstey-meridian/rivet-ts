@@ -386,3 +386,129 @@ test("createDirectClient does not expose keys outside the contract", () => {
   // @ts-expect-error Bogus is not a key of MathContract
   void client.Bogus;
 });
+
+// -- unwrap: false type tests --
+
+test("unwrap: false on success-only endpoint returns RivetEndpointResult (collapses to success)", () => {
+  const handlers = defineHandlers<MathContract>()({
+    Add: handle<MathContract, "Add">(async ({ body }) => ({
+      sum: body.a + body.b,
+    })),
+  });
+
+  const client = createDirectClient<MathContract>(handlers);
+
+  expectTypeOf(client.Add({ a: 1, b: 2 }, { unwrap: false })).toEqualTypeOf<
+    Promise<{ readonly status: 200; readonly data: AddResponse }>
+  >();
+});
+
+test("unwrap: false on error-bearing endpoint returns discriminated union", () => {
+  const handlers = defineHandlers<DivideContract>()({
+    Divide: handle<DivideContract, "Divide">(async ({ body }) => ({
+      quotient: body.dividend / body.divisor,
+    })),
+  });
+
+  const client = createDirectClient<DivideContract>(handlers);
+
+  expectTypeOf(
+    client.Divide({ dividend: 10, divisor: 2 }, { unwrap: false }),
+  ).toEqualTypeOf<
+    Promise<
+      | { readonly status: 200; readonly data: DivideResponse }
+      | { readonly status: 400; readonly data: { message: string } }
+    >
+  >();
+});
+
+test("unwrap: false on inputless endpoint returns RivetEndpointResult", () => {
+  const handlers = defineHandlers<PingContract>()({
+    Ping: handle<PingContract, "Ping">(async () => ({
+      pong: true as const,
+    })),
+  });
+
+  const client = createDirectClient<PingContract>(handlers);
+
+  expectTypeOf(client.Ping({ unwrap: false })).toEqualTypeOf<
+    Promise<{ readonly status: 200; readonly data: PingResponse }>
+  >();
+});
+
+test("default unwrap still returns the DTO directly", () => {
+  const handlers = defineHandlers<MathContract>()({
+    Add: handle<MathContract, "Add">(async ({ body }) => ({
+      sum: body.a + body.b,
+    })),
+  });
+
+  const client = createDirectClient<MathContract>(handlers);
+
+  expectTypeOf(client.Add({ a: 1, b: 2 })).toEqualTypeOf<Promise<AddResponse>>();
+});
+
+// -- unwrap: false runtime tests --
+
+test("unwrap: false wraps successful result in envelope", async () => {
+  const handlers = defineHandlers<MathContract>()({
+    Add: handle<MathContract, "Add">(async ({ body }) => ({
+      sum: body.a + body.b,
+    })),
+  });
+
+  const client = createDirectClient<MathContract>(handlers);
+  const result = await client.Add({ a: 5, b: 3 }, { unwrap: false });
+
+  expect(result).toEqual({ status: 200, data: { sum: 8 } });
+});
+
+test("unwrap: false catches RivetError and returns error result", async () => {
+  const handlers = defineHandlers<DivideContract>()({
+    Divide: handle<DivideContract, "Divide">(async ({ body }) => {
+      if (body.divisor === 0) {
+        throw new RivetError({ status: 400, data: { message: "division by zero" } });
+      }
+      return { quotient: body.dividend / body.divisor };
+    }),
+  });
+
+  const client = createDirectClient<DivideContract>(handlers);
+  const result = await client.Divide({ dividend: 10, divisor: 0 }, { unwrap: false });
+
+  expect(result).toEqual({ status: 400, data: { message: "division by zero" } });
+});
+
+test("default unwrap re-throws RivetError", async () => {
+  const handlers = defineHandlers<DivideContract>()({
+    Divide: handle<DivideContract, "Divide">(async ({ body }) => {
+      if (body.divisor === 0) {
+        throw new RivetError({ status: 400, data: { message: "division by zero" } });
+      }
+      return { quotient: body.dividend / body.divisor };
+    }),
+  });
+
+  const client = createDirectClient<DivideContract>(handlers);
+
+  await expect(client.Divide({ dividend: 10, divisor: 0 })).rejects.toThrow(RivetError);
+});
+
+test("discriminated union narrows correctly by status", async () => {
+  const handlers = defineHandlers<DivideContract>()({
+    Divide: handle<DivideContract, "Divide">(async ({ body }) => {
+      if (body.divisor === 0) {
+        throw new RivetError({ status: 400, data: { message: "division by zero" } });
+      }
+      return { quotient: body.dividend / body.divisor };
+    }),
+  });
+
+  const client = createDirectClient<DivideContract>(handlers);
+  const result = await client.Divide({ dividend: 10, divisor: 0 }, { unwrap: false });
+
+  if (result.status === 400) {
+    expectTypeOf(result.data).toEqualTypeOf<{ message: string }>();
+    expect(result.data).toEqual({ message: "division by zero" });
+  }
+});
