@@ -49,7 +49,7 @@ export type RivetHandlerMap<TContract> = {
 
 export type EndpointMetaMap<TContract> = {
   readonly [K in ContractEndpointKey<TContract>]?: {
-    readonly successStatus?: number;
+    readonly successStatus?: SuccessStatus<EndpointSpecOf<TContract, K>>;
   };
 };
 

@@ -524,6 +524,18 @@ test("unwrap: false uses custom successStatus from defineHandlers metadata", asy
   }
 });
 
+test("defineHandlers rejects wrong successStatus in metadata", () => {
+  defineHandlers<CreatedContract>()(
+    {
+      Create: handle<CreatedContract, "Create">(async ({ body }) => ({
+        id: `created-${body.name}`,
+      })),
+    },
+    // @ts-expect-error successStatus 999 is not assignable to 201
+    { Create: { successStatus: 999 } },
+  );
+});
+
 test("unwrap: false defaults to 200 when no metadata provided", async () => {
   const handlers = defineHandlers<MathContract>()({
     Add: handle<MathContract, "Add">(async ({ body }) => ({
