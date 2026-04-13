@@ -292,11 +292,16 @@ interface AddResponse {
 }
 
 interface MathContract extends Contract<"MathContract"> {
-  Add: Endpoint<{ input: AddRequest; response: AddResponse }>;
+  Add: Endpoint<{
+    method: "POST";
+    route: "/api/math/add";
+    input: AddRequest;
+    response: AddResponse;
+  }>;
 }
 
 const handlers = defineHandlers<MathContract>()({
-  Add: handle<MathContract, "Add">(({ body }) => ({
+  Add: handle<MathContract, "Add">(async ({ body }) => ({
     sum: body.a + body.b,
   })),
 });
@@ -329,6 +334,8 @@ interface DivisionErrorDto {
 
 interface CalcContract extends Contract<"CalcContract"> {
   Divide: Endpoint<{
+    method: "POST";
+    route: "/api/math/divide";
     input: DivideRequest;
     response: DivideResponse;
     errors: [{ status: 400; response: DivisionErrorDto }];
