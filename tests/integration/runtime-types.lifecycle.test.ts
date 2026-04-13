@@ -7,7 +7,9 @@ import {
 } from "../../src/domain/handler-types.js";
 import {
   RivetError,
+  createDirectClient,
   defineHandlers,
+  type DirectClient,
   type RivetEndpointResult,
   type RivetHandlerMap,
   type RivetResult,
@@ -302,4 +304,85 @@ test("RivetError extends Error and stores result", () => {
   expect(error.message).toBe("RivetError");
   expect(error.result.status).toBe(400);
   expect(error.result.data).toEqual({ message: "bad" });
+});
+
+// -- createDirectClient DTOs + Contracts --
+
+interface PingResponse {
+  readonly pong: true;
+}
+
+interface PingContract extends Contract<"PingContract"> {
+  Ping: Endpoint<{
+    method: "GET";
+    route: "/api/ping";
+    response: PingResponse;
+  }>;
+}
+
+// -- createDirectClient type tests --
+
+test("DirectClient method for input endpoint accepts flat DTO", () => {
+  expectTypeOf<DirectClient<MathContract>["Add"]>()
+    .parameter(0)
+    .toEqualTypeOf<AddRequest>();
+});
+
+test("DirectClient method for input endpoint returns Promise<SuccessResponse>", () => {
+  expectTypeOf<DirectClient<MathContract>["Add"]>()
+    .returns
+    .toEqualTypeOf<Promise<AddResponse>>();
+});
+
+test("DirectClient method for inputless endpoint takes no args", () => {
+  expectTypeOf<DirectClient<PingContract>["Ping"]>()
+    .parameters
+    .toEqualTypeOf<[]>();
+});
+
+test("DirectClient method for inputless endpoint returns Promise<SuccessResponse>", () => {
+  expectTypeOf<DirectClient<PingContract>["Ping"]>()
+    .returns
+    .toEqualTypeOf<Promise<PingResponse>>();
+});
+
+// -- createDirectClient runtime tests --
+
+test("createDirectClient routes input endpoint call through handler", async () => {
+  const handlers = defineHandlers<MathContract>()({
+    Add: handle<MathContract, "Add">(async ({ body }) => ({
+      sum: body.a + body.b,
+    })),
+  });
+
+  const client = createDirectClient<MathContract>(handlers);
+  const result = await client.Add({ a: 3, b: 4 });
+
+  expect(result).toEqual({ sum: 7 });
+});
+
+test("createDirectClient routes inputless endpoint call through handler", async () => {
+  const handlers = defineHandlers<PingContract>()({
+    Ping: handle<PingContract, "Ping">(async () => ({
+      pong: true as const,
+    })),
+  });
+
+  const client = createDirectClient<PingContract>(handlers);
+  const result = await client.Ping();
+
+  expect(result).toEqual({ pong: true });
+});
+
+test("createDirectClient does not expose keys outside the contract", () => {
+  const handlers = defineHandlers<MathContract>()({
+    Add: handle<MathContract, "Add">(async ({ body }) => ({
+      sum: body.a + body.b,
+    })),
+  });
+
+  const client = createDirectClient<MathContract>(handlers);
+
+  // @ts-expect-error Bogus is not a key of MathContract
+  void client.Bogus;
 });

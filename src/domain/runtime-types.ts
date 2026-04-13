@@ -55,6 +55,30 @@ export const defineHandlers =
   ): THandlers =>
     handlers;
 
+export type DirectClientMethod<
+  TContract,
+  TKey extends ContractEndpointKey<TContract>,
+> = EndpointSpecOf<TContract, TKey> extends { readonly input: infer TInput }
+  ? (input: TInput) => Promise<SuccessResponseType<EndpointSpecOf<TContract, TKey>>>
+  : () => Promise<SuccessResponseType<EndpointSpecOf<TContract, TKey>>>;
+
+export type DirectClient<TContract> = {
+  readonly [K in ContractEndpointKey<TContract>]: DirectClientMethod<TContract, K>;
+};
+
+export const createDirectClient = <TContract>(
+  handlers: RivetHandlerMap<TContract>,
+): DirectClient<TContract> =>
+  new Proxy({} as DirectClient<TContract>, {
+    get(_, key) {
+      if (typeof key !== "string") return undefined;
+      const handler = (handlers as Record<string, (...args: readonly unknown[]) => unknown>)[key];
+      if (!handler) return undefined;
+      return (input?: unknown) =>
+        input !== undefined ? handler({ body: input }) : handler();
+    },
+  });
+
 export class RivetError extends Error {
   public readonly result: RivetResult<unknown>;
 
