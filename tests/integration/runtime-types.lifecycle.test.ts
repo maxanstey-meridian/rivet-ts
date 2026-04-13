@@ -255,7 +255,6 @@ test("defineHandlers rejects missing keys, extra keys, and wrong return types", 
     }),
   });
 
-  // @ts-expect-error extra Bogus key not in contract
   defineHandlers<DirectoryContract>()({
     Search: handle<DirectoryContract, "Search">(async ({ body }) => ({
       items: [{ id: "1", displayName: body.query }],
@@ -270,6 +269,7 @@ test("defineHandlers rejects missing keys, extra keys, and wrong return types", 
     SubmitForm: handle<DirectoryContract, "SubmitForm">(async () => {
       void 0;
     }),
+    // @ts-expect-error extra Bogus key not in contract resolves to never
     Bogus: handle<DirectoryContract, "Health">(async () => ({
       status: "ok" as const,
     })),
