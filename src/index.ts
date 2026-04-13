@@ -22,6 +22,17 @@ export {
   type EndpointSpecOf,
   type RivetHandler,
 } from "./domain/handler-types.js";
+export {
+  createDirectClient,
+  defineHandlers,
+  RivetError,
+  type DirectClient,
+  type DirectClientMethod,
+  type RivetEndpointResult,
+  type RivetHandlerMap,
+  type RivetResult,
+  type RivetSuccessResult,
+} from "./domain/runtime-types.js";
 export { ContractBundle } from "./domain/contract-bundle.js";
 export {
   ContractSpec,

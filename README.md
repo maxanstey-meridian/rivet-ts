@@ -273,6 +273,89 @@ const createMember = handle<MembersContract, "Create">(async ({ body }) => {
 });
 ```
 
+## Local Runtime
+
+rivet-ts includes a local contract runtime for direct in-process dispatch — no HTTP server, no network. Define handlers, create a client, and call endpoints as typed async functions. Contract and transport are separate concerns.
+
+### Define handlers and create a client
+
+```ts
+import type { Contract, Endpoint } from "rivet-ts";
+import { handle, defineHandlers, createDirectClient } from "rivet-ts";
+
+interface AddRequest {
+  a: number;
+  b: number;
+}
+interface AddResponse {
+  sum: number;
+}
+
+interface MathContract extends Contract<"MathContract"> {
+  Add: Endpoint<{ input: AddRequest; response: AddResponse }>;
+}
+
+const handlers = defineHandlers<MathContract>()({
+  Add: handle<MathContract, "Add">(({ body }) => ({
+    sum: body.a + body.b,
+  })),
+});
+
+const client = createDirectClient<MathContract>(handlers);
+
+const result = await client.Add({ a: 1, b: 2 });
+// result: { sum: 3 }
+```
+
+Client methods accept the DTO directly — `client.Add({ a: 1, b: 2 })`, not `client.Add({ body: { a: 1, b: 2 } })`. The client wraps input in `{ body }` internally.
+
+### Result envelopes with `unwrap: false`
+
+By default, client methods return the success DTO directly and throw `RivetError` on failure. Pass `{ unwrap: false }` to get a `{ status, data }` envelope instead:
+
+```ts
+import { RivetError } from "rivet-ts";
+
+interface DivideRequest {
+  a: number;
+  b: number;
+}
+interface DivideResponse {
+  quotient: number;
+}
+interface DivisionErrorDto {
+  message: string;
+}
+
+interface CalcContract extends Contract<"CalcContract"> {
+  Divide: Endpoint<{
+    input: DivideRequest;
+    response: DivideResponse;
+    errors: [{ status: 400; response: DivisionErrorDto }];
+  }>;
+}
+
+// Default: returns DivideResponse or throws RivetError
+const quotient = await client.Divide({ a: 10, b: 2 });
+
+// unwrap: false — returns a discriminated union
+const result = await client.Divide({ a: 10, b: 0 }, { unwrap: false });
+
+if (result.status === 400) {
+  // result.data is DivisionErrorDto
+  console.error(result.data.message);
+} else {
+  // result.data is DivideResponse
+  console.log(result.data.quotient);
+}
+```
+
+For endpoints with no `errors`, `unwrap: false` returns the success result envelope only.
+
+### Scope
+
+The local runtime is for in-process dispatch — testing, scripting, or embedding contracts without a server. For HTTP clients, OpenAPI specs, validators, and generated code, feed the contract JSON to the downstream [Rivet](https://github.com/maxanstey-meridian/rivet) pipeline.
+
 ## CLI
 
 ```
