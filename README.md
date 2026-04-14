@@ -166,7 +166,7 @@ rivet-ts reflects TypeScript types into Rivet's intermediate contract format. Th
 | `T \| null`                             | nullable wrapper      | `nullable: true`       |                                                               |
 | `"a" \| "b" \| "c"`                     | `stringLiteralUnion`  | `enum`                 | Preferred form for string enums                               |
 | `1 \| 2 \| 3`                           | `numericLiteralUnion` | `enum`                 | Numeric literal union types                                   |
-| `enum E { A = "a" }`                    | `enum`                | `enum`                 | Also supported — produces identical output to string unions    |
+| `enum E { A = "a" }`                    | `enum`                | `enum`                 | Also supported — produces identical output to string unions   |
 | `interface Foo { ... }`                 | `ref` (+ type def)    | `$ref`                 | Exported interfaces become named schemas                      |
 | `type Foo = { ... }`                    | `ref` (+ type def)    | `$ref`                 | Exported type aliases with object shapes                      |
 | `Brand<string, "Email">`                | branded primitive     | `string`               | Nominal typing — emits `string & { __brand: "Email" }`        |

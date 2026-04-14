@@ -223,8 +223,8 @@ test("defineHandlers compiles with all endpoint handlers", () => {
     Health: handle<DirectoryContract, "Health">(async () => ({
       status: "ok" as const,
     })),
-    Export: handle<DirectoryContract, "Export">(async ({ body }) =>
-      new Blob([body.query], { type: "text/csv" }),
+    Export: handle<DirectoryContract, "Export">(
+      async ({ body }) => new Blob([body.query], { type: "text/csv" }),
     ),
     SubmitForm: handle<DirectoryContract, "SubmitForm">(async () => {
       void 0;
@@ -249,8 +249,8 @@ test("defineHandlers rejects missing keys, extra keys, and wrong return types", 
       items: [{ id: "1", displayName: body.query }],
       totalCount: body.page,
     })),
-    Export: handle<DirectoryContract, "Export">(async ({ body }) =>
-      new Blob([body.query], { type: "text/csv" }),
+    Export: handle<DirectoryContract, "Export">(
+      async ({ body }) => new Blob([body.query], { type: "text/csv" }),
     ),
     SubmitForm: handle<DirectoryContract, "SubmitForm">(async () => {
       void 0;
@@ -265,8 +265,8 @@ test("defineHandlers rejects missing keys, extra keys, and wrong return types", 
     Health: handle<DirectoryContract, "Health">(async () => ({
       status: "ok" as const,
     })),
-    Export: handle<DirectoryContract, "Export">(async ({ body }) =>
-      new Blob([body.query], { type: "text/csv" }),
+    Export: handle<DirectoryContract, "Export">(
+      async ({ body }) => new Blob([body.query], { type: "text/csv" }),
     ),
     SubmitForm: handle<DirectoryContract, "SubmitForm">(async () => {
       void 0;
@@ -285,8 +285,8 @@ test("defineHandlers rejects missing keys, extra keys, and wrong return types", 
     Health: handle<DirectoryContract, "Health">(async () => ({
       status: "ok" as const,
     })),
-    Export: handle<DirectoryContract, "Export">(async ({ body }) =>
-      new Blob([body.query], { type: "text/csv" }),
+    Export: handle<DirectoryContract, "Export">(
+      async ({ body }) => new Blob([body.query], { type: "text/csv" }),
     ),
     SubmitForm: handle<DirectoryContract, "SubmitForm">(async () => {
       void 0;
@@ -323,19 +323,17 @@ interface PingContract extends Contract<"PingContract"> {
 // -- createDirectClient type tests --
 
 test("DirectClient method for input endpoint accepts flat DTO", () => {
-  expectTypeOf<DirectClient<MathContract>["Add"]>()
-    .parameter(0)
-    .toEqualTypeOf<AddRequest>();
+  expectTypeOf<DirectClient<MathContract>["Add"]>().parameter(0).toEqualTypeOf<AddRequest>();
 });
 
 test("DirectClient method for input endpoint has default overload returning Promise<SuccessResponse>", () => {
-  expectTypeOf<DirectClient<MathContract>["Add"]>()
-    .toMatchTypeOf<(input: AddRequest) => Promise<AddResponse>>();
+  expectTypeOf<DirectClient<MathContract>["Add"]>().toMatchTypeOf<
+    (input: AddRequest) => Promise<AddResponse>
+  >();
 });
 
 test("DirectClient method for inputless endpoint has default overload returning Promise<SuccessResponse>", () => {
-  expectTypeOf<DirectClient<PingContract>["Ping"]>()
-    .toMatchTypeOf<() => Promise<PingResponse>>();
+  expectTypeOf<DirectClient<PingContract>["Ping"]>().toMatchTypeOf<() => Promise<PingResponse>>();
 });
 
 // -- createDirectClient runtime tests --
@@ -404,9 +402,7 @@ test("unwrap: false on error-bearing endpoint returns discriminated union", () =
 
   const client = createDirectClient<DivideContract>(handlers);
 
-  expectTypeOf(
-    client.Divide({ dividend: 10, divisor: 2 }, { unwrap: false }),
-  ).toEqualTypeOf<
+  expectTypeOf(client.Divide({ dividend: 10, divisor: 2 }, { unwrap: false })).toEqualTypeOf<
     Promise<
       | { readonly status: 200; readonly data: DivideResponse }
       | { readonly status: 400; readonly data: { message: string } }

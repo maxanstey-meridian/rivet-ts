@@ -509,11 +509,12 @@ class TypeEmissionContext {
       : undefined;
     const queryAuthBool = this.readBooleanLiteral(propertyMap.get("queryAuth"));
     const queryAuthString = this.readStringLiteral(propertyMap.get("queryAuth"));
-    const queryAuth = queryAuthBool === true
-      ? { parameterName: "token" }
-      : queryAuthString
-        ? { parameterName: queryAuthString }
-        : undefined;
+    const queryAuth =
+      queryAuthBool === true
+        ? { parameterName: "token" }
+        : queryAuthString
+          ? { parameterName: queryAuthString }
+          : undefined;
     const inputType = this.lowerOptionalTypeNode(inputNode);
     const responseType = this.lowerOptionalTypeNode(responseNode);
 

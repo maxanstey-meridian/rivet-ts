@@ -15,10 +15,7 @@ type SuccessStatus<TSpec> = TSpec extends { readonly successStatus: infer S exte
   ? S
   : 200;
 
-export type RivetSuccessResult<
-  TContract,
-  TKey extends ContractEndpointKey<TContract>,
-> = {
+export type RivetSuccessResult<TContract, TKey extends ContractEndpointKey<TContract>> = {
   readonly status: SuccessStatus<EndpointSpecOf<TContract, TKey>>;
   readonly data: SuccessResponseType<EndpointSpecOf<TContract, TKey>>;
 };
@@ -38,10 +35,9 @@ export type RivetErrorResultUnion<TSpec> = TSpec extends {
   ? ErrorResultEntry<TErrors[number]>
   : never;
 
-export type RivetEndpointResult<
-  TContract,
-  TKey extends ContractEndpointKey<TContract>,
-> = RivetSuccessResult<TContract, TKey> | RivetErrorResultUnion<EndpointSpecOf<TContract, TKey>>;
+export type RivetEndpointResult<TContract, TKey extends ContractEndpointKey<TContract>> =
+  | RivetSuccessResult<TContract, TKey>
+  | RivetErrorResultUnion<EndpointSpecOf<TContract, TKey>>;
 
 export type RivetHandlerMap<TContract> = {
   readonly [K in ContractEndpointKey<TContract>]: RivetHandler<TContract, K>;
@@ -58,8 +54,7 @@ const RIVET_META_KEY = "__rivetMeta";
 export const defineHandlers =
   <TContract>() =>
   <THandlers extends RivetHandlerMap<TContract>>(
-    handlers: THandlers &
-      Record<Exclude<keyof THandlers, ContractEndpointKey<TContract>>, never>,
+    handlers: THandlers & Record<Exclude<keyof THandlers, ContractEndpointKey<TContract>>, never>,
     meta?: EndpointMetaMap<TContract>,
   ): THandlers => {
     if (meta) {
@@ -73,14 +68,15 @@ export const defineHandlers =
 
 type UnwrapFalseOption = { readonly unwrap: false };
 
-export type DirectClientMethod<
-  TContract,
-  TKey extends ContractEndpointKey<TContract>,
-> = EndpointSpecOf<TContract, TKey> extends { readonly input: infer TInput }
-  ? ((input: TInput) => Promise<SuccessResponseType<EndpointSpecOf<TContract, TKey>>>) &
-      ((input: TInput, options: UnwrapFalseOption) => Promise<RivetEndpointResult<TContract, TKey>>)
-  : (() => Promise<SuccessResponseType<EndpointSpecOf<TContract, TKey>>>) &
-      ((options: UnwrapFalseOption) => Promise<RivetEndpointResult<TContract, TKey>>);
+export type DirectClientMethod<TContract, TKey extends ContractEndpointKey<TContract>> =
+  EndpointSpecOf<TContract, TKey> extends { readonly input: infer TInput }
+    ? ((input: TInput) => Promise<SuccessResponseType<EndpointSpecOf<TContract, TKey>>>) &
+        ((
+          input: TInput,
+          options: UnwrapFalseOption,
+        ) => Promise<RivetEndpointResult<TContract, TKey>>)
+    : (() => Promise<SuccessResponseType<EndpointSpecOf<TContract, TKey>>>) &
+        ((options: UnwrapFalseOption) => Promise<RivetEndpointResult<TContract, TKey>>);
 
 export type DirectClient<TContract> = {
   readonly [K in ContractEndpointKey<TContract>]: DirectClientMethod<TContract, K>;
@@ -110,9 +106,7 @@ export const createDirectClient = <TContract>(
       return (...args: unknown[]) => {
         const lastArg = args.at(-1);
         const unwrapFalse = isUnwrapFalseOption(lastArg);
-        const input = unwrapFalse
-          ? args.length > 1 ? args[0] : undefined
-          : args[0];
+        const input = unwrapFalse ? (args.length > 1 ? args[0] : undefined) : args[0];
         const call = () => {
           if (input !== undefined) {
             return handler({ body: input });
