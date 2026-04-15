@@ -10,46 +10,41 @@ const getFixturePath = (relativePath: string): string => {
   return path.resolve(path.dirname(currentFilePath), "..", "fixtures", relativePath);
 };
 
-describe("Unsupported contract lifecycle", () => {
-  it("emits explicit diagnostics for unsupported TS constructs", async () => {
+describe("Invalid tagged union contract lifecycle", () => {
+  it("emits explicit diagnostics for unsupported discriminated union shapes", async () => {
     const frontend = new TypeScriptContractFrontend();
     const lowerer = new TypeScriptRivetContractLowerer();
     const extractUseCase = new ExtractTsContracts(frontend);
     const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
 
     const bundle = await extractUseCase.execute({
-      entryPath: getFixturePath(path.join("unsupported-contract", "contracts.ts")),
+      entryPath: getFixturePath(path.join("invalid-tagged-union-contract", "contracts.ts")),
     });
     const lowered = await lowerUseCase.execute({ bundle });
 
     expect(bundle.hasErrors).toBe(false);
     expect(lowered.hasErrors).toBe(true);
 
-    const diagnosticCodes = lowered.diagnostics.map((diagnostic) => diagnostic.code);
-    expect(diagnosticCodes).toEqual(
-      expect.arrayContaining([
-        "UNSUPPORTED_INLINE_OPTIONAL_PROPERTY",
-        "UNSUPPORTED_TYPE_EXPRESSION",
-      ]),
+    const unionDiagnostics = lowered.diagnostics.filter(
+      (diagnostic) => diagnostic.code === "UNSUPPORTED_UNION",
     );
+    expect(unionDiagnostics).toHaveLength(6);
 
-    expect(lowered.diagnostics).toEqual(
+    expect(unionDiagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          code: "UNSUPPORTED_TYPE_EXPRESSION",
-          message: expect.stringContaining("TValue extends string"),
+          message: expect.stringContaining('repeats discriminator value "hidden"'),
         }),
         expect.objectContaining({
-          code: "UNSUPPORTED_TYPE_EXPRESSION",
-          message: expect.stringContaining("[TKey in keyof TValue]"),
+          message: expect.stringContaining(
+            "cannot use optional properties in tagged union variants",
+          ),
         }),
         expect.objectContaining({
-          code: "UNSUPPORTED_INLINE_OPTIONAL_PROPERTY",
-          message: expect.stringContaining('Inline object property "optional"'),
+          message: expect.stringContaining('state: "shown"'),
         }),
         expect.objectContaining({
-          code: "UNSUPPORTED_TYPE_EXPRESSION",
-          message: expect.stringContaining("string &"),
+          message: expect.stringContaining('| "shown"'),
         }),
       ]),
     );

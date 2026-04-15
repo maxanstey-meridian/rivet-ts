@@ -48,10 +48,20 @@ export type RivetType =
   | {
       kind: "inlineObject";
       properties: readonly RivetInlineObjectProperty[];
+    }
+  | {
+      kind: "taggedUnion";
+      discriminator: string;
+      variants: readonly RivetTaggedUnionVariant[];
     };
 
 export type RivetInlineObjectProperty = {
   name: string;
+  type: RivetType;
+};
+
+export type RivetTaggedUnionVariant = {
+  tag: string;
   type: RivetType;
 };
 
@@ -155,17 +165,20 @@ export class RivetTypeDefinition {
   public readonly name: string;
   public readonly typeParameters: readonly string[];
   public readonly properties: readonly RivetPropertyDefinition[];
+  public readonly type?: RivetType;
   public readonly description?: string;
 
   public constructor(input: {
     name: string;
     typeParameters?: readonly string[];
-    properties: readonly RivetPropertyDefinition[];
+    properties?: readonly RivetPropertyDefinition[];
+    type?: RivetType;
     description?: string;
   }) {
     this.name = input.name;
     this.typeParameters = input.typeParameters ?? [];
-    this.properties = input.properties;
+    this.properties = input.properties ?? [];
+    this.type = input.type;
     this.description = input.description;
   }
 }

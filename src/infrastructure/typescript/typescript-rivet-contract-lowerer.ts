@@ -40,6 +40,10 @@ type PropertyDescriptor = {
   readOnly: boolean;
 };
 
+type TaggedUnionMemberDescriptor = {
+  properties: readonly PropertyDescriptor[];
+};
+
 const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
   target: ts.ScriptTarget.ES2023,
   module: ts.ModuleKind.NodeNext,
@@ -297,6 +301,11 @@ const collectTypeReferences = (type: RivetType, references: Set<string>): void =
     case "inlineObject":
       for (const property of type.properties) {
         collectTypeReferences(property.type, references);
+      }
+      return;
+    case "taggedUnion":
+      for (const variant of type.variants) {
+        collectTypeReferences(variant.type, references);
       }
       return;
     case "nullable":
@@ -630,8 +639,12 @@ class TypeEmissionContext {
     }
 
     const references = new Set<string>();
-    for (const property of typeDefinition.properties) {
-      collectTypeReferences(property.type, references);
+    if (typeDefinition.type) {
+      collectTypeReferences(typeDefinition.type, references);
+    } else {
+      for (const property of typeDefinition.properties) {
+        collectTypeReferences(property.type, references);
+      }
     }
     references.delete(typeDefinition.name);
 
@@ -764,37 +777,6 @@ class TypeEmissionContext {
   ): RivetTypeDefinition | null {
     const typeParameters =
       declaration.typeParameters?.map((parameter) => parameter.name.text) ?? [];
-    const properties = this.readTypeDefinitionProperties(declaration);
-
-    if (!properties) {
-      return null;
-    }
-
-    const loweredProperties: RivetPropertyDefinition[] = [];
-    for (const property of properties) {
-      const loweredType = this.lowerTypeNode(property.typeNode, new Set(typeParameters));
-      if (!loweredType) {
-        return null;
-      }
-
-      loweredProperties.push({
-        name: property.name,
-        type: loweredType,
-        optional: property.optional,
-        readOnly: property.readOnly || undefined,
-      });
-    }
-
-    return new RivetTypeDefinition({
-      name: declaration.name.text,
-      typeParameters,
-      properties: loweredProperties,
-    });
-  }
-
-  private readTypeDefinitionProperties(
-    declaration: ts.InterfaceDeclaration | ts.TypeAliasDeclaration,
-  ): PropertyDescriptor[] | null {
     if (ts.isInterfaceDeclaration(declaration)) {
       const properties = this.readPropertyMembers(
         declaration.members,
@@ -805,21 +787,69 @@ class TypeEmissionContext {
         return null;
       }
 
-      return properties;
+      const loweredProperties: RivetPropertyDefinition[] = [];
+      for (const property of properties) {
+        const loweredType = this.lowerTypeNode(property.typeNode, new Set(typeParameters));
+        if (!loweredType) {
+          return null;
+        }
+
+        loweredProperties.push({
+          name: property.name,
+          type: loweredType,
+          optional: property.optional,
+          readOnly: property.readOnly || undefined,
+        });
+      }
+
+      return new RivetTypeDefinition({
+        name: declaration.name.text,
+        typeParameters,
+        properties: loweredProperties,
+      });
     }
 
     if (ts.isTypeLiteralNode(declaration.type)) {
-      return this.readPropertyMembers(declaration.type.members, `Type "${declaration.name.text}"`);
+      const properties = this.readPropertyMembers(
+        declaration.type.members,
+        `Type "${declaration.name.text}"`,
+      );
+      if (!properties) {
+        return null;
+      }
+
+      const loweredProperties: RivetPropertyDefinition[] = [];
+      for (const property of properties) {
+        const loweredType = this.lowerTypeNode(property.typeNode, new Set(typeParameters));
+        if (!loweredType) {
+          return null;
+        }
+
+        loweredProperties.push({
+          name: property.name,
+          type: loweredType,
+          optional: property.optional,
+          readOnly: property.readOnly || undefined,
+        });
+      }
+
+      return new RivetTypeDefinition({
+        name: declaration.name.text,
+        typeParameters,
+        properties: loweredProperties,
+      });
     }
 
-    this.diagnostics.push(
-      createNodeDiagnostic(
-        declaration.type,
-        "UNSUPPORTED_TYPE_ALIAS",
-        `Type alias "${declaration.name.text}" must be an object type or a literal-union enum.`,
-      ),
-    );
-    return null;
+    const loweredType = this.lowerTypeNode(declaration.type, new Set(typeParameters));
+    if (!loweredType) {
+      return null;
+    }
+
+    return new RivetTypeDefinition({
+      name: declaration.name.text,
+      typeParameters,
+      type: loweredType,
+    });
   }
 
   private buildEndpointParams(
@@ -1754,6 +1784,11 @@ class TypeEmissionContext {
         : null;
     }
 
+    const taggedUnion = this.tryLowerTaggedUnionTypeNode(node, typeParameters);
+    if (taggedUnion) {
+      return taggedUnion;
+    }
+
     const stringValues: string[] = [];
     const intValues: number[] = [];
     for (const member of node.types) {
@@ -1810,6 +1845,132 @@ class TypeEmissionContext {
       ),
     );
     return null;
+  }
+
+  private tryLowerTaggedUnionTypeNode(
+    node: ts.UnionTypeNode,
+    typeParameters: Set<string>,
+  ): RivetType | null {
+    const members = node.types.map((member) => this.readTaggedUnionMember(member));
+    if (members.some((member) => member === null)) {
+      return null;
+    }
+
+    const discriminator = this.resolveTaggedUnionDiscriminator(
+      members as readonly TaggedUnionMemberDescriptor[],
+    );
+    if (!discriminator) {
+      return null;
+    }
+
+    const variants = [];
+    const seenTags = new Set<string>();
+
+    for (const member of members as readonly TaggedUnionMemberDescriptor[]) {
+      const discriminatorProperty = member.properties.find(
+        (property) => property.name === discriminator,
+      );
+      if (
+        !discriminatorProperty ||
+        !ts.isLiteralTypeNode(discriminatorProperty.typeNode) ||
+        !ts.isStringLiteral(discriminatorProperty.typeNode.literal)
+      ) {
+        return null;
+      }
+
+      const tag = discriminatorProperty.typeNode.literal.text;
+      if (seenTags.has(tag)) {
+        this.diagnostics.push(
+          createNodeDiagnostic(
+            discriminatorProperty.typeNode,
+            "UNSUPPORTED_UNION",
+            `Union "${node.getText(getNodeSourceFile(node))}" repeats discriminator value "${tag}".`,
+          ),
+        );
+        return null;
+      }
+      seenTags.add(tag);
+
+      const loweredProperties = [];
+      for (const property of member.properties) {
+        if (property.optional) {
+          this.diagnostics.push(
+            createNodeDiagnostic(
+              property.typeNode,
+              "UNSUPPORTED_UNION",
+              `Union "${node.getText(getNodeSourceFile(node))}" cannot use optional properties in tagged union variants.`,
+            ),
+          );
+          return null;
+        }
+
+        const loweredPropertyType = this.lowerTypeNode(property.typeNode, typeParameters);
+        if (!loweredPropertyType) {
+          return null;
+        }
+
+        loweredProperties.push({
+          name: property.name,
+          type: loweredPropertyType,
+        });
+      }
+
+      variants.push({
+        tag,
+        type: {
+          kind: "inlineObject" as const,
+          properties: loweredProperties,
+        },
+      });
+    }
+
+    return {
+      kind: "taggedUnion",
+      discriminator,
+      variants,
+    };
+  }
+
+  private readTaggedUnionMember(member: ts.TypeNode): TaggedUnionMemberDescriptor | null {
+    const properties = this.getObjectProperties(member);
+    return properties ? { properties } : null;
+  }
+
+  private resolveTaggedUnionDiscriminator(
+    members: readonly TaggedUnionMemberDescriptor[],
+  ): string | null {
+    if (members.length === 0) {
+      return null;
+    }
+
+    let candidates = new Set(
+      members[0].properties
+        .filter((property) => this.isTaggedUnionDiscriminatorCandidate(property))
+        .map((property) => property.name),
+    );
+
+    for (const member of members.slice(1)) {
+      const memberCandidates = new Set(
+        member.properties
+          .filter((property) => this.isTaggedUnionDiscriminatorCandidate(property))
+          .map((property) => property.name),
+      );
+      candidates = new Set([...candidates].filter((candidate) => memberCandidates.has(candidate)));
+    }
+
+    if (candidates.size !== 1) {
+      return null;
+    }
+
+    return [...candidates][0] ?? null;
+  }
+
+  private isTaggedUnionDiscriminatorCandidate(property: PropertyDescriptor): boolean {
+    return (
+      !property.optional &&
+      ts.isLiteralTypeNode(property.typeNode) &&
+      ts.isStringLiteral(property.typeNode.literal)
+    );
   }
 
   private readSecurityScheme(
