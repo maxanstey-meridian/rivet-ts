@@ -254,6 +254,26 @@ describe("CLI build-local", () => {
     expect(stderr.join("")).toContain("Usage:");
   });
 
+  it("invalid --target value produces error and exit code 1", async () => {
+    const { io, stderr } = captureIO();
+
+    const exitCode = await runCli(
+      [
+        "build-local",
+        "--entry",
+        getFixturePath("handler-entrypoint/index.ts"),
+        "--target",
+        "deno",
+        "--out",
+        path.join(tmpDir, "out"),
+      ],
+      io,
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join("")).toContain("Invalid target");
+  });
+
   it("browser target with node-import fixture fails with diagnostic", async () => {
     const outDir = path.join(tmpDir, "pkg");
     const { io, stderr } = captureIO();
