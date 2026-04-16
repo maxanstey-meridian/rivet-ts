@@ -3,9 +3,9 @@
   <a href="https://github.com/maxanstey-meridian/rivet-ts/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License" /></a>
 </p>
 
-**Define your API surface in type-only TypeScript, extract a Rivet contract, get OpenAPI, typed clients, and validators downstream.** No decorators, no runtime, no codegen config.
+**Contract-first APIs from TypeScript to working app, typed client, OpenAPI, and validators.** No decorators, no schema files, no codegen config.
 
-> [Rivet](https://github.com/maxanstey-meridian/rivet) gives you end-to-end type safety from .NET to TypeScript. rivet-ts lets you author that same contract natively in TypeScript — same pipeline, same outputs, TypeScript-first DX.
+> Write a TypeScript contract, scaffold a working Hono app, generate a separate client and OpenAPI downstream, and keep the same contract-first story if you later move to .NET with [Rivet](https://github.com/maxanstey-meridian/rivet).
 
 ## Install
 
@@ -13,7 +13,7 @@
 pnpm add -D github:maxanstey-meridian/rivet-ts
 ```
 
-## Define contracts → get contract JSON
+## Write a contract
 
 ```ts
 import type { Contract, Endpoint } from "rivet-ts";
@@ -25,7 +25,6 @@ export interface MemberDto {
 }
 
 export type MemberRole = "admin" | "member";
-// or: export enum MemberRole { Admin = "admin", Member = "member" }
 
 export interface CreateMemberRequest {
   email: string;
@@ -56,11 +55,78 @@ export interface MembersContract extends Contract<"MembersContract"> {
 }
 ```
 
+## Scaffold a working mock app
+
+```bash
+pnpm exec rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp
+cd ./myapp
+pnpm install
+pnpm run generate
+pnpm run dev
+```
+
+The scaffold gives you:
+
+- a Hono app wired from your contract
+- plain async handlers, one per endpoint
+- `configureLocalRivet()` for in-process local transport
+- Vite boilerplate so the app runs immediately in the browser
+- copied contract source so the scaffold is self-contained
+
+For the `MembersContract` above, the current scaffold emits:
+
+```text
+myapp/
+├── generated/
+├── index.html
+├── package.json
+├── src/
+│   ├── api.ts
+│   ├── contract-source/
+│   │   └── contracts.ts
+│   ├── contract.ts
+│   ├── handlers/
+│   │   ├── create.ts
+│   │   └── list.ts
+│   ├── local-rivet.ts
+│   └── main.ts
+├── tsconfig.json
+└── vite.config.ts
+```
+
+Example emitted handler:
+
+```ts
+import type { RivetHandler } from "rivet-ts";
+import type { MembersContract } from "../contract.js";
+
+export const list: RivetHandler<MembersContract, "List"> = async () => {
+  return [
+    {
+      "id": "example",
+      "email": "example",
+      "role": "admin"
+    }
+  ];
+};
+```
+
+The intended path is:
+
+1. write the contract
+2. scaffold a local Hono app
+3. replace stub handlers with real logic
+4. add a real server entry later if browser-runtime limits become a problem
+
+## Generate a separate client, OpenAPI, and validators
+
+First reflect your TypeScript contract to Rivet contract JSON:
+
 ```bash
 pnpm exec rivet-reflect-ts --entry ./contracts.ts --out ./contract.json
 ```
 
-## Feed the contract to Rivet → get TypeScript + OpenAPI
+Then feed that contract to downstream Rivet:
 
 ```bash
 # TypeScript types, typed client, OpenAPI spec
@@ -79,7 +145,81 @@ dotnet rivet --from contract.json --output ./generated --jsonschema
 
 Downstream Rivet emits the same artifacts it emits for C# sources: TypeScript types, typed clients, OpenAPI specs, JSON Schema, Zod validators, and generated C# DTOs.
 
-## Add examples → get OpenAPI examples for Prism mocking
+## Local now, server later
+
+The scaffolded app starts in local mode:
+
+```ts
+import { configureLocalRivet } from "./local-rivet.js";
+
+configureLocalRivet();
+```
+
+That lets the generated Rivet client call the Hono app in-process via `app.request(...)`.
+
+When you want a real server, the happy path is almost a literal lift-and-shift:
+
+1. keep the contract, handlers, and `src/api.ts` as-is
+2. add a real server entry that exposes `app.fetch`
+3. deploy that Hono app somewhere real
+4. stop using `configureLocalRivet()`
+5. switch the UI to the normal generated Rivet runtime config
+
+Example server entry:
+
+```ts
+import { app } from "./src/api.js";
+
+// Expose the same Hono app over HTTP so it can use real server-side concerns
+// like databases, secrets, queues, and file storage without changing the
+// contract, client shape, or handler surface.
+Bun.serve({
+  fetch: app.fetch,
+});
+```
+
+Then point the generated client at the deployed API:
+
+```ts
+import { configureRivet } from "./generated/rivet/rivet.js";
+
+configureRivet({ baseUrl: "https://api.example.com" });
+```
+
+The important distinction is:
+
+- transport promotion is usually trivial
+- infrastructure promotion is the real work
+
+What changes at that point is not the contract or the generated client. What changes is everything the browser runtime could not provide cleanly:
+
+- database access
+- secrets and environment configuration
+- auth and session verification
+- background jobs
+- file storage
+- email and webhooks
+- logging, monitoring, and rate limiting
+
+So yes: if your handlers are already server-safe, promotion can be as simple as deploying the Hono app and replacing `configureLocalRivet()` with `configureRivet({ baseUrl })`.
+
+## TS now, .NET later
+
+If the project eventually needs to move to .NET, the story stays coherent:
+
+- the contract-first workflow still applies
+- downstream Rivet still owns the generated client/OpenAPI/validator pipeline
+- the main [Rivet](https://github.com/maxanstey-meridian/rivet) repo covers the .NET server-side path
+
+The important continuity is the client:
+
+- your UI still calls the generated Rivet client
+- your UI still configures that client with `configureRivet(...)`
+- the main thing that changes is the `baseUrl`
+
+In other words, the frontend does not need a new client model when the backend moves to .NET. It just stops pointing at the Hono app and starts pointing at the deployed .NET API.
+
+## Add examples
 
 Author example data as plain `const` values, reference them with `typeof`:
 
@@ -116,13 +256,37 @@ export interface MembersContract extends Contract<"MembersContract"> {
 }
 ```
 
-Examples flow through to OpenAPI `examples` blocks, which tools like [Prism](https://github.com/stoplightio/prism) serve as static mock responses:
+Examples do two jobs:
+
+- they flow through to OpenAPI `examples`
+- `scaffold-mock` prefers them for happy-path stub responses before synthesizing fallback values
+
+You can also use those examples with Prism:
 
 ```bash
 pnpm exec rivet-reflect-ts --entry ./contracts.ts --out ./contract.json
 dotnet rivet --from contract.json --openapi openapi.json --output ./generated
 npx @stoplight/prism-cli mock openapi.json -h 127.0.0.1 -p 4010
 ```
+
+## Type-safe handlers
+
+You can type handlers directly against the contract surface:
+
+```ts
+import type { RivetHandler } from "rivet-ts";
+import type { MembersContract } from "./contracts.js";
+
+export const listMembers: RivetHandler<MembersContract, "List"> = async () => {
+  return await db.members.findAll();
+};
+
+export const createMember: RivetHandler<MembersContract, "Create"> = async ({ body }) => {
+  return await db.members.create(body);
+};
+```
+
+To mount handlers onto Hono manually, use `rivet-ts/hono`.
 
 ## Endpoint options
 
@@ -133,6 +297,8 @@ Every endpoint is an `Endpoint<{ ... }>` type literal. These are the supported k
 | `method`                 | `"GET" \| "POST" \| "PUT" \| "PATCH" \| "DELETE"` | Yes      | HTTP method                                                               |
 | `route`                  | `string`                                          | Yes      | Route template, e.g. `"/api/members/{id}"`                                |
 | `input`                  | type reference                                    |          | Request body (POST/PUT/PATCH) or query params (GET/DELETE)                |
+| `params`                 | type reference                                    |          | Explicit route params shape                                                |
+| `query`                  | type reference                                    |          | Explicit query shape                                                       |
 | `response`               | type reference                                    |          | Success response body type. Omit or use `void` for no-content             |
 | `successStatus`          | `number`                                          |          | Override default success status (200 GET/PUT/PATCH, 201 POST, 204 DELETE) |
 | `errors`                 | tuple of error specs                              |          | Error responses with status codes and optional types                      |
@@ -253,126 +419,12 @@ responseExamples: [
 | `acceptsFile: true`  | `multipart/form-data`               | `application/json`           |
 | `fileResponse: true` | —                                   | Endpoint's `fileContentType` |
 
-## Type-safe handlers
-
-rivet-ts exports handler types for implementing endpoints with compile-time enforcement:
-
-```ts
-import type { RivetHandler, ContractEndpointKey } from "rivet-ts";
-import { handle } from "rivet-ts";
-import type { MembersContract } from "./contracts.js";
-
-// Option 1: Type annotation
-const listMembers: RivetHandler<MembersContract, "List"> = async () => {
-  return await db.members.findAll();
-};
-
-// Option 2: handle() helper
-const createMember = handle<MembersContract, "Create">(async ({ body }) => {
-  return await db.members.create(body);
-});
-```
-
-## Local Runtime
-
-rivet-ts includes a local contract runtime for direct in-process dispatch — no HTTP server, no network. Define handlers, create a client, and call endpoints as typed async functions. Contract and transport are separate concerns.
-
-### Define handlers and create a client
-
-```ts
-import type { Contract, Endpoint } from "rivet-ts";
-import { handle, defineHandlers, createDirectClient } from "rivet-ts";
-
-interface AddRequest {
-  a: number;
-  b: number;
-}
-interface AddResponse {
-  sum: number;
-}
-
-interface MathContract extends Contract<"MathContract"> {
-  Add: Endpoint<{
-    method: "POST";
-    route: "/api/math/add";
-    input: AddRequest;
-    response: AddResponse;
-  }>;
-}
-
-const handlers = defineHandlers<MathContract>()({
-  Add: handle<MathContract, "Add">(async ({ body }) => ({
-    sum: body.a + body.b,
-  })),
-});
-
-const client = createDirectClient<MathContract>(handlers);
-
-const result = await client.Add({ a: 1, b: 2 });
-// result: { sum: 3 }
-```
-
-Client methods accept the DTO directly — `client.Add({ a: 1, b: 2 })`, not `client.Add({ body: { a: 1, b: 2 } })`. The client wraps input in `{ body }` internally.
-
-### Result envelopes with `unwrap: false`
-
-By default, client methods return the success DTO directly and throw `RivetError` on failure. Pass `{ unwrap: false }` to get a `{ status, data }` envelope instead:
-
-```ts
-import { RivetError } from "rivet-ts";
-
-interface DivideRequest {
-  a: number;
-  b: number;
-}
-interface DivideResponse {
-  quotient: number;
-}
-interface DivisionErrorDto {
-  message: string;
-}
-
-interface CalcContract extends Contract<"CalcContract"> {
-  Divide: Endpoint<{
-    method: "POST";
-    route: "/api/math/divide";
-    input: DivideRequest;
-    response: DivideResponse;
-    errors: [{ status: 400; response: DivisionErrorDto }];
-  }>;
-}
-
-// Default: returns DivideResponse or throws RivetError
-const quotient = await client.Divide({ a: 10, b: 2 });
-
-// unwrap: false — returns a discriminated union
-const result = await client.Divide({ a: 10, b: 0 }, { unwrap: false });
-
-if (result.status === 400) {
-  // result.data is DivisionErrorDto
-  console.error(result.data.message);
-} else {
-  // result.data is DivideResponse
-  console.log(result.data.quotient);
-}
-```
-
-For endpoints with no `errors`, `unwrap: false` returns the success result envelope only.
-
-### Scope
-
-The local runtime is for in-process dispatch — testing, scripting, or embedding contracts without a server. For HTTP clients, OpenAPI specs, validators, and generated code, feed the contract JSON to the downstream [Rivet](https://github.com/maxanstey-meridian/rivet) pipeline.
-
 ## CLI
 
-```
+```bash
 rivet-reflect-ts --entry <path> [--out <file>]
+rivet-ts scaffold-mock --entry <file> --out <dir> [--name <project-name>] [--tsconfig <file>]
 ```
-
-| Flag      | Required | Description                                          |
-| --------- | -------- | ---------------------------------------------------- |
-| `--entry` | Yes      | TypeScript entry file containing contract interfaces |
-| `--out`   |          | Output path for contract JSON. Defaults to stdout    |
 
 Diagnostics are written to stderr. Unsupported constructs produce explicit error or warning diagnostics rather than silent fallbacks.
 
@@ -388,7 +440,7 @@ pnpm run check     # all of the above
 
 ## Related repos
 
-- [Rivet](https://github.com/maxanstey-meridian/rivet) — .NET core: attributes, contracts, OpenAPI, client gen, validators
+- [Rivet](https://github.com/maxanstey-meridian/rivet) — .NET core: contracts, generated client, OpenAPI, validators
 - [rivet-php](https://github.com/maxanstey-meridian/rivet-php) — PHP contract frontend
 
 ## License
