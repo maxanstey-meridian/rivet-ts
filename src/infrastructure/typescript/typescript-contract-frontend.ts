@@ -14,6 +14,10 @@ import {
 } from "../../domain/contract.js";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import { TypeExpression } from "../../domain/type-expression.js";
+import {
+  mapTypeScriptDiagnostics,
+  resolveTypeScriptProject,
+} from "./typescript-project.js";
 
 const HTTP_METHODS = new Set<HttpMethod>(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 const AUTHORING_HELPER_TYPE_NAMES = new Set([
@@ -32,25 +36,20 @@ const BUILTIN_TYPE_NAMES = new Set([
 ]);
 
 export class TypeScriptContractFrontend extends TsContractFrontend {
-  public async extract(entryPath: string): Promise<ContractBundle> {
-    const absoluteEntryPath = path.resolve(entryPath);
-    const compilerOptions: ts.CompilerOptions = {
-      target: ts.ScriptTarget.ES2023,
-      module: ts.ModuleKind.NodeNext,
-      moduleResolution: ts.ModuleResolutionKind.NodeNext,
-      strict: true,
-      skipLibCheck: true,
-      allowJs: false,
-      noEmit: true,
-      resolveJsonModule: true,
-      esModuleInterop: true,
-      verbatimModuleSyntax: true,
-    };
+  public constructor(private readonly tsconfigPath?: string) {
+    super();
+  }
 
-    const program = ts.createProgram([absoluteEntryPath], compilerOptions);
+  public async extract(entryPath: string): Promise<ContractBundle> {
+    const project = resolveTypeScriptProject(entryPath, this.tsconfigPath);
+    const absoluteEntryPath = project.absoluteEntryPath;
+    const program = ts.createProgram([absoluteEntryPath], project.compilerOptions);
     const checker = program.getTypeChecker();
     const sourceFile = program.getSourceFile(absoluteEntryPath);
-    const diagnostics = this.createDiagnostics(program, absoluteEntryPath);
+    const diagnostics = [
+      ...mapTypeScriptDiagnostics(project.configDiagnostics, absoluteEntryPath),
+      ...this.createDiagnostics(program, absoluteEntryPath),
+    ];
 
     if (!sourceFile) {
       diagnostics.push(
@@ -135,27 +134,7 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
   }
 
   private createDiagnostics(program: ts.Program, entryPath: string): ExtractionDiagnostic[] {
-    return ts.getPreEmitDiagnostics(program).map((diagnostic) => {
-      if (!diagnostic.file || diagnostic.start === undefined) {
-        return new ExtractionDiagnostic({
-          severity: "error",
-          code: "TS_COMPILER",
-          message: ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"),
-          filePath: entryPath,
-        });
-      }
-
-      const position = diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start);
-
-      return new ExtractionDiagnostic({
-        severity: diagnostic.category === ts.DiagnosticCategory.Warning ? "warning" : "error",
-        code: `TS${diagnostic.code}`,
-        message: ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"),
-        filePath: diagnostic.file.fileName,
-        line: position.line + 1,
-        column: position.character + 1,
-      });
-    });
+    return mapTypeScriptDiagnostics(ts.getPreEmitDiagnostics(program), entryPath);
   }
 
   private getDeclaredContractName(node: ts.InterfaceDeclaration): string | null {
@@ -259,6 +238,8 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     }
 
     const input = this.parseTypeExpression(propertyMap.get("input"), sourceFile);
+    const params = this.parseTypeExpression(propertyMap.get("params"), sourceFile);
+    const query = this.parseTypeExpression(propertyMap.get("query"), sourceFile);
     const response = this.parseTypeExpression(propertyMap.get("response"), sourceFile);
     const requestExamples = this.parseRequestExamples(
       propertyMap.get("requestExamples"),
@@ -315,6 +296,8 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       method,
       route,
       input: input ?? undefined,
+      params: params ?? undefined,
+      query: query ?? undefined,
       response: response ?? undefined,
       fileResponse,
       fileContentType: fileContentType ?? undefined,
@@ -1737,6 +1720,14 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
 
   private collectEndpointReferences(endpoint: EndpointSpec, references: Set<string>): void {
     for (const symbol of endpoint.input?.referencedSymbols ?? []) {
+      references.add(symbol);
+    }
+
+    for (const symbol of endpoint.params?.referencedSymbols ?? []) {
+      references.add(symbol);
+    }
+
+    for (const symbol of endpoint.query?.referencedSymbols ?? []) {
       references.add(symbol);
     }
 

@@ -68,6 +68,8 @@ export type EndpointAuthoringSpec = {
   readonly method: EndpointAuthoringHttpMethod;
   readonly route: string;
   readonly input?: unknown;
+  readonly params?: unknown;
+  readonly query?: unknown;
   readonly response?: unknown;
   readonly requestExample?: EndpointExampleAuthoringReference;
   readonly requestExamples?: readonly (

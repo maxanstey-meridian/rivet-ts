@@ -82,6 +82,8 @@ export class EndpointSpec {
   public readonly method: HttpMethod;
   public readonly route: string;
   public readonly input?: TypeExpression;
+  public readonly params?: TypeExpression;
+  public readonly query?: TypeExpression;
   public readonly response?: TypeExpression;
   public readonly fileResponse: boolean;
   public readonly fileContentType?: string;
@@ -102,6 +104,8 @@ export class EndpointSpec {
     method: HttpMethod;
     route: string;
     input?: TypeExpression;
+    params?: TypeExpression;
+    query?: TypeExpression;
     response?: TypeExpression;
     fileResponse?: boolean;
     fileContentType?: string;
@@ -121,6 +125,8 @@ export class EndpointSpec {
     this.method = input.method;
     this.route = input.route;
     this.input = input.input;
+    this.params = input.params;
+    this.query = input.query;
     this.response = input.response;
     this.fileResponse = input.fileResponse ?? false;
     this.fileContentType = input.fileContentType;

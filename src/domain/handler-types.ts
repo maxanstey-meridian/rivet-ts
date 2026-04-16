@@ -13,13 +13,13 @@ type RivetHandlerSuccessResponse<TSpec> = TSpec extends { readonly fileResponse:
     ? TResponse
     : void;
 
-export type RivetHandler<TContract, TKey extends ContractEndpointKey<TContract>> =
-  EndpointSpecOf<TContract, TKey> extends { readonly input: infer TInput }
-    ? (input: {
-        readonly body: TInput;
-      }) => Promise<RivetHandlerSuccessResponse<EndpointSpecOf<TContract, TKey>>>
-    : () => Promise<RivetHandlerSuccessResponse<EndpointSpecOf<TContract, TKey>>>;
+type HandlerInputBag<TSpec> =
+  (TSpec extends { readonly input: infer T } ? { readonly body: T } : unknown) &
+  (TSpec extends { readonly params: infer T } ? { readonly params: T } : unknown) &
+  (TSpec extends { readonly query: infer T } ? { readonly query: T } : unknown);
 
-export const handle = <TContract, TKey extends ContractEndpointKey<TContract>>(
-  handler: RivetHandler<TContract, TKey>,
-): RivetHandler<TContract, TKey> => handler;
+export type RivetHandler<TContract, TKey extends ContractEndpointKey<TContract>> =
+  [keyof HandlerInputBag<EndpointSpecOf<TContract, TKey>>] extends [never]
+    ? () => Promise<RivetHandlerSuccessResponse<EndpointSpecOf<TContract, TKey>>>
+    : (input: HandlerInputBag<EndpointSpecOf<TContract, TKey>>) =>
+        Promise<RivetHandlerSuccessResponse<EndpointSpecOf<TContract, TKey>>>;

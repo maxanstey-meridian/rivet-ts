@@ -12,7 +12,8 @@
   ],
   "license": "MIT",
   "bin": {
-    "rivet-reflect-ts": "./dist/interfaces/cli/main.js"
+    "rivet-reflect-ts": "./dist/interfaces/cli/main.js",
+    "rivet-ts": "./dist/interfaces/cli/main.js"
   },
   "files": [
     "dist",
@@ -25,6 +26,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./hono": {
+      "types": "./dist/hono.d.ts",
+      "import": "./dist/hono.js"
     },
     "./package.json": "./package.json"
   },
@@ -42,8 +47,17 @@
   "dependencies": {
     "typescript": "^6.0.2"
   },
+  "peerDependencies": {
+    "hono": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "hono": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@types/node": "^25.5.2",
+    "hono": "^4.12.14",
     "oxfmt": "^0.43.0",
     "oxlint": "^1.58.0",
     "vitest": "^4.1.2"

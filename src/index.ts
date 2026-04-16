@@ -17,17 +17,12 @@ export type {
   RefEndpointRequestExampleAuthoringSpec,
 } from "./domain/authoring-types.js";
 export {
-  handle,
   type ContractEndpointKey,
   type EndpointSpecOf,
   type RivetHandler,
 } from "./domain/handler-types.js";
 export {
-  createDirectClient,
-  defineHandlers,
   RivetError,
-  type DirectClient,
-  type DirectClientMethod,
   type RivetEndpointResult,
   type RivetHandlerMap,
   type RivetResult,

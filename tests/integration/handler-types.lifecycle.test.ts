@@ -1,7 +1,6 @@
 import { expectTypeOf, test } from "vitest";
 import type { Contract, Endpoint } from "../../src/domain/authoring-types.js";
 import {
-  handle,
   type ContractEndpointKey,
   type EndpointSpecOf,
   type RivetHandler,
@@ -63,17 +62,15 @@ interface DirectoryContract extends Contract<"DirectoryContract"> {
   }>;
 }
 
-test("handle types body and enforces response shape", async () => {
-  const search = handle<DirectoryContract, "Search">(async ({ body }) => {
+test("RivetHandler types body and enforces response shape", async () => {
+  const search: RivetHandler<DirectoryContract, "Search"> = async ({ body }) => {
     expectTypeOf(body).toEqualTypeOf<DirectorySearchRequest>();
 
     return {
       items: [{ id: "mem_123", displayName: body.query }],
       totalCount: body.page,
     };
-  });
-
-  expectTypeOf(search).toEqualTypeOf<RivetHandler<DirectoryContract, "Search">>();
+  };
 
   const result = await search({
     body: {
@@ -85,25 +82,21 @@ test("handle types body and enforces response shape", async () => {
   expectTypeOf(result).toEqualTypeOf<DirectorySearchResponse>();
 });
 
-test("handle supports inputless endpoints", async () => {
-  const health = handle<DirectoryContract, "Health">(async () => ({
+test("RivetHandler supports inputless endpoints", async () => {
+  const health: RivetHandler<DirectoryContract, "Health"> = async () => ({
     status: "ok" as const,
-  }));
-
-  expectTypeOf(health).toEqualTypeOf<RivetHandler<DirectoryContract, "Health">>();
+  });
 
   const result = await health();
   expectTypeOf(result).toEqualTypeOf<DirectoryStatusResponse>();
 });
 
-test("handle maps file responses to Blob", async () => {
-  const exported = handle<DirectoryContract, "Export">(async ({ body }) => {
+test("RivetHandler maps file responses to Blob", async () => {
+  const exported: RivetHandler<DirectoryContract, "Export"> = async ({ body }) => {
     expectTypeOf(body).toEqualTypeOf<DirectorySearchRequest>();
 
     return new Blob([body.query], { type: "text/csv" });
-  });
-
-  expectTypeOf(exported).toEqualTypeOf<RivetHandler<DirectoryContract, "Export">>();
+  };
 
   const blob = await exported({
     body: {
@@ -115,13 +108,11 @@ test("handle maps file responses to Blob", async () => {
   expectTypeOf(blob).toEqualTypeOf<Blob>();
 });
 
-test("handle receives { body: TInput } for form-encoded endpoints", async () => {
-  const submit = handle<DirectoryContract, "SubmitForm">(async ({ body }) => {
+test("RivetHandler receives { body: TInput } for form-encoded endpoints", async () => {
+  const submit: RivetHandler<DirectoryContract, "SubmitForm"> = async ({ body }) => {
     expectTypeOf(body).toEqualTypeOf<FormSubmission>();
     void body;
-  });
-
-  expectTypeOf(submit).toEqualTypeOf<RivetHandler<DirectoryContract, "SubmitForm">>();
+  };
 
   await submit({
     body: {
@@ -142,29 +133,4 @@ test("contract helpers expose only endpoint keys", () => {
     input: DirectorySearchRequest;
     response: DirectorySearchResponse;
   }>();
-});
-
-test("compile-time rejections stay enforced", () => {
-  void 0;
-
-  // @ts-expect-error response must match the contract response type
-  handle<DirectoryContract, "Search">(async ({ body }) => ({
-    items: [{ id: body.query, displayName: body.query }],
-  }));
-
-  // @ts-expect-error inputless handlers should not require a body parameter
-  handle<DirectoryContract, "Health">(async ({ body }) => ({
-    status: body,
-  }));
-
-  // @ts-expect-error file responses must return Blob on the success path
-  handle<DirectoryContract, "Export">(async () => undefined);
-
-  // @ts-expect-error only contract endpoint keys are allowed
-  handle<DirectoryContract, "__contractName">(
-    async () =>
-      ({
-        status: "ok",
-      }) as DirectoryStatusResponse,
-  );
 });

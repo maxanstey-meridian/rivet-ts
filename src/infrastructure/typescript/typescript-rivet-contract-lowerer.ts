@@ -18,6 +18,7 @@ import {
   RivetTypeDefinition,
   type RivetPropertyDefinition,
 } from "../../domain/rivet-contract.js";
+import { resolveTypeScriptProject } from "./typescript-project.js";
 
 type SupportedDeclaration = ts.EnumDeclaration | ts.InterfaceDeclaration | ts.TypeAliasDeclaration;
 
@@ -70,8 +71,14 @@ const BUILTIN_TYPE_NAMES = new Set(["Array", "ReadonlyArray"]);
 const MULTIPART_FILE_TYPE_NAMES = new Set(["Blob", "File"]);
 const DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE = "application/json";
 
-const buildProgram = (entryPath: string): ts.Program =>
-  ts.createProgram([path.resolve(entryPath)], DEFAULT_COMPILER_OPTIONS);
+const buildProgram = (entryPath: string, tsconfigPath?: string): ts.Program => {
+  const project = resolveTypeScriptProject(entryPath, tsconfigPath);
+
+  return ts.createProgram([project.absoluteEntryPath], {
+    ...DEFAULT_COMPILER_OPTIONS,
+    ...project.compilerOptions,
+  });
+};
 
 const parseRouteParamNames = (route: string): string[] => {
   const matches = route.matchAll(ROUTE_PARAM_PATTERN);
@@ -323,13 +330,13 @@ const collectTypeReferences = (type: RivetType, references: Set<string>): void =
 };
 
 export class TypeScriptRivetContractLowerer extends RivetContractLowerer {
-  public constructor() {
+  public constructor(private readonly tsconfigPath?: string) {
     super();
   }
 
   public async lower(bundle: ContractBundle): Promise<RivetContractLoweringResult> {
     const diagnostics = [...bundle.diagnostics];
-    const program = buildProgram(bundle.entryPath);
+    const program = buildProgram(bundle.entryPath, this.tsconfigPath);
     const sourceFile = program.getSourceFile(path.resolve(bundle.entryPath));
 
     if (!sourceFile) {
@@ -506,6 +513,8 @@ class TypeEmissionContext {
     }
 
     const inputNode = propertyMap.get("input");
+    const paramsNode = propertyMap.get("params");
+    const queryNode = propertyMap.get("query");
     const responseNode = propertyMap.get("response");
     const successStatus = this.readNumericLiteral(propertyMap.get("successStatus"));
     const summary = this.readStringLiteral(propertyMap.get("summary")) ?? undefined;
@@ -527,7 +536,9 @@ class TypeEmissionContext {
     const inputType = this.lowerOptionalTypeNode(inputNode);
     const responseType = this.lowerOptionalTypeNode(responseNode);
 
-    const params = this.buildEndpointParams(routeLiteral, context, inputNode, inputType);
+    const params = paramsNode || queryNode
+      ? this.buildExplicitEndpointParams(routeLiteral, context, inputNode, inputType, paramsNode, queryNode)
+      : this.buildEndpointParams(routeLiteral, context, inputNode, inputType);
     const baseResponses = this.buildResponses(
       specNode,
       context,
@@ -850,6 +861,71 @@ class TypeEmissionContext {
       typeParameters,
       type: loweredType,
     });
+  }
+
+  private buildExplicitEndpointParams(
+    route: string,
+    context: EndpointContext,
+    inputNode: ts.TypeNode | undefined,
+    inputType: RivetType | null,
+    paramsNode: ts.TypeNode | undefined,
+    queryNode: ts.TypeNode | undefined,
+  ): RivetEndpointParam[] {
+    const params: RivetEndpointParam[] = [];
+
+    if (paramsNode) {
+      const properties = this.getObjectProperties(paramsNode);
+      if (properties) {
+        for (const property of properties) {
+          const propertyType = this.lowerTypeNode(
+            property.typeNode,
+            this.getTypeParameterScope(paramsNode),
+          );
+          if (propertyType) {
+            params.push(
+              new RivetEndpointParam({
+                name: property.name,
+                type: propertyType,
+                source: "route",
+              }),
+            );
+          }
+        }
+      }
+    }
+
+    if (queryNode) {
+      const properties = this.getObjectProperties(queryNode);
+      if (properties) {
+        for (const property of properties) {
+          const propertyType = this.lowerTypeNode(
+            property.typeNode,
+            this.getTypeParameterScope(queryNode),
+          );
+          if (propertyType) {
+            params.push(
+              new RivetEndpointParam({
+                name: property.name,
+                type: propertyType,
+                source: "query",
+              }),
+            );
+          }
+        }
+      }
+    }
+
+    if (inputType) {
+      params.push(
+        new RivetEndpointParam({
+          name: "body",
+          type: inputType,
+          source: "body",
+        }),
+      );
+    }
+
+    return params;
   }
 
   private buildEndpointParams(
