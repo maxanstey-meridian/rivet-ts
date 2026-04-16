@@ -83,18 +83,22 @@ const getPetContractDocument = async (): Promise<{
   );
 
   const tmpOutDir = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-codegen-build-"));
-  const config = new BuildLocalConfig({
-    entryPath: getFixturePath("handler-entrypoint/index.ts"),
-    target: "browser",
-    packageName: "@test/pkg",
-    outDir: path.join(tmpOutDir, "out"),
-  });
-  const result = await useCase.execute(config);
-  expect(result.hasErrors).toBe(false);
-  return {
-    handlerGroups: result.handlerGroups,
-    contractDocuments: result.contractDocuments,
-  };
+  try {
+    const config = new BuildLocalConfig({
+      entryPath: getFixturePath("handler-entrypoint/index.ts"),
+      target: "browser",
+      packageName: "@test/pkg",
+      outDir: path.join(tmpOutDir, "out"),
+    });
+    const result = await useCase.execute(config);
+    expect(result.hasErrors).toBe(false);
+    return {
+      handlerGroups: result.handlerGroups,
+      contractDocuments: result.contractDocuments,
+    };
+  } finally {
+    await fs.rm(tmpOutDir, { recursive: true, force: true });
+  }
 };
 
 describe("deriveClientName", () => {

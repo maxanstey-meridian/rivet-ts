@@ -2,7 +2,8 @@ import fs from "node:fs/promises";
 import { ExtractTsContracts } from "../../application/use-cases/extract-ts-contracts.js";
 import { LowerContractBundleToRivetContract } from "../../application/use-cases/lower-contract-bundle-to-rivet-contract.js";
 import { BuildLocalPackage } from "../../application/use-cases/build-local-package.js";
-import { BuildLocalConfig, type BuildLocalTarget } from "../../domain/build-local-config.js";
+import { BuildLocalConfig } from "../../domain/build-local-config.js";
+import type { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import { TypeScriptContractFrontend } from "../../infrastructure/typescript/typescript-contract-frontend.js";
 import { TypeScriptRivetContractLowerer } from "../../infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { TypeScriptHandlerEntrypointFrontend } from "../../infrastructure/typescript/typescript-handler-entrypoint-frontend.js";
@@ -18,6 +19,15 @@ type CliIO = {
 const DEFAULT_IO: CliIO = {
   stdout: (text) => process.stdout.write(text),
   stderr: (text) => process.stderr.write(text),
+};
+
+const reportDiagnostics = (diagnostics: readonly ExtractionDiagnostic[], io: CliIO): void => {
+  for (const diagnostic of diagnostics) {
+    const location = diagnostic.filePath
+      ? `${diagnostic.filePath}${diagnostic.line ? `:${diagnostic.line}:${diagnostic.column}` : ""}`
+      : "(unknown)";
+    io.stderr(`${diagnostic.severity}: [${diagnostic.code}] ${location} ${diagnostic.message}\n`);
+  }
 };
 
 export const runCli = async (args: readonly string[], io: CliIO = DEFAULT_IO): Promise<number> => {
@@ -43,12 +53,7 @@ const runReflect = async (args: readonly string[], io: CliIO): Promise<number> =
   const bundle = await useCase.execute({ entryPath: parsed.entryPath });
   const lowered = await lowerUseCase.execute({ bundle });
 
-  for (const diagnostic of lowered.diagnostics) {
-    const location = diagnostic.filePath
-      ? `${diagnostic.filePath}${diagnostic.line ? `:${diagnostic.line}:${diagnostic.column}` : ""}`
-      : "(unknown)";
-    io.stderr(`${diagnostic.severity}: [${diagnostic.code}] ${location} ${diagnostic.message}\n`);
-  }
+  reportDiagnostics(lowered.diagnostics, io);
 
   const json = `${lowered.toJson()}\n`;
 
@@ -101,12 +106,7 @@ const runBuildLocal = async (args: readonly string[], io: CliIO): Promise<number
 
   const result = await useCase.execute(config);
 
-  for (const diagnostic of result.diagnostics) {
-    const location = diagnostic.filePath
-      ? `${diagnostic.filePath}${diagnostic.line ? `:${diagnostic.line}:${diagnostic.column}` : ""}`
-      : "(unknown)";
-    io.stderr(`${diagnostic.severity}: [${diagnostic.code}] ${location} ${diagnostic.message}\n`);
-  }
+  reportDiagnostics(result.diagnostics, io);
 
   return result.hasErrors ? 1 : 0;
 };
@@ -137,12 +137,12 @@ const parseBuildLocalArgs = (
   args: readonly string[],
 ): {
   entryPath?: string;
-  target: BuildLocalTarget;
+  target: string;
   packageName: string;
   outDir?: string;
 } => {
   let entryPath: string | undefined;
-  let target: BuildLocalTarget = "browser";
+  let target = "browser";
   let packageName = "@local/handlers";
   let outDir: string | undefined;
 
@@ -156,7 +156,7 @@ const parseBuildLocalArgs = (
     }
 
     if (arg === "--target" && index + 1 < args.length) {
-      target = args[index + 1] as BuildLocalTarget;
+      target = args[index + 1];
       index += 1;
       continue;
     }
