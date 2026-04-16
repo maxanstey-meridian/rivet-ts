@@ -80,4 +80,7 @@ export {
 export { TypeScriptContractFrontend } from "./infrastructure/typescript/typescript-contract-frontend.js";
 export { TypeScriptRivetContractLowerer } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 export { TypeScriptHandlerEntrypointFrontend } from "./infrastructure/typescript/typescript-handler-entrypoint-frontend.js";
+export { BundleResult } from "./domain/bundle-result.js";
+export { ImplementationBundler } from "./application/ports/implementation-bundler.js";
+export { EsbuildImplementationBundler } from "./infrastructure/bundler/esbuild-implementation-bundler.js";
 export { runCli } from "./interfaces/cli/run-cli.js";
