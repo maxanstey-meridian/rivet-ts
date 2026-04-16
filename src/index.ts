@@ -60,9 +60,13 @@ export {
   type RivetPropertyDefinition,
 } from "./domain/rivet-contract.js";
 export { RivetContractLoweringResult } from "./domain/rivet-contract-lowering-result.js";
+export { HandlerGroup } from "./domain/handler-group.js";
+export { HandlerDiscoveryResult } from "./domain/handler-discovery-result.js";
 export { TsContractFrontend } from "./application/ports/ts-contract-frontend.js";
 export { RivetContractLowerer } from "./application/ports/rivet-contract-lowerer.js";
+export { HandlerEntrypointFrontend } from "./application/ports/handler-entrypoint-frontend.js";
 export { ExtractTsContracts } from "./application/use-cases/extract-ts-contracts.js";
+export { DiscoverHandlerEntrypoints } from "./application/use-cases/discover-handler-entrypoints.js";
 export { LowerContractBundleToRivetContract } from "./application/use-cases/lower-contract-bundle-to-rivet-contract.js";
 export { TypeScriptContractFrontend } from "./infrastructure/typescript/typescript-contract-frontend.js";
 export { TypeScriptRivetContractLowerer } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
