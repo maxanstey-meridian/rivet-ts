@@ -238,6 +238,8 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     }
 
     const input = this.parseTypeExpression(propertyMap.get("input"), sourceFile);
+    const params = this.parseTypeExpression(propertyMap.get("params"), sourceFile);
+    const query = this.parseTypeExpression(propertyMap.get("query"), sourceFile);
     const response = this.parseTypeExpression(propertyMap.get("response"), sourceFile);
     const requestExamples = this.parseRequestExamples(
       propertyMap.get("requestExamples"),
@@ -294,6 +296,8 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
       method,
       route,
       input: input ?? undefined,
+      params: params ?? undefined,
+      query: query ?? undefined,
       response: response ?? undefined,
       fileResponse,
       fileContentType: fileContentType ?? undefined,
@@ -1716,6 +1720,14 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
 
   private collectEndpointReferences(endpoint: EndpointSpec, references: Set<string>): void {
     for (const symbol of endpoint.input?.referencedSymbols ?? []) {
+      references.add(symbol);
+    }
+
+    for (const symbol of endpoint.params?.referencedSymbols ?? []) {
+      references.add(symbol);
+    }
+
+    for (const symbol of endpoint.query?.referencedSymbols ?? []) {
       references.add(symbol);
     }
 

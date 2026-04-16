@@ -513,6 +513,8 @@ class TypeEmissionContext {
     }
 
     const inputNode = propertyMap.get("input");
+    const paramsNode = propertyMap.get("params");
+    const queryNode = propertyMap.get("query");
     const responseNode = propertyMap.get("response");
     const successStatus = this.readNumericLiteral(propertyMap.get("successStatus"));
     const summary = this.readStringLiteral(propertyMap.get("summary")) ?? undefined;
@@ -534,7 +536,9 @@ class TypeEmissionContext {
     const inputType = this.lowerOptionalTypeNode(inputNode);
     const responseType = this.lowerOptionalTypeNode(responseNode);
 
-    const params = this.buildEndpointParams(routeLiteral, context, inputNode, inputType);
+    const params = paramsNode || queryNode
+      ? this.buildExplicitEndpointParams(routeLiteral, context, inputNode, inputType, paramsNode, queryNode)
+      : this.buildEndpointParams(routeLiteral, context, inputNode, inputType);
     const baseResponses = this.buildResponses(
       specNode,
       context,
@@ -857,6 +861,71 @@ class TypeEmissionContext {
       typeParameters,
       type: loweredType,
     });
+  }
+
+  private buildExplicitEndpointParams(
+    route: string,
+    context: EndpointContext,
+    inputNode: ts.TypeNode | undefined,
+    inputType: RivetType | null,
+    paramsNode: ts.TypeNode | undefined,
+    queryNode: ts.TypeNode | undefined,
+  ): RivetEndpointParam[] {
+    const params: RivetEndpointParam[] = [];
+
+    if (paramsNode) {
+      const properties = this.getObjectProperties(paramsNode);
+      if (properties) {
+        for (const property of properties) {
+          const propertyType = this.lowerTypeNode(
+            property.typeNode,
+            this.getTypeParameterScope(paramsNode),
+          );
+          if (propertyType) {
+            params.push(
+              new RivetEndpointParam({
+                name: property.name,
+                type: propertyType,
+                source: "route",
+              }),
+            );
+          }
+        }
+      }
+    }
+
+    if (queryNode) {
+      const properties = this.getObjectProperties(queryNode);
+      if (properties) {
+        for (const property of properties) {
+          const propertyType = this.lowerTypeNode(
+            property.typeNode,
+            this.getTypeParameterScope(queryNode),
+          );
+          if (propertyType) {
+            params.push(
+              new RivetEndpointParam({
+                name: property.name,
+                type: propertyType,
+                source: "query",
+              }),
+            );
+          }
+        }
+      }
+    }
+
+    if (inputType) {
+      params.push(
+        new RivetEndpointParam({
+          name: "body",
+          type: inputType,
+          source: "body",
+        }),
+      );
+    }
+
+    return params;
   }
 
   private buildEndpointParams(

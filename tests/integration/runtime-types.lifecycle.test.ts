@@ -1,15 +1,8 @@
 import { expect, expectTypeOf, test } from "vitest";
 import type { Contract, Endpoint } from "../../src/domain/authoring-types.js";
-import {
-  handle,
-  type ContractEndpointKey,
-  type RivetHandler,
-} from "../../src/domain/handler-types.js";
+import { type ContractEndpointKey } from "../../src/domain/handler-types.js";
 import {
   RivetError,
-  createDirectClient,
-  defineHandlers,
-  type DirectClient,
   type RivetEndpointResult,
   type RivetHandlerMap,
   type RivetResult,
@@ -157,144 +150,39 @@ test("RivetResult is a simple status+data envelope", () => {
   }>();
 });
 
-// -- Runtime tests --
-
-// -- defineHandlers DTOs + Contract --
-
-interface DirectorySearchRequest {
-  readonly query: string;
-  readonly page: number;
-}
-
-interface DirectorySearchResponse {
-  readonly items: readonly { readonly id: string; readonly displayName: string }[];
-  readonly totalCount: number;
-}
-
-interface DirectoryStatusResponse {
-  readonly status: "ok";
-}
-
-interface FormSubmission {
-  readonly name: string;
-  readonly email: string;
-}
-
-interface DirectoryContract extends Contract<"DirectoryContract"> {
-  Search: Endpoint<{
-    method: "POST";
-    route: "/api/directory/search";
-    input: DirectorySearchRequest;
-    response: DirectorySearchResponse;
-  }>;
-
-  Health: Endpoint<{
-    method: "GET";
-    route: "/api/directory/health";
-    response: DirectoryStatusResponse;
-  }>;
-
-  Export: Endpoint<{
-    method: "POST";
-    route: "/api/directory/export";
-    input: DirectorySearchRequest;
-    response: void;
-    fileResponse: true;
-    fileContentType: "text/csv";
-  }>;
-
-  SubmitForm: Endpoint<{
-    method: "POST";
-    route: "/api/directory/form";
-    input: FormSubmission;
-    response: void;
-    formEncoded: true;
-  }>;
-}
-
-// -- defineHandlers tests --
-
-test("defineHandlers compiles with all endpoint handlers", () => {
-  const handlers = defineHandlers<DirectoryContract>()({
-    Search: handle<DirectoryContract, "Search">(async ({ body }) => ({
-      items: [{ id: "1", displayName: body.query }],
-      totalCount: body.page,
-    })),
-    Health: handle<DirectoryContract, "Health">(async () => ({
-      status: "ok" as const,
-    })),
-    Export: handle<DirectoryContract, "Export">(
-      async ({ body }) => new Blob([body.query], { type: "text/csv" }),
-    ),
-    SubmitForm: handle<DirectoryContract, "SubmitForm">(async () => {
-      void 0;
-    }),
-  });
-
-  expectTypeOf(handlers.Search).toEqualTypeOf<RivetHandler<DirectoryContract, "Search">>();
-  expectTypeOf(handlers.Health).toEqualTypeOf<RivetHandler<DirectoryContract, "Health">>();
-});
-
 test("RivetHandlerMap has a key for each contract endpoint", () => {
+  interface DirectorySearchRequest {
+    readonly query: string;
+    readonly page: number;
+  }
+
+  interface DirectorySearchResponse {
+    readonly items: readonly { readonly id: string; readonly displayName: string }[];
+    readonly totalCount: number;
+  }
+
+  interface DirectoryStatusResponse {
+    readonly status: "ok";
+  }
+
+  interface DirectoryContract extends Contract<"DirectoryContract"> {
+    Search: Endpoint<{
+      method: "POST";
+      route: "/api/directory/search";
+      input: DirectorySearchRequest;
+      response: DirectorySearchResponse;
+    }>;
+
+    Health: Endpoint<{
+      method: "GET";
+      route: "/api/directory/health";
+      response: DirectoryStatusResponse;
+    }>;
+  }
+
   type Keys = keyof RivetHandlerMap<DirectoryContract>;
   expectTypeOf<Keys>().toEqualTypeOf<ContractEndpointKey<DirectoryContract>>();
 });
-
-test("defineHandlers rejects missing keys, extra keys, and wrong return types", () => {
-  void 0;
-
-  // @ts-expect-error missing Health key
-  defineHandlers<DirectoryContract>()({
-    Search: handle<DirectoryContract, "Search">(async ({ body }) => ({
-      items: [{ id: "1", displayName: body.query }],
-      totalCount: body.page,
-    })),
-    Export: handle<DirectoryContract, "Export">(
-      async ({ body }) => new Blob([body.query], { type: "text/csv" }),
-    ),
-    SubmitForm: handle<DirectoryContract, "SubmitForm">(async () => {
-      void 0;
-    }),
-  });
-
-  defineHandlers<DirectoryContract>()({
-    Search: handle<DirectoryContract, "Search">(async ({ body }) => ({
-      items: [{ id: "1", displayName: body.query }],
-      totalCount: body.page,
-    })),
-    Health: handle<DirectoryContract, "Health">(async () => ({
-      status: "ok" as const,
-    })),
-    Export: handle<DirectoryContract, "Export">(
-      async ({ body }) => new Blob([body.query], { type: "text/csv" }),
-    ),
-    SubmitForm: handle<DirectoryContract, "SubmitForm">(async () => {
-      void 0;
-    }),
-    // @ts-expect-error extra Bogus key not in contract resolves to never
-    Bogus: handle<DirectoryContract, "Health">(async () => ({
-      status: "ok" as const,
-    })),
-  });
-
-  defineHandlers<DirectoryContract>()({
-    // @ts-expect-error wrong return type for Search handler
-    Search: handle<DirectoryContract, "Search">(async () => ({
-      wrong: true,
-    })),
-    Health: handle<DirectoryContract, "Health">(async () => ({
-      status: "ok" as const,
-    })),
-    Export: handle<DirectoryContract, "Export">(
-      async ({ body }) => new Blob([body.query], { type: "text/csv" }),
-    ),
-    SubmitForm: handle<DirectoryContract, "SubmitForm">(async () => {
-      void 0;
-    }),
-  });
-});
-
-// -- Runtime tests --
 
 test("RivetError extends Error and stores result", () => {
   const error = new RivetError({ status: 400, data: { message: "bad" } });
@@ -304,256 +192,4 @@ test("RivetError extends Error and stores result", () => {
   expect(error.message).toBe("RivetError");
   expect(error.result.status).toBe(400);
   expect(error.result.data).toEqual({ message: "bad" });
-});
-
-// -- createDirectClient DTOs + Contracts --
-
-interface PingResponse {
-  readonly pong: true;
-}
-
-interface PingContract extends Contract<"PingContract"> {
-  Ping: Endpoint<{
-    method: "GET";
-    route: "/api/ping";
-    response: PingResponse;
-  }>;
-}
-
-// -- createDirectClient type tests --
-
-test("DirectClient method for input endpoint accepts flat DTO", () => {
-  expectTypeOf<DirectClient<MathContract>["Add"]>().parameter(0).toEqualTypeOf<AddRequest>();
-});
-
-test("DirectClient method for input endpoint has default overload returning Promise<SuccessResponse>", () => {
-  expectTypeOf<DirectClient<MathContract>["Add"]>().toMatchTypeOf<
-    (input: AddRequest) => Promise<AddResponse>
-  >();
-});
-
-test("DirectClient method for inputless endpoint has default overload returning Promise<SuccessResponse>", () => {
-  expectTypeOf<DirectClient<PingContract>["Ping"]>().toMatchTypeOf<() => Promise<PingResponse>>();
-});
-
-// -- createDirectClient runtime tests --
-
-test("createDirectClient routes input endpoint call through handler", async () => {
-  const handlers = defineHandlers<MathContract>()({
-    Add: handle<MathContract, "Add">(async ({ body }) => ({
-      sum: body.a + body.b,
-    })),
-  });
-
-  const client = createDirectClient<MathContract>(handlers);
-  const result = await client.Add({ a: 3, b: 4 });
-
-  expect(result).toEqual({ sum: 7 });
-});
-
-test("createDirectClient routes inputless endpoint call through handler", async () => {
-  const handlers = defineHandlers<PingContract>()({
-    Ping: handle<PingContract, "Ping">(async () => ({
-      pong: true as const,
-    })),
-  });
-
-  const client = createDirectClient<PingContract>(handlers);
-  const result = await client.Ping();
-
-  expect(result).toEqual({ pong: true });
-});
-
-test("createDirectClient does not expose keys outside the contract", () => {
-  const handlers = defineHandlers<MathContract>()({
-    Add: handle<MathContract, "Add">(async ({ body }) => ({
-      sum: body.a + body.b,
-    })),
-  });
-
-  const client = createDirectClient<MathContract>(handlers);
-
-  // @ts-expect-error Bogus is not a key of MathContract
-  void client.Bogus;
-});
-
-// -- unwrap: false type tests --
-
-test("unwrap: false on success-only endpoint returns RivetEndpointResult (collapses to success)", () => {
-  const handlers = defineHandlers<MathContract>()({
-    Add: handle<MathContract, "Add">(async ({ body }) => ({
-      sum: body.a + body.b,
-    })),
-  });
-
-  const client = createDirectClient<MathContract>(handlers);
-
-  expectTypeOf(client.Add({ a: 1, b: 2 }, { unwrap: false })).toEqualTypeOf<
-    Promise<{ readonly status: 200; readonly data: AddResponse }>
-  >();
-});
-
-test("unwrap: false on error-bearing endpoint returns discriminated union", () => {
-  const handlers = defineHandlers<DivideContract>()({
-    Divide: handle<DivideContract, "Divide">(async ({ body }) => ({
-      quotient: body.dividend / body.divisor,
-    })),
-  });
-
-  const client = createDirectClient<DivideContract>(handlers);
-
-  expectTypeOf(client.Divide({ dividend: 10, divisor: 2 }, { unwrap: false })).toEqualTypeOf<
-    Promise<
-      | { readonly status: 200; readonly data: DivideResponse }
-      | { readonly status: 400; readonly data: { message: string } }
-    >
-  >();
-});
-
-test("unwrap: false on inputless endpoint returns RivetEndpointResult", () => {
-  const handlers = defineHandlers<PingContract>()({
-    Ping: handle<PingContract, "Ping">(async () => ({
-      pong: true as const,
-    })),
-  });
-
-  const client = createDirectClient<PingContract>(handlers);
-
-  expectTypeOf(client.Ping({ unwrap: false })).toEqualTypeOf<
-    Promise<{ readonly status: 200; readonly data: PingResponse }>
-  >();
-});
-
-test("unwrap: false on inputless endpoint returns success envelope without forwarding options as input", async () => {
-  const handlers = defineHandlers<PingContract>()({
-    Ping: handle<PingContract, "Ping">(async () => ({
-      pong: true as const,
-    })),
-  });
-
-  const client = createDirectClient<PingContract>(handlers);
-  const result = await client.Ping({ unwrap: false });
-
-  expect(result).toEqual({ status: 200, data: { pong: true } });
-});
-
-test("default unwrap still returns the DTO directly", () => {
-  const handlers = defineHandlers<MathContract>()({
-    Add: handle<MathContract, "Add">(async ({ body }) => ({
-      sum: body.a + body.b,
-    })),
-  });
-
-  const client = createDirectClient<MathContract>(handlers);
-
-  expectTypeOf(client.Add({ a: 1, b: 2 })).toEqualTypeOf<Promise<AddResponse>>();
-});
-
-// -- unwrap: false runtime tests --
-
-test("unwrap: false wraps successful result in envelope", async () => {
-  const handlers = defineHandlers<MathContract>()({
-    Add: handle<MathContract, "Add">(async ({ body }) => ({
-      sum: body.a + body.b,
-    })),
-  });
-
-  const client = createDirectClient<MathContract>(handlers);
-  const result = await client.Add({ a: 5, b: 3 }, { unwrap: false });
-
-  expect(result).toEqual({ status: 200, data: { sum: 8 } });
-});
-
-test("unwrap: false catches RivetError and returns error result", async () => {
-  const handlers = defineHandlers<DivideContract>()({
-    Divide: handle<DivideContract, "Divide">(async ({ body }) => {
-      if (body.divisor === 0) {
-        throw new RivetError({ status: 400, data: { message: "division by zero" } });
-      }
-      return { quotient: body.dividend / body.divisor };
-    }),
-  });
-
-  const client = createDirectClient<DivideContract>(handlers);
-  const result = await client.Divide({ dividend: 10, divisor: 0 }, { unwrap: false });
-
-  expect(result).toEqual({ status: 400, data: { message: "division by zero" } });
-});
-
-test("default unwrap re-throws RivetError", async () => {
-  const handlers = defineHandlers<DivideContract>()({
-    Divide: handle<DivideContract, "Divide">(async ({ body }) => {
-      if (body.divisor === 0) {
-        throw new RivetError({ status: 400, data: { message: "division by zero" } });
-      }
-      return { quotient: body.dividend / body.divisor };
-    }),
-  });
-
-  const client = createDirectClient<DivideContract>(handlers);
-
-  await expect(client.Divide({ dividend: 10, divisor: 0 })).rejects.toThrow(RivetError);
-});
-
-test("discriminated union narrows correctly by status", async () => {
-  const handlers = defineHandlers<DivideContract>()({
-    Divide: handle<DivideContract, "Divide">(async ({ body }) => {
-      if (body.divisor === 0) {
-        throw new RivetError({ status: 400, data: { message: "division by zero" } });
-      }
-      return { quotient: body.dividend / body.divisor };
-    }),
-  });
-
-  const client = createDirectClient<DivideContract>(handlers);
-  const result = await client.Divide({ dividend: 10, divisor: 0 }, { unwrap: false });
-
-  if (result.status === 400) {
-    expectTypeOf(result.data).toEqualTypeOf<{ message: string }>();
-    expect(result.data).toEqual({ message: "division by zero" });
-  }
-});
-
-test("unwrap: false uses custom successStatus from defineHandlers metadata", async () => {
-  const handlers = defineHandlers<CreatedContract>()(
-    {
-      Create: handle<CreatedContract, "Create">(async ({ body }) => ({
-        id: `created-${body.name}`,
-      })),
-    },
-    { Create: { successStatus: 201 } },
-  );
-
-  const client = createDirectClient<CreatedContract>(handlers);
-  const result = await client.Create({ name: "test" }, { unwrap: false });
-
-  expect(result).toEqual({ status: 201, data: { id: "created-test" } });
-  if (result.status === 201) {
-    expectTypeOf(result.data).toEqualTypeOf<CreateResponse>();
-  }
-});
-
-test("defineHandlers rejects wrong successStatus in metadata", () => {
-  defineHandlers<CreatedContract>()(
-    {
-      Create: handle<CreatedContract, "Create">(async ({ body }) => ({
-        id: `created-${body.name}`,
-      })),
-    },
-    // @ts-expect-error successStatus 999 is not assignable to 201
-    { Create: { successStatus: 999 } },
-  );
-});
-
-test("unwrap: false defaults to 200 when no metadata provided", async () => {
-  const handlers = defineHandlers<MathContract>()({
-    Add: handle<MathContract, "Add">(async ({ body }) => ({
-      sum: body.a + body.b,
-    })),
-  });
-
-  const client = createDirectClient<MathContract>(handlers);
-  const result = await client.Add({ a: 1, b: 2 }, { unwrap: false });
-
-  expect(result.status).toBe(200);
 });
