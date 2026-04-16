@@ -83,4 +83,9 @@ export { TypeScriptHandlerEntrypointFrontend } from "./infrastructure/typescript
 export { BundleResult } from "./domain/bundle-result.js";
 export { ImplementationBundler } from "./application/ports/implementation-bundler.js";
 export { EsbuildImplementationBundler } from "./infrastructure/bundler/esbuild-implementation-bundler.js";
+export {
+  PackageEmitter as PackageEmitterPort,
+  type PackageEmitterConfig,
+} from "./application/ports/package-emitter.js";
+export { LocalPackageEmitter } from "./infrastructure/package/local-package-emitter.js";
 export { runCli } from "./interfaces/cli/run-cli.js";
