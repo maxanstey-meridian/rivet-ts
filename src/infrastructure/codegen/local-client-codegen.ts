@@ -130,9 +130,12 @@ const generateDts = (
   const methodLines: string[] = [];
   for (const endpointName of handlerGroup.endpointNames) {
     const endpointDef = findEndpointDef(endpointName, contractDocument.endpoints);
-    if (endpointDef) {
-      methodLines.push(emitEndpointMethod(endpointName, endpointDef));
+    if (!endpointDef) {
+      throw new Error(
+        `Endpoint '${endpointName}' from handler group '${handlerGroup.exportName}' not found in contract document`,
+      );
     }
+    methodLines.push(emitEndpointMethod(endpointName, endpointDef));
   }
 
   lines.push(`export interface ${handlerGroup.contractName}Client {`);

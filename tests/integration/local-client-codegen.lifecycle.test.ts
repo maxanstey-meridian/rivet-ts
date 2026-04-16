@@ -198,4 +198,21 @@ describe("LocalClientCodegen", () => {
     // ListPets has default successStatus 200
     expect(result.dtsSource).toContain("readonly status: 200");
   });
+
+  it("throws when handler group endpoint is not found in contract document", async () => {
+    const { contractDocuments } = await getPetContractDocument();
+    const petDoc = contractDocuments.get("PetContract")!;
+
+    const mismatchedGroup = new HandlerGroup({
+      exportName: "petHandlers",
+      contractName: "PetContract",
+      contractSourcePath: "/fake/pet-contract.ts",
+      handlerSourcePath: "/fake/pet.handlers.ts",
+      endpointNames: ["ListPets", "NonExistentEndpoint"],
+    });
+
+    expect(() => codegen.generate(mismatchedGroup, petDoc)).toThrow(
+      "Endpoint 'NonExistentEndpoint' from handler group 'petHandlers' not found in contract document",
+    );
+  });
 });

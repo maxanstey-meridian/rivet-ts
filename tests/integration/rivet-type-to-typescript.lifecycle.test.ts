@@ -148,6 +148,11 @@ describe("emitTypeExpression", () => {
       const type: RivetType = { kind: "intUnion", values: [1, 2, 3] };
       expect(emitTypeExpression(type)).toBe("1 | 2 | 3");
     });
+
+    it("escapes special characters in string union values", () => {
+      const type: RivetType = { kind: "stringUnion", values: ['say "hello"', "back\\slash"] };
+      expect(emitTypeExpression(type)).toBe('"say \\"hello\\"" | "back\\\\slash"');
+    });
   });
 
   describe("inline object", () => {

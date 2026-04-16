@@ -155,6 +155,14 @@ export class TypeScriptHandlerEntrypointFrontend extends HandlerEntrypointFronte
 
     const contractSourcePath = this.getDeclarationSourcePath(contractType);
     if (!contractSourcePath) {
+      diagnostics.push(
+        new ExtractionDiagnostic({
+          severity: "warning",
+          code: "NO_CONTRACT_SOURCE",
+          message: `Export '${exportName}' has a contract type with no resolvable source file.`,
+          filePath: declaration.getSourceFile().fileName,
+        }),
+      );
       return null;
     }
 

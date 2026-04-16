@@ -38,7 +38,7 @@ export const emitTypeExpression = (type: RivetType): string => {
       return `Record<string, ${emitTypeExpression(type.value)}>`;
 
     case "stringUnion":
-      return type.values.map((v) => `"${v}"`).join(" | ");
+      return type.values.map((v) => JSON.stringify(v)).join(" | ");
 
     case "intUnion":
       return type.values.map((v) => String(v)).join(" | ");
@@ -107,7 +107,7 @@ export const emitTypeDefinition = (typeDef: RivetTypeDefinition): string => {
 export const emitEnumDeclaration = (rivetEnum: RivetContractEnum): string => {
   if ("values" in rivetEnum) {
     const members = rivetEnum.values
-      .map((v) => `  ${v} = "${v}"`)
+      .map((v) => `  ${v} = ${JSON.stringify(v)}`)
       .join(",\n");
     return `export enum ${rivetEnum.name} {\n${members},\n}`;
   }
