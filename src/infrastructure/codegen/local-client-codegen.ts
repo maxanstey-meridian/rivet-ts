@@ -8,8 +8,6 @@ import type {
 import { LocalClientCodegen as AbstractLocalClientCodegen } from "../../application/ports/local-client-codegen.js";
 import {
   emitTypeExpression,
-  emitTypeDefinition,
-  emitEnumDeclaration,
 } from "./rivet-type-to-typescript.js";
 
 export const deriveClientName = (exportName: string): string => {
@@ -75,6 +73,13 @@ const getErrorVariants = (
     }));
 };
 
+const getSharedTypeNames = (contractDocument: RivetContractDocument): readonly string[] => {
+  return [
+    ...contractDocument.enums.map((rivetEnum) => rivetEnum.name),
+    ...contractDocument.types.map((typeDef) => typeDef.name),
+  ].sort();
+};
+
 const emitEndpointMethod = (
   endpointName: string,
   endpoint: RivetEndpointDefinition,
@@ -96,14 +101,14 @@ const emitEndpointMethod = (
   if (inputType) {
     const inputExpr = emitTypeExpression(inputType);
     return [
-      `    ${endpointName}(input: ${inputExpr}): Promise<${successType}>;`,
       `    ${endpointName}(input: ${inputExpr}, options: { readonly unwrap: false }): Promise<${endpointResult}>;`,
+      `    ${endpointName}(input: ${inputExpr}): Promise<${successType}>;`,
     ].join("\n");
   }
 
   return [
-    `    ${endpointName}(): Promise<${successType}>;`,
     `    ${endpointName}(options: { readonly unwrap: false }): Promise<${endpointResult}>;`,
+    `    ${endpointName}(): Promise<${successType}>;`,
   ].join("\n");
 };
 
@@ -113,16 +118,12 @@ const generateDts = (
   clientName: string,
 ): string => {
   const lines: string[] = [];
+  const sharedTypeNames = getSharedTypeNames(contractDocument);
 
-  // Emit enums
-  for (const rivetEnum of contractDocument.enums) {
-    lines.push(emitEnumDeclaration(rivetEnum));
-    lines.push("");
-  }
-
-  // Emit types
-  for (const typeDef of contractDocument.types) {
-    lines.push(emitTypeDefinition(typeDef));
+  if (sharedTypeNames.length > 0) {
+    const joinedTypeNames = sharedTypeNames.join(", ");
+    lines.push(`import type { ${joinedTypeNames} } from "../types/index.js";`);
+    lines.push(`export type { ${joinedTypeNames} } from "../types/index.js";`);
     lines.push("");
   }
 

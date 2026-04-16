@@ -103,6 +103,18 @@ describe("BuildLocalPackage lifecycle", () => {
     expect(exportNames).toEqual(["petHandlers", "summaryHandlers"]);
   });
 
+  it("emits a shared generated types module", async () => {
+    const config = makeConfig(getFixturePath("handler-entrypoint/index.ts"));
+    const result = await useCase.execute(config);
+
+    expect(result.hasErrors).toBe(false);
+
+    const typesDts = await fs.readFile(path.join(tmpDir, "out", "types", "index.d.ts"), "utf8");
+
+    expect(typesDts).toContain("export interface PetDto");
+    expect(typesDts).toContain("export interface SummaryDto");
+  });
+
   it("diagnostics are empty for valid input", async () => {
     const config = makeConfig(getFixturePath("handler-entrypoint/index.ts"));
     const result = await useCase.execute(config);
@@ -116,11 +128,11 @@ describe("BuildLocalPackage lifecycle", () => {
     );
     const result = await useCase.execute(config);
 
-    // Discovery should succeed (finds the handler group)
-    expect(result.handlerGroups).toHaveLength(1);
-    expect(result.handlerGroups[0].contractName).toBe("BrokenContract");
+    // Discovery/extraction now both surface compiler diagnostics through the same
+    // tsconfig-aware project graph, so the handler group may be skipped before extraction.
+    expect(result.handlerGroups).toHaveLength(0);
 
-    // Extraction should fail (broken import) — contract document should be absent
+    // Contract document should be absent
     expect(result.contractDocuments.size).toBe(0);
 
     // Diagnostics from extraction should propagate

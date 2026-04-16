@@ -69,7 +69,7 @@ describe("CLI build-local", () => {
 
     const entries = await fs.readdir(outDir);
     expect(entries.sort()).toEqual(
-      ["client", "contract", "index.d.ts", "index.js", "package.json", "runtime"].sort(),
+      ["client", "contract", "index.d.ts", "index.js", "package.json", "runtime", "types"].sort(),
     );
 
     const clientEntries = await fs.readdir(path.join(outDir, "client"));
@@ -124,6 +124,10 @@ describe("CLI build-local", () => {
       types: "./client/summary.d.ts",
       import: "./client/summary.js",
     });
+    expect(pkg.exports["./types"]).toEqual({
+      types: "./types/index.d.ts",
+      import: "./types/index.js",
+    });
     expect(pkg.exports["./contract/PetContract"]).toBe("./contract/PetContract.contract.json");
     expect(pkg.exports["./contract/SummaryContract"]).toBe(
       "./contract/SummaryContract.contract.json",
@@ -161,10 +165,13 @@ describe("CLI build-local", () => {
       path.join(consumerDir, "consumer.ts"),
       [
         `import { pet, summary } from "${relativeToOutDir}/index.js";`,
+        `import type { PetDto, SummaryDto } from "${relativeToOutDir}/types/index.js";`,
         "",
         "const main = async () => {",
         "  const pets = await pet.ListPets();",
         "  const s = await summary.GetSummary();",
+        "  const firstPet: PetDto | undefined = pets[0];",
+        "  const totalPets: SummaryDto['totalPets'] = s.totalPets;",
         "};",
         "",
         "main();",
@@ -296,5 +303,109 @@ describe("CLI build-local", () => {
     expect(exitCode).toBe(1);
     const stderrText = stderr.join("");
     expect(stderrText).toContain("node:");
+  });
+
+  it("respects tsconfig path aliases and bundler-style module resolution", async () => {
+    const fixtureRoot = path.join(tmpDir, "fixture");
+    const outDir = path.join(tmpDir, "pkg");
+    const { io, stderr } = captureIO();
+    const distTypesPath = path
+      .relative(fixtureRoot, path.join(getProjectRoot(), "dist", "index.d.ts"))
+      .split(path.sep)
+      .join("/");
+
+    await fs.mkdir(path.join(fixtureRoot, "api"), { recursive: true });
+    await fs.mkdir(path.join(fixtureRoot, "runtime"), { recursive: true });
+
+    await fs.writeFile(
+      path.join(fixtureRoot, "tsconfig.json"),
+      JSON.stringify(
+        {
+          compilerOptions: {
+            strict: true,
+            target: "ES2022",
+            module: "ESNext",
+            moduleResolution: "Bundler",
+            baseUrl: ".",
+            ignoreDeprecations: "6.0",
+            paths: {
+              "@contracts": ["./contracts.ts"],
+              "@runtime/*": ["./runtime/*"],
+              "rivet-ts": [distTypesPath],
+            },
+          },
+          include: ["**/*.ts"],
+        },
+        null,
+        2,
+      ),
+    );
+
+    await fs.writeFile(
+      path.join(fixtureRoot, "contracts.ts"),
+      [
+        'import type { Contract, Endpoint } from "rivet-ts";',
+        "",
+        'export interface GreetingContract extends Contract<"GreetingContract"> {',
+        "  SayHello: Endpoint<{",
+        '    method: "GET";',
+        '    route: "/hello";',
+        '    response: GreetingDto;',
+        "  }>;",
+        "}",
+        "",
+        "export interface GreetingDto {",
+        "  readonly message: string;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    await fs.writeFile(
+      path.join(fixtureRoot, "runtime", "greeting.ts"),
+      [
+        'export const getGreeting = async (): Promise<{ readonly message: string }> => ({',
+        '  message: "hello",',
+        "});",
+        "",
+      ].join("\n"),
+    );
+
+    await fs.writeFile(
+      path.join(fixtureRoot, "api", "index.ts"),
+      [
+        'import type { GreetingContract } from "@contracts";',
+        'import { defineHandlers, handle } from "rivet-ts";',
+        'import { getGreeting } from "@runtime/greeting";',
+        "",
+        "export const greetingHandlers = defineHandlers<GreetingContract>()({",
+        '  SayHello: handle<GreetingContract, "SayHello">(async () => getGreeting()),',
+        "});",
+        "",
+      ].join("\n"),
+    );
+
+    const exitCode = await runCli(
+      [
+        "build-local",
+        "--entry",
+        path.join(fixtureRoot, "api", "index.ts"),
+        "--tsconfig",
+        path.join(fixtureRoot, "tsconfig.json"),
+        "--target",
+        "browser",
+        "--package-name",
+        "@test/tsconfig-pkg",
+        "--out",
+        outDir,
+      ],
+      io,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr.join("")).toBe("");
+
+    const clientDts = await fs.readFile(path.join(outDir, "client", "greeting.d.ts"), "utf8");
+    expect(clientDts).toContain('import type { GreetingDto } from "../types/index.js";');
   });
 });

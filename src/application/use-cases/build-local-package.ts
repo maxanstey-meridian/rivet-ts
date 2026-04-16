@@ -103,6 +103,7 @@ export class BuildLocalPackage {
       discoveryResult.handlerGroups,
       config.target,
       config.outDir,
+      config.tsconfigPath,
     );
     diagnostics.push(...bundleResult.diagnostics);
 

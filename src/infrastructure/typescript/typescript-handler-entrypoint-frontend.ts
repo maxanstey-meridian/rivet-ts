@@ -1,30 +1,29 @@
-import path from "node:path";
 import ts from "typescript";
 import { HandlerEntrypointFrontend } from "../../application/ports/handler-entrypoint-frontend.js";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import { HandlerDiscoveryResult } from "../../domain/handler-discovery-result.js";
 import { HandlerGroup } from "../../domain/handler-group.js";
+import {
+  mapTypeScriptDiagnostics,
+  resolveTypeScriptProject,
+} from "./typescript-project.js";
 
 export class TypeScriptHandlerEntrypointFrontend extends HandlerEntrypointFrontend {
-  public async discover(entryPath: string): Promise<HandlerDiscoveryResult> {
-    const absoluteEntryPath = path.resolve(entryPath);
+  public constructor(private readonly tsconfigPath?: string) {
+    super();
+  }
 
-    const program = ts.createProgram([absoluteEntryPath], {
-      target: ts.ScriptTarget.ES2023,
-      module: ts.ModuleKind.NodeNext,
-      moduleResolution: ts.ModuleResolutionKind.NodeNext,
-      strict: true,
-      skipLibCheck: true,
-      allowJs: false,
-      noEmit: true,
-      resolveJsonModule: true,
-      esModuleInterop: true,
-      verbatimModuleSyntax: true,
-    });
+  public async discover(entryPath: string): Promise<HandlerDiscoveryResult> {
+    const project = resolveTypeScriptProject(entryPath, this.tsconfigPath);
+    const absoluteEntryPath = project.absoluteEntryPath;
+    const program = ts.createProgram([absoluteEntryPath], project.compilerOptions);
 
     const checker = program.getTypeChecker();
     const sourceFile = program.getSourceFile(absoluteEntryPath);
-    const diagnostics: ExtractionDiagnostic[] = [];
+    const diagnostics: ExtractionDiagnostic[] = [
+      ...mapTypeScriptDiagnostics(project.configDiagnostics, absoluteEntryPath),
+      ...mapTypeScriptDiagnostics(ts.getPreEmitDiagnostics(program), absoluteEntryPath),
+    ];
 
     if (!sourceFile) {
       return new HandlerDiscoveryResult({

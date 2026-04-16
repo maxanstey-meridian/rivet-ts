@@ -115,6 +115,10 @@ describe("LocalPackageEmitter", () => {
       types: "./client/summary.d.ts",
       import: "./client/summary.js",
     });
+    expect(pkg.exports["./types"]).toEqual({
+      types: "./types/index.d.ts",
+      import: "./types/index.js",
+    });
     expect(pkg.exports["./contract/PetContract"]).toBe(
       "./contract/PetContract.contract.json",
     );
@@ -144,6 +148,7 @@ describe("LocalPackageEmitter", () => {
     const indexDts = await fs.readFile(path.join(outDir, "index.d.ts"), "utf-8");
     expect(indexDts).toContain('export { pet } from "./client/pet.js"');
     expect(indexDts).toContain('export { summary } from "./client/summary.js"');
+    expect(indexDts).toContain('export type * from "./types/index.js"');
   });
 
   it("writes client JS and DTS files from generated modules", async () => {
@@ -222,7 +227,7 @@ describe("LocalPackageEmitter", () => {
 
     const entries = await fs.readdir(outDir);
     expect(entries.sort()).toEqual(
-      ["client", "contract", "index.d.ts", "index.js", "package.json", "runtime"].sort(),
+      ["client", "contract", "index.d.ts", "index.js", "package.json", "runtime", "types"].sort(),
     );
 
     const clientEntries = await fs.readdir(path.join(outDir, "client"));
@@ -239,5 +244,8 @@ describe("LocalPackageEmitter", () => {
     expect(contractEntries.sort()).toEqual(
       ["PetContract.contract.json", "SummaryContract.contract.json"].sort(),
     );
+
+    const typesEntries = await fs.readdir(path.join(outDir, "types"));
+    expect(typesEntries.sort()).toEqual(["index.d.ts", "index.js"].sort());
   });
 });

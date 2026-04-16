@@ -106,14 +106,8 @@ export const emitTypeDefinition = (typeDef: RivetTypeDefinition): string => {
 
 export const emitEnumDeclaration = (rivetEnum: RivetContractEnum): string => {
   if ("values" in rivetEnum) {
-    const members = rivetEnum.values
-      .map((v) => `  ${v} = ${JSON.stringify(v)}`)
-      .join(",\n");
-    return `export enum ${rivetEnum.name} {\n${members},\n}`;
+    return `export type ${rivetEnum.name} = ${rivetEnum.values.map((v) => JSON.stringify(v)).join(" | ")};`;
   }
 
-  const members = rivetEnum.intValues
-    .map((v) => `  Value_${v} = ${v}`)
-    .join(",\n");
-  return `export enum ${rivetEnum.name} {\n${members},\n}`;
+  return `export type ${rivetEnum.name} = ${rivetEnum.intValues.map((v) => String(v)).join(" | ")};`;
 };

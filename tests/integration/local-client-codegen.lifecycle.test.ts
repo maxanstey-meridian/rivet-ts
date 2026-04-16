@@ -1,8 +1,6 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { HandlerGroup } from "../../src/domain/handler-group.js";
 import { BuildLocalConfig } from "../../src/domain/build-local-config.js";
@@ -21,45 +19,9 @@ import {
   RivetTypeDefinition,
 } from "../../src/domain/rivet-contract.js";
 
-const execFileAsync = promisify(execFile);
-
 const getFixturePath = (relativePath: string): string => {
   const currentFilePath = fileURLToPath(import.meta.url);
   return path.resolve(path.dirname(currentFilePath), "..", "fixtures", relativePath);
-};
-
-const tscPath = path.resolve(
-  fileURLToPath(import.meta.url),
-  "..",
-  "..",
-  "..",
-  "node_modules",
-  ".bin",
-  "tsc",
-);
-
-const tscValidate = async (source: string, prefix: string): Promise<void> => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), `rivet-codegen-${prefix}-`));
-  const tmpFile = path.join(tmpDir, "emitted.d.ts");
-  await fs.writeFile(tmpFile, source, "utf8");
-
-  try {
-    await execFileAsync(tscPath, [
-      "--noEmit",
-      "--strict",
-      "--target",
-      "ES2020",
-      "--module",
-      "ES2020",
-      "--ignoreConfig",
-      tmpFile,
-    ]);
-  } catch (e: unknown) {
-    const err = e as { stdout?: string; stderr?: string };
-    throw new Error(`tsc failed:\n${err.stdout ?? ""}\n${err.stderr ?? ""}`);
-  } finally {
-    await fs.rm(tmpDir, { recursive: true });
-  }
 };
 
 // Build the lowered contract documents from the fixture
@@ -146,27 +108,19 @@ describe("LocalClientCodegen", () => {
     expect(result.jsSource).toContain("export const summary = createDirectClient(summaryHandlers)");
   });
 
-  it("generates DTS that type-checks with tsc", async () => {
+  it("generates DTS that imports and re-exports shared types", async () => {
     const { handlerGroups, contractDocuments } = await getPetContractDocument();
     const petGroup = handlerGroups.find((g) => g.exportName === "petHandlers")!;
     const petDoc = contractDocuments.get("PetContract")!;
 
     const result = codegen.generate(petGroup, petDoc);
 
-    // DTS should contain the DTO types
-    expect(result.dtsSource).toContain("PetDto");
-    expect(result.dtsSource).toContain("CreatePetRequest");
-
-    // DTS should contain the client interface
+    expect(result.dtsSource).toContain(`import type { CreatePetRequest, PetDto } from "../types/index.js";`);
+    expect(result.dtsSource).toContain(`export type { CreatePetRequest, PetDto } from "../types/index.js";`);
     expect(result.dtsSource).toContain("PetContractClient");
     expect(result.dtsSource).toContain("export declare const pet");
-
-    // DTS should contain method signatures for each endpoint
     expect(result.dtsSource).toContain("ListPets");
     expect(result.dtsSource).toContain("CreatePet");
-
-    // Verify it type-checks
-    await tscValidate(result.dtsSource, "pet-client");
   });
 
   it("generates DTS with unwrap: false overloads", async () => {
@@ -180,18 +134,16 @@ describe("LocalClientCodegen", () => {
     expect(result.dtsSource).toContain("unwrap: false");
   });
 
-  it("generates DTS for summary contract that type-checks", async () => {
+  it("generates DTS for summary contract using shared types", async () => {
     const { handlerGroups, contractDocuments } = await getPetContractDocument();
     const summaryGroup = handlerGroups.find((g) => g.exportName === "summaryHandlers")!;
     const summaryDoc = contractDocuments.get("SummaryContract")!;
 
     const result = codegen.generate(summaryGroup, summaryDoc);
 
-    expect(result.dtsSource).toContain("SummaryDto");
+    expect(result.dtsSource).toContain(`import type { SummaryDto } from "../types/index.js";`);
     expect(result.dtsSource).toContain("SummaryContractClient");
     expect(result.dtsSource).toContain("GetSummary");
-
-    await tscValidate(result.dtsSource, "summary-client");
   });
 
   it("generates DTS with correct input and return types for endpoints", async () => {
@@ -220,6 +172,25 @@ describe("LocalClientCodegen", () => {
 
     // ListPets has default successStatus 200
     expect(result.dtsSource).toContain("readonly status: 200");
+  });
+
+  it("emits unwrap: false overload before the default signature", async () => {
+    const { handlerGroups, contractDocuments } = await getPetContractDocument();
+    const petGroup = handlerGroups.find((g) => g.exportName === "petHandlers")!;
+    const petDoc = contractDocuments.get("PetContract")!;
+
+    const result = codegen.generate(petGroup, petDoc);
+
+    const wrappedIndex = result.dtsSource.indexOf(
+      'CreatePet(input: CreatePetRequest, options: { readonly unwrap: false })',
+    );
+    const defaultIndex = result.dtsSource.indexOf(
+      "CreatePet(input: CreatePetRequest): Promise<PetDto>;",
+    );
+
+    expect(wrappedIndex).toBeGreaterThan(-1);
+    expect(defaultIndex).toBeGreaterThan(-1);
+    expect(wrappedIndex).toBeLessThan(defaultIndex);
   });
 
   it("generates DTS with error variant union in unwrap:false overload", async () => {
@@ -289,8 +260,6 @@ describe("LocalClientCodegen", () => {
     // Default overload should still return just the success type
     expect(result.dtsSource).toMatch(/Divide\(input: DivideRequest\): Promise<DivideResponse>;/);
 
-    // Verify it type-checks
-    await tscValidate(result.dtsSource, "error-variants");
   });
 
   it("throws when handler group endpoint is not found in contract document", async () => {

@@ -1,9 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { RivetContractDocument } from "../../domain/rivet-contract.js";
 import {
   PackageEmitter,
   type PackageEmitterConfig,
 } from "../../application/ports/package-emitter.js";
+import {
+  emitEnumDeclaration,
+  emitTypeDefinition,
+} from "../codegen/rivet-type-to-typescript.js";
 
 export class LocalPackageEmitter extends PackageEmitter {
   public async emit(config: PackageEmitterConfig): Promise<void> {
@@ -13,12 +18,14 @@ export class LocalPackageEmitter extends PackageEmitter {
     await fs.mkdir(path.join(outDir, "client"), { recursive: true });
     await fs.mkdir(path.join(outDir, "runtime"), { recursive: true });
     await fs.mkdir(path.join(outDir, "contract"), { recursive: true });
+    await fs.mkdir(path.join(outDir, "types"), { recursive: true });
 
     await Promise.all([
       this.writePackageJson(outDir, packageName, target, clientModules, contractDocuments),
       this.writeIndexJs(outDir, clientModules),
       this.writeIndexDts(outDir, clientModules),
       this.writeClientModules(outDir, clientModules),
+      this.writeTypesModule(outDir, contractDocuments),
       this.writeRuntimeFiles(outDir, bundleFiles),
       this.writeContractFiles(outDir, contractDocuments),
     ]);
@@ -44,6 +51,11 @@ export class LocalPackageEmitter extends PackageEmitter {
         import: `./client/${mod.clientName}.js`,
       };
     }
+
+    exports["./types"] = {
+      types: "./types/index.d.ts",
+      import: "./types/index.js",
+    };
 
     for (const contractName of contractDocuments.keys()) {
       exports[`./contract/${contractName}`] = `./contract/${contractName}.contract.json`;
@@ -83,6 +95,7 @@ export class LocalPackageEmitter extends PackageEmitter {
     const lines = clientModules.map(
       (mod) => `export { ${mod.clientName} } from "./client/${mod.clientName}.js";`,
     );
+    lines.push(`export type * from "./types/index.js";`);
     await fs.writeFile(path.join(outDir, "index.d.ts"), lines.join("\n") + "\n");
   }
 
@@ -114,6 +127,53 @@ export class LocalPackageEmitter extends PackageEmitter {
       );
     }
     await Promise.all(writes);
+  }
+
+  private async writeTypesModule(
+    outDir: string,
+    contractDocuments: Map<string, RivetContractDocument>,
+  ): Promise<void> {
+    const enumSources = new Map<string, string>();
+    const typeSources = new Map<string, string>();
+
+    for (const document of contractDocuments.values()) {
+      for (const rivetEnum of document.enums) {
+        const source = emitEnumDeclaration(rivetEnum);
+        const existingSource = enumSources.get(rivetEnum.name);
+
+        if (existingSource !== undefined && existingSource !== source) {
+          throw new Error(
+            `Conflicting generated enum/type alias declarations for "${rivetEnum.name}" in local package output.`,
+          );
+        }
+
+        enumSources.set(rivetEnum.name, source);
+      }
+
+      for (const typeDef of document.types) {
+        const source = emitTypeDefinition(typeDef);
+        const existingSource = typeSources.get(typeDef.name);
+
+        if (existingSource !== undefined && existingSource !== source) {
+          throw new Error(
+            `Conflicting generated type declarations for "${typeDef.name}" in local package output.`,
+          );
+        }
+
+        typeSources.set(typeDef.name, source);
+      }
+    }
+
+    const dtsLines = [
+      ...[...enumSources.keys()].sort().map((name) => enumSources.get(name)!),
+      ...[...typeSources.keys()].sort().map((name) => typeSources.get(name)!),
+      "",
+    ];
+
+    await Promise.all([
+      fs.writeFile(path.join(outDir, "types", "index.js"), "export {};\n"),
+      fs.writeFile(path.join(outDir, "types", "index.d.ts"), dtsLines.join("\n\n")),
+    ]);
   }
 
   private async writeContractFiles(

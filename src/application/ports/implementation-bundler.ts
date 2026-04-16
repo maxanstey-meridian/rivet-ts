@@ -8,5 +8,6 @@ export abstract class ImplementationBundler {
     handlerGroups: readonly HandlerGroup[],
     target: BuildLocalTarget,
     outDir: string,
+    tsconfigPath?: string,
   ): Promise<BundleResult>;
 }

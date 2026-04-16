@@ -71,7 +71,7 @@ const runBuildLocal = async (args: readonly string[], io: CliIO): Promise<number
 
   if (!parsed.entryPath || !parsed.outDir) {
     io.stderr(
-      "Usage: rivet-ts build-local --entry <file> --target <browser|node> --package-name <name> --out <dir>\n",
+      "Usage: rivet-ts build-local --entry <file> --target <browser|node> --package-name <name> --out <dir> [--tsconfig <file>]\n",
     );
     return 1;
   }
@@ -86,11 +86,12 @@ const runBuildLocal = async (args: readonly string[], io: CliIO): Promise<number
     target: parsed.target,
     packageName: parsed.packageName,
     outDir: parsed.outDir,
+    tsconfigPath: parsed.tsconfigPath,
   });
 
-  const handlerFrontend = new TypeScriptHandlerEntrypointFrontend();
-  const contractFrontend = new TypeScriptContractFrontend();
-  const lowerer = new TypeScriptRivetContractLowerer();
+  const handlerFrontend = new TypeScriptHandlerEntrypointFrontend(parsed.tsconfigPath);
+  const contractFrontend = new TypeScriptContractFrontend(parsed.tsconfigPath);
+  const lowerer = new TypeScriptRivetContractLowerer(parsed.tsconfigPath);
   const codegen = new LocalClientCodegen();
   const bundler = new EsbuildImplementationBundler();
   const emitter = new LocalPackageEmitter();
@@ -140,11 +141,13 @@ const parseBuildLocalArgs = (
   target: string;
   packageName: string;
   outDir?: string;
+  tsconfigPath?: string;
 } => {
   let entryPath: string | undefined;
   let target = "browser";
   let packageName = "@local/handlers";
   let outDir: string | undefined;
+  let tsconfigPath: string | undefined;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -170,8 +173,14 @@ const parseBuildLocalArgs = (
     if (arg === "--out" && index + 1 < args.length) {
       outDir = args[index + 1];
       index += 1;
+      continue;
+    }
+
+    if (arg === "--tsconfig" && index + 1 < args.length) {
+      tsconfigPath = args[index + 1];
+      index += 1;
     }
   }
 
-  return { entryPath, target, packageName, outDir };
+  return { entryPath, target, packageName, outDir, tsconfigPath };
 };

@@ -354,20 +354,16 @@ describe("emitTypeDefinition", () => {
 // -- emitEnumDeclaration tests --
 
 describe("emitEnumDeclaration", () => {
-  it("emits string enum", () => {
+  it("emits string union type alias", () => {
     const rivetEnum: RivetContractEnum = { name: "MemberStatus", values: ["active", "suspended"] };
     const result = emitEnumDeclaration(rivetEnum);
-    expect(result).toBe(
-      'export enum MemberStatus {\n  active = "active",\n  suspended = "suspended",\n}',
-    );
+    expect(result).toBe('export type MemberStatus = "active" | "suspended";');
   });
 
-  it("emits int enum with Value_ prefix", () => {
+  it("emits int union type alias", () => {
     const rivetEnum: RivetContractEnum = { name: "MemberPriority", intValues: [1, 2, 3] };
     const result = emitEnumDeclaration(rivetEnum);
-    expect(result).toBe(
-      "export enum MemberPriority {\n  Value_1 = 1,\n  Value_2 = 2,\n  Value_3 = 3,\n}",
-    );
+    expect(result).toBe("export type MemberPriority = 1 | 2 | 3;");
   });
 });
 

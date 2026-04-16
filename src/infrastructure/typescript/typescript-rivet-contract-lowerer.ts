@@ -18,6 +18,7 @@ import {
   RivetTypeDefinition,
   type RivetPropertyDefinition,
 } from "../../domain/rivet-contract.js";
+import { resolveTypeScriptProject } from "./typescript-project.js";
 
 type SupportedDeclaration = ts.EnumDeclaration | ts.InterfaceDeclaration | ts.TypeAliasDeclaration;
 
@@ -70,8 +71,14 @@ const BUILTIN_TYPE_NAMES = new Set(["Array", "ReadonlyArray"]);
 const MULTIPART_FILE_TYPE_NAMES = new Set(["Blob", "File"]);
 const DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE = "application/json";
 
-const buildProgram = (entryPath: string): ts.Program =>
-  ts.createProgram([path.resolve(entryPath)], DEFAULT_COMPILER_OPTIONS);
+const buildProgram = (entryPath: string, tsconfigPath?: string): ts.Program => {
+  const project = resolveTypeScriptProject(entryPath, tsconfigPath);
+
+  return ts.createProgram([project.absoluteEntryPath], {
+    ...DEFAULT_COMPILER_OPTIONS,
+    ...project.compilerOptions,
+  });
+};
 
 const parseRouteParamNames = (route: string): string[] => {
   const matches = route.matchAll(ROUTE_PARAM_PATTERN);
@@ -323,13 +330,13 @@ const collectTypeReferences = (type: RivetType, references: Set<string>): void =
 };
 
 export class TypeScriptRivetContractLowerer extends RivetContractLowerer {
-  public constructor() {
+  public constructor(private readonly tsconfigPath?: string) {
     super();
   }
 
   public async lower(bundle: ContractBundle): Promise<RivetContractLoweringResult> {
     const diagnostics = [...bundle.diagnostics];
-    const program = buildProgram(bundle.entryPath);
+    const program = buildProgram(bundle.entryPath, this.tsconfigPath);
     const sourceFile = program.getSourceFile(path.resolve(bundle.entryPath));
 
     if (!sourceFile) {

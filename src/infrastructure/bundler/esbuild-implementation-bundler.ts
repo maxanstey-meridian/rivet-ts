@@ -8,6 +8,7 @@ import type { BuildLocalTarget } from "../../domain/build-local-config.js";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import type { HandlerGroup } from "../../domain/handler-group.js";
 import { ImplementationBundler } from "../../application/ports/implementation-bundler.js";
+import { resolveTypeScriptProject } from "../typescript/typescript-project.js";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(currentDir, "..", "..", "..");
@@ -19,13 +20,15 @@ export class EsbuildImplementationBundler extends ImplementationBundler {
     handlerGroups: readonly HandlerGroup[],
     target: BuildLocalTarget,
     outDir: string,
+    tsconfigPath?: string,
   ): Promise<BundleResult> {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "rivet-bundle-"));
+    const project = resolveTypeScriptProject(entryPath, tsconfigPath);
 
     try {
       const handlersEntryPath = this.writeSyntheticHandlersEntry(
         tmpDir,
-        entryPath,
+        project.absoluteEntryPath,
         handlerGroups,
       );
       const runtimeEntryPath = this.writeSyntheticRuntimeEntry(tmpDir);
@@ -50,6 +53,7 @@ export class EsbuildImplementationBundler extends ImplementationBundler {
         platform: target === "browser" ? "browser" : "node",
         plugins,
         logLevel: "silent",
+        tsconfig: project.configFilePath ?? undefined,
       });
 
       const outputFiles = new Map<string, string>();
