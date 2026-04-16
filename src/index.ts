@@ -70,4 +70,5 @@ export { DiscoverHandlerEntrypoints } from "./application/use-cases/discover-han
 export { LowerContractBundleToRivetContract } from "./application/use-cases/lower-contract-bundle-to-rivet-contract.js";
 export { TypeScriptContractFrontend } from "./infrastructure/typescript/typescript-contract-frontend.js";
 export { TypeScriptRivetContractLowerer } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
+export { TypeScriptHandlerEntrypointFrontend } from "./infrastructure/typescript/typescript-handler-entrypoint-frontend.js";
 export { runCli } from "./interfaces/cli/run-cli.js";
