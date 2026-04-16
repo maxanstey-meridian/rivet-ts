@@ -71,6 +71,12 @@ export { ExtractTsContracts } from "./application/use-cases/extract-ts-contracts
 export { DiscoverHandlerEntrypoints } from "./application/use-cases/discover-handler-entrypoints.js";
 export { LowerContractBundleToRivetContract } from "./application/use-cases/lower-contract-bundle-to-rivet-contract.js";
 export { BuildLocalPackage } from "./application/use-cases/build-local-package.js";
+export { GeneratedClientModule } from "./domain/generated-client-module.js";
+export { LocalClientCodegen as LocalClientCodegenPort } from "./application/ports/local-client-codegen.js";
+export {
+  LocalClientCodegen,
+  deriveClientName,
+} from "./infrastructure/codegen/local-client-codegen.js";
 export { TypeScriptContractFrontend } from "./infrastructure/typescript/typescript-contract-frontend.js";
 export { TypeScriptRivetContractLowerer } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 export { TypeScriptHandlerEntrypointFrontend } from "./infrastructure/typescript/typescript-handler-entrypoint-frontend.js";
