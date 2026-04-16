@@ -22,6 +22,7 @@ export const deriveClientName = (exportName: string): string => {
 
 const generateJs = (handlerGroup: HandlerGroup, clientName: string): string => {
   const lines = [
+    `import "../runtime/index.js";`,
     `import { createDirectClient } from '../runtime/rivet-runtime.js';`,
     `import { ${handlerGroup.exportName} } from '../runtime/handlers.js';`,
     `export const ${clientName} = createDirectClient(${handlerGroup.exportName});`,

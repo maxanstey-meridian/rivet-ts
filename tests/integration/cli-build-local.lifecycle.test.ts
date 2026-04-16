@@ -83,7 +83,9 @@ describe("CLI build-local", () => {
     );
 
     const runtimeEntries = await fs.readdir(path.join(outDir, "runtime"));
-    expect(runtimeEntries).toEqual(expect.arrayContaining(["handlers.js", "rivet-runtime.js"]));
+    expect(runtimeEntries).toEqual(
+      expect.arrayContaining(["handlers.js", "index.d.ts", "index.js", "rivet-runtime.js"]),
+    );
   });
 
   it("generated package.json has correct exports map", async () => {
@@ -127,6 +129,10 @@ describe("CLI build-local", () => {
     expect(pkg.exports["./types"]).toEqual({
       types: "./types/index.d.ts",
       import: "./types/index.js",
+    });
+    expect(pkg.exports["./runtime"]).toEqual({
+      types: "./runtime/index.d.ts",
+      import: "./runtime/index.js",
     });
     expect(pkg.exports["./contract/PetContract"]).toBe("./contract/PetContract.contract.json");
     expect(pkg.exports["./contract/SummaryContract"]).toBe(

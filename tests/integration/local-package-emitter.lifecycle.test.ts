@@ -15,7 +15,7 @@ const makePetClientModule = (): GeneratedClientModule =>
     handlerGroupExportName: "petHandlers",
     clientName: "pet",
     jsSource:
-      'import { createDirectClient } from "../runtime/rivet-runtime.js";\nimport { petHandlers } from "../runtime/handlers.js";\nexport const pet = createDirectClient(petHandlers);\n',
+      'import "../runtime/index.js";\nimport { createDirectClient } from "../runtime/rivet-runtime.js";\nimport { petHandlers } from "../runtime/handlers.js";\nexport const pet = createDirectClient(petHandlers);\n',
     dtsSource:
       'export declare const pet: { ListPets(): Promise<{ id: string; name: string }[]> };\n',
   });
@@ -25,7 +25,7 @@ const makeSummaryClientModule = (): GeneratedClientModule =>
     handlerGroupExportName: "summaryHandlers",
     clientName: "summary",
     jsSource:
-      'import { createDirectClient } from "../runtime/rivet-runtime.js";\nimport { summaryHandlers } from "../runtime/handlers.js";\nexport const summary = createDirectClient(summaryHandlers);\n',
+      'import "../runtime/index.js";\nimport { createDirectClient } from "../runtime/rivet-runtime.js";\nimport { summaryHandlers } from "../runtime/handlers.js";\nexport const summary = createDirectClient(summaryHandlers);\n',
     dtsSource:
       'export declare const summary: { GetSummary(): Promise<{ total: number }> };\n',
   });
@@ -119,6 +119,10 @@ describe("LocalPackageEmitter", () => {
       types: "./types/index.d.ts",
       import: "./types/index.js",
     });
+    expect(pkg.exports["./runtime"]).toEqual({
+      types: "./runtime/index.d.ts",
+      import: "./runtime/index.js",
+    });
     expect(pkg.exports["./contract/PetContract"]).toBe(
       "./contract/PetContract.contract.json",
     );
@@ -191,6 +195,13 @@ describe("LocalPackageEmitter", () => {
     );
     expect(runtimeJs).toContain("createDirectClient");
 
+    const lifecycleJs = await fs.readFile(
+      path.join(outDir, "runtime", "index.js"),
+      "utf-8",
+    );
+    expect(lifecycleJs).toContain('import * as runtimeHandlers from "./handlers.js"');
+    expect(lifecycleJs).toContain("disposeLocalApi");
+
     const chunkJs = await fs.readFile(
       path.join(outDir, "runtime", "chunk-ABC123.js"),
       "utf-8",
@@ -237,7 +248,7 @@ describe("LocalPackageEmitter", () => {
 
     const runtimeEntries = await fs.readdir(path.join(outDir, "runtime"));
     expect(runtimeEntries.sort()).toEqual(
-      ["chunk-ABC123.js", "handlers.js", "rivet-runtime.js"].sort(),
+      ["chunk-ABC123.js", "handlers.js", "index.d.ts", "index.js", "rivet-runtime.js"].sort(),
     );
 
     const contractEntries = await fs.readdir(path.join(outDir, "contract"));

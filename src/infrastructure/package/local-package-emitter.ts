@@ -26,6 +26,7 @@ export class LocalPackageEmitter extends PackageEmitter {
       this.writeIndexDts(outDir, clientModules),
       this.writeClientModules(outDir, clientModules),
       this.writeTypesModule(outDir, contractDocuments),
+      this.writeRuntimeModule(outDir),
       this.writeRuntimeFiles(outDir, bundleFiles),
       this.writeContractFiles(outDir, contractDocuments),
     ]);
@@ -55,6 +56,10 @@ export class LocalPackageEmitter extends PackageEmitter {
     exports["./types"] = {
       types: "./types/index.d.ts",
       import: "./types/index.js",
+    };
+    exports["./runtime"] = {
+      types: "./runtime/index.d.ts",
+      import: "./runtime/index.js",
     };
 
     for (const contractName of contractDocuments.keys()) {
@@ -127,6 +132,56 @@ export class LocalPackageEmitter extends PackageEmitter {
       );
     }
     await Promise.all(writes);
+  }
+
+  private async writeRuntimeModule(outDir: string): Promise<void> {
+    const jsSource = [
+      'import * as runtimeHandlers from "./handlers.js";',
+      "",
+      "const canListenForUnload = (candidate) => {",
+      '  return candidate !== null && typeof candidate === "object" && "addEventListener" in candidate && typeof candidate.addEventListener === "function";',
+      "};",
+      "",
+      "export const disposeLocalApi = async () => {",
+      '  if ("disposeLocalApi" in runtimeHandlers && typeof runtimeHandlers.disposeLocalApi === "function") {',
+      "    await runtimeHandlers.disposeLocalApi();",
+      "  }",
+      "};",
+      "",
+      "export const resetLocalApi = async () => {",
+      '  if ("resetLocalApi" in runtimeHandlers && typeof runtimeHandlers.resetLocalApi === "function") {',
+      "    await runtimeHandlers.resetLocalApi();",
+      "    return;",
+      "  }",
+      "",
+      "  await disposeLocalApi();",
+      "};",
+      "",
+      "const installAutoDispose = () => {",
+      '  const candidateWindow = "window" in globalThis ? globalThis.window : null;',
+      "  if (!canListenForUnload(candidateWindow)) {",
+      "    return;",
+      "  }",
+      "",
+      '  candidateWindow.addEventListener("beforeunload", () => {',
+      "    void disposeLocalApi();",
+      "  });",
+      "};",
+      "",
+      "installAutoDispose();",
+      "",
+    ].join("\n");
+
+    const dtsSource = [
+      "export declare const disposeLocalApi: () => Promise<void>;",
+      "export declare const resetLocalApi: () => Promise<void>;",
+      "",
+    ].join("\n");
+
+    await Promise.all([
+      fs.writeFile(path.join(outDir, "runtime", "index.js"), jsSource),
+      fs.writeFile(path.join(outDir, "runtime", "index.d.ts"), dtsSource),
+    ]);
   }
 
   private async writeTypesModule(

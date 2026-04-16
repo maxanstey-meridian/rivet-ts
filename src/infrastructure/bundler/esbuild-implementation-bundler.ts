@@ -77,7 +77,11 @@ export class EsbuildImplementationBundler extends ImplementationBundler {
   ): string {
     const absoluteEntryPath = path.resolve(entryPath);
     const exportNames = handlerGroups.map((g) => g.exportName).join(", ");
-    const content = `export { ${exportNames} } from "${absoluteEntryPath}";\n`;
+    const content = [
+      `export { ${exportNames} } from "${absoluteEntryPath}";`,
+      `export * from "${absoluteEntryPath}";`,
+      "",
+    ].join("\n");
 
     const filePath = path.join(tmpDir, "handlers.ts");
     fs.writeFileSync(filePath, content);

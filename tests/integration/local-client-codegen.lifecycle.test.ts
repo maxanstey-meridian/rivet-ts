@@ -91,6 +91,7 @@ describe("LocalClientCodegen", () => {
     expect(result.handlerGroupExportName).toBe("petHandlers");
 
     // Verify JS source structure
+    expect(result.jsSource).toContain('import "../runtime/index.js"');
     expect(result.jsSource).toContain("import { createDirectClient } from '../runtime/rivet-runtime.js'");
     expect(result.jsSource).toContain("import { petHandlers } from '../runtime/handlers.js'");
     expect(result.jsSource).toContain("export const pet = createDirectClient(petHandlers)");
