@@ -61,7 +61,9 @@ export class TypeScriptHandlerEntrypointFrontend extends HandlerEntrypointFronte
       const resolved = this.resolveAlias(exportSymbol, checker);
 
       // Skip type-only exports (no value declaration)
-      if (!resolved.valueDeclaration) continue;
+      if (!resolved.valueDeclaration) {
+        continue;
+      }
 
       const group = this.extractHandlerGroup(exportSymbol.name, resolved, checker, diagnostics);
       if (group) {
@@ -94,7 +96,9 @@ export class TypeScriptHandlerEntrypointFrontend extends HandlerEntrypointFronte
     diagnostics: ExtractionDiagnostic[],
   ): HandlerGroup | null {
     const declaration = symbol.valueDeclaration;
-    if (!declaration) return null;
+    if (!declaration) {
+      return null;
+    }
 
     if (!ts.isVariableDeclaration(declaration)) {
       this.addSkipDiagnostic(exportName, declaration, diagnostics);
@@ -150,7 +154,9 @@ export class TypeScriptHandlerEntrypointFrontend extends HandlerEntrypointFronte
     }
 
     const contractSourcePath = this.getDeclarationSourcePath(contractType);
-    if (!contractSourcePath) return null;
+    if (!contractSourcePath) {
+      return null;
+    }
 
     const handlerSourcePath = declaration.getSourceFile().fileName;
 
@@ -168,21 +174,29 @@ export class TypeScriptHandlerEntrypointFrontend extends HandlerEntrypointFronte
 
   private isDefineHandlersCall(call: ts.CallExpression, checker: ts.TypeChecker): boolean {
     const symbol = checker.getSymbolAtLocation(call.expression);
-    if (!symbol) return false;
+    if (!symbol) {
+      return false;
+    }
     const resolved = this.resolveAlias(symbol, checker);
     return resolved.name === "defineHandlers";
   }
 
   private getContractName(type: ts.Type, checker: ts.TypeChecker): string | null {
     const prop = type.getProperty("__contractName");
-    if (!prop) return null;
+    if (!prop) {
+      return null;
+    }
 
     const propType = checker.getTypeOfSymbol(prop);
-    if (propType.isStringLiteral()) return propType.value;
+    if (propType.isStringLiteral()) {
+      return propType.value;
+    }
 
     if (propType.isUnion()) {
       for (const member of propType.types) {
-        if (member.isStringLiteral()) return member.value;
+        if (member.isStringLiteral()) {
+          return member.value;
+        }
       }
     }
 
