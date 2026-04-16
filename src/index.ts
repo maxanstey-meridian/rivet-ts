@@ -62,12 +62,15 @@ export {
 export { RivetContractLoweringResult } from "./domain/rivet-contract-lowering-result.js";
 export { HandlerGroup } from "./domain/handler-group.js";
 export { HandlerDiscoveryResult } from "./domain/handler-discovery-result.js";
+export { BuildLocalConfig, type BuildLocalTarget } from "./domain/build-local-config.js";
+export { BuildLocalResult } from "./domain/build-local-result.js";
 export { TsContractFrontend } from "./application/ports/ts-contract-frontend.js";
 export { RivetContractLowerer } from "./application/ports/rivet-contract-lowerer.js";
 export { HandlerEntrypointFrontend } from "./application/ports/handler-entrypoint-frontend.js";
 export { ExtractTsContracts } from "./application/use-cases/extract-ts-contracts.js";
 export { DiscoverHandlerEntrypoints } from "./application/use-cases/discover-handler-entrypoints.js";
 export { LowerContractBundleToRivetContract } from "./application/use-cases/lower-contract-bundle-to-rivet-contract.js";
+export { BuildLocalPackage } from "./application/use-cases/build-local-package.js";
 export { TypeScriptContractFrontend } from "./infrastructure/typescript/typescript-contract-frontend.js";
 export { TypeScriptRivetContractLowerer } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 export { TypeScriptHandlerEntrypointFrontend } from "./infrastructure/typescript/typescript-handler-entrypoint-frontend.js";
