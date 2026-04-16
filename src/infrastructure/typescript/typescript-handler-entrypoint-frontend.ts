@@ -8,6 +8,8 @@ import {
   resolveTypeScriptProject,
 } from "./typescript-project.js";
 
+const auxiliaryLocalPackageExports = new Set(["disposeLocalApi", "resetLocalApi"]);
+
 export class TypeScriptHandlerEntrypointFrontend extends HandlerEntrypointFrontend {
   public constructor(private readonly tsconfigPath?: string) {
     super();
@@ -224,6 +226,10 @@ export class TypeScriptHandlerEntrypointFrontend extends HandlerEntrypointFronte
     node: ts.Node,
     diagnostics: ExtractionDiagnostic[],
   ): void {
+    if (auxiliaryLocalPackageExports.has(exportName)) {
+      return;
+    }
+
     diagnostics.push(
       new ExtractionDiagnostic({
         severity: "warning",

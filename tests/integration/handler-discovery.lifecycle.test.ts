@@ -94,4 +94,35 @@ describe("Handler discovery lifecycle", () => {
       await fs.rm(tempDir, { recursive: true });
     }
   });
+
+  it("silently ignores reserved local-package lifecycle exports", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-"));
+    try {
+      const entryPath = path.join(tempDir, "index.ts");
+      await fs.writeFile(
+        entryPath,
+        [
+          "export const disposeLocalApi = async (): Promise<void> => {};",
+          "export const resetLocalApi = async (): Promise<void> => {};",
+          "",
+        ].join("\n"),
+      );
+
+      const result = await frontend.discover(entryPath);
+
+      expect(result.handlerGroups).toHaveLength(0);
+      expect(result.diagnostics).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: "NOT_HANDLER_GROUP" }),
+        ]),
+      );
+      expect(result.diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: "NO_HANDLER_GROUPS" }),
+        ]),
+      );
+    } finally {
+      await fs.rm(tempDir, { recursive: true });
+    }
+  });
 });
