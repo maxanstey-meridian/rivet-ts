@@ -87,6 +87,24 @@ describe("BuildLocalPackage lifecycle", () => {
     expect(result.diagnostics).toHaveLength(0);
   });
 
+  it("propagates diagnostics from extraction errors and skips failed contracts", async () => {
+    const config = makeConfig(
+      getFixturePath("handler-entrypoint-extraction-error/index.ts"),
+    );
+    const result = await useCase.execute(config);
+
+    // Discovery should succeed (finds the handler group)
+    expect(result.handlerGroups).toHaveLength(1);
+    expect(result.handlerGroups[0].contractName).toBe("BrokenContract");
+
+    // Extraction should fail (broken import) — contract document should be absent
+    expect(result.contractDocuments.size).toBe(0);
+
+    // Diagnostics from extraction should propagate
+    expect(result.diagnostics.length).toBeGreaterThan(0);
+    expect(result.hasErrors).toBe(true);
+  });
+
   it("propagates diagnostics from discovery errors", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-build-"));
     try {
