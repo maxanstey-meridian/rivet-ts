@@ -11,7 +11,13 @@ import { TypeScriptHandlerEntrypointFrontend } from "../../src/infrastructure/ty
 import { TypeScriptContractFrontend } from "../../src/infrastructure/typescript/typescript-contract-frontend.js";
 import { TypeScriptRivetContractLowerer } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { LocalClientCodegen, deriveClientName } from "../../src/infrastructure/codegen/local-client-codegen.js";
-import type { RivetContractDocument } from "../../src/domain/rivet-contract.js";
+import {
+  RivetContractDocument,
+  RivetEndpointDefinition,
+  RivetEndpointParam,
+  RivetResponseType,
+  RivetTypeDefinition,
+} from "../../src/domain/rivet-contract.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -197,6 +203,77 @@ describe("LocalClientCodegen", () => {
 
     // ListPets has default successStatus 200
     expect(result.dtsSource).toContain("readonly status: 200");
+  });
+
+  it("generates DTS with error variant union in unwrap:false overload", async () => {
+    const errorDoc = new RivetContractDocument({
+      types: [
+        new RivetTypeDefinition({
+          name: "DivideRequest",
+          properties: [
+            { name: "dividend", type: { kind: "primitive", type: "number" }, optional: false },
+            { name: "divisor", type: { kind: "primitive", type: "number" }, optional: false },
+          ],
+        }),
+        new RivetTypeDefinition({
+          name: "DivideResponse",
+          properties: [
+            { name: "quotient", type: { kind: "primitive", type: "number" }, optional: false },
+          ],
+        }),
+        new RivetTypeDefinition({
+          name: "ValidationError",
+          properties: [
+            { name: "message", type: { kind: "primitive", type: "string" }, optional: false },
+          ],
+        }),
+      ],
+      endpoints: [
+        new RivetEndpointDefinition({
+          name: "divide",
+          httpMethod: "POST",
+          routeTemplate: "/api/math/divide",
+          controllerName: "math",
+          params: [
+            new RivetEndpointParam({
+              name: "body",
+              type: { kind: "ref", name: "DivideRequest" },
+              source: "body",
+            }),
+          ],
+          returnType: { kind: "ref", name: "DivideResponse" },
+          responses: [
+            new RivetResponseType({ statusCode: 200, dataType: { kind: "ref", name: "DivideResponse" } }),
+            new RivetResponseType({ statusCode: 422, dataType: { kind: "ref", name: "ValidationError" } }),
+          ],
+        }),
+      ],
+    });
+
+    const errorGroup = new HandlerGroup({
+      exportName: "mathHandlers",
+      contractName: "MathContract",
+      contractSourcePath: "/fake/math-contract.ts",
+      handlerSourcePath: "/fake/math.handlers.ts",
+      endpointNames: ["Divide"],
+    });
+
+    const result = codegen.generate(errorGroup, errorDoc);
+
+    // unwrap:false overload should include both success and error variants
+    expect(result.dtsSource).toContain("readonly status: 200; readonly data: DivideResponse");
+    expect(result.dtsSource).toContain("readonly status: 422; readonly data: ValidationError");
+
+    // The union should join them with |
+    expect(result.dtsSource).toMatch(
+      /Promise<\{ readonly status: 200; readonly data: DivideResponse \} \| \{ readonly status: 422; readonly data: ValidationError \}>/,
+    );
+
+    // Default overload should still return just the success type
+    expect(result.dtsSource).toMatch(/Divide\(input: DivideRequest\): Promise<DivideResponse>;/);
+
+    // Verify it type-checks
+    await tscValidate(result.dtsSource, "error-variants");
   });
 
   it("throws when handler group endpoint is not found in contract document", async () => {
