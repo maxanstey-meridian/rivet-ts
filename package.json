@@ -12,7 +12,8 @@
   ],
   "license": "MIT",
   "bin": {
-    "rivet-reflect-ts": "./dist/interfaces/cli/main.js"
+    "rivet-reflect-ts": "./dist/interfaces/cli/main.js",
+    "rivet-ts": "./dist/interfaces/cli/main.js"
   },
   "files": [
     "dist",

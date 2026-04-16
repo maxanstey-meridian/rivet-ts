@@ -7,6 +7,9 @@ import { BuildLocalPackage } from "../../src/application/use-cases/build-local-p
 import { TypeScriptHandlerEntrypointFrontend } from "../../src/infrastructure/typescript/typescript-handler-entrypoint-frontend.js";
 import { TypeScriptContractFrontend } from "../../src/infrastructure/typescript/typescript-contract-frontend.js";
 import { TypeScriptRivetContractLowerer } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
+import { LocalClientCodegen } from "../../src/infrastructure/codegen/local-client-codegen.js";
+import { EsbuildImplementationBundler } from "../../src/infrastructure/bundler/esbuild-implementation-bundler.js";
+import { LocalPackageEmitter } from "../../src/infrastructure/package/local-package-emitter.js";
 
 const getFixturePath = (relativePath: string): string => {
   const currentFilePath = fileURLToPath(import.meta.url);
@@ -17,14 +20,34 @@ describe("BuildLocalPackage lifecycle", () => {
   const handlerFrontend = new TypeScriptHandlerEntrypointFrontend();
   const contractFrontend = new TypeScriptContractFrontend();
   const lowerer = new TypeScriptRivetContractLowerer();
-  const useCase = new BuildLocalPackage(handlerFrontend, contractFrontend, lowerer);
+  const codegen = new LocalClientCodegen();
+  const bundler = new EsbuildImplementationBundler();
+  const emitter = new LocalPackageEmitter();
+  const useCase = new BuildLocalPackage(
+    handlerFrontend,
+    contractFrontend,
+    lowerer,
+    codegen,
+    bundler,
+    emitter,
+  );
+
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-build-local-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
 
   const makeConfig = (entryPath: string): BuildLocalConfig =>
     new BuildLocalConfig({
       entryPath,
       target: "browser",
       packageName: "@test/pkg",
-      outDir: "/tmp/test-out",
+      outDir: path.join(tmpDir, "out"),
     });
 
   it("produces contract documents for both contracts in the fixture", async () => {

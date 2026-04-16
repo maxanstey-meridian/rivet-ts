@@ -11,6 +11,8 @@ import { TypeScriptHandlerEntrypointFrontend } from "../../src/infrastructure/ty
 import { TypeScriptContractFrontend } from "../../src/infrastructure/typescript/typescript-contract-frontend.js";
 import { TypeScriptRivetContractLowerer } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { LocalClientCodegen, deriveClientName } from "../../src/infrastructure/codegen/local-client-codegen.js";
+import { EsbuildImplementationBundler } from "../../src/infrastructure/bundler/esbuild-implementation-bundler.js";
+import { LocalPackageEmitter } from "../../src/infrastructure/package/local-package-emitter.js";
 import {
   RivetContractDocument,
   RivetEndpointDefinition,
@@ -68,13 +70,24 @@ const getPetContractDocument = async (): Promise<{
   const handlerFrontend = new TypeScriptHandlerEntrypointFrontend();
   const contractFrontend = new TypeScriptContractFrontend();
   const lowerer = new TypeScriptRivetContractLowerer();
-  const useCase = new BuildLocalPackage(handlerFrontend, contractFrontend, lowerer);
+  const codegen = new LocalClientCodegen();
+  const bundler = new EsbuildImplementationBundler();
+  const emitter = new LocalPackageEmitter();
+  const useCase = new BuildLocalPackage(
+    handlerFrontend,
+    contractFrontend,
+    lowerer,
+    codegen,
+    bundler,
+    emitter,
+  );
 
+  const tmpOutDir = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-codegen-build-"));
   const config = new BuildLocalConfig({
     entryPath: getFixturePath("handler-entrypoint/index.ts"),
     target: "browser",
     packageName: "@test/pkg",
-    outDir: "/tmp/test-out",
+    outDir: path.join(tmpOutDir, "out"),
   });
   const result = await useCase.execute(config);
   expect(result.hasErrors).toBe(false);
