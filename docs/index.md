@@ -16,8 +16,8 @@ features:
     title: Contract first
     details: Write one TypeScript contract that captures routes, inputs, outputs, status codes, errors, examples, and security metadata.
   - icon: "⚡"
-    title: Scaffold the API package
-    details: Generate a runnable Hono API package with plain async handlers and local transport wiring.
+    title: Scaffold the full app
+    details: Generate a runnable root app with `ui/`, `packages/api`, plain async handlers, and local transport wiring already in place.
   - icon: "📦"
     title: Plugin-managed local artifacts
     details: Use the Vite plugin to keep the reflected contract, generated client, and local-rivet glue updated under the API package as contracts change during dev and build.
@@ -31,8 +31,8 @@ features:
 ## Overview
 
 1. write a TypeScript contract
-2. scaffold the API package once
-3. point the UI at `@api`
+2. scaffold the full app once
+3. open `ui/src/main.ts`
 4. run Vite
 5. promote to a real server when the browser runtime stops being enough
 
@@ -61,34 +61,15 @@ export interface UsersContract extends Contract<"UsersContract"> {
 }
 ```
 
-Scaffold the API package once:
+Scaffold the app:
 
 ```bash
-pnpm exec rivet-ts scaffold-mock --entry ./packages/api/contracts.ts --out ./packages/api
+pnpm exec rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp
+cd ./myapp
+pnpm install
 ```
 
-Add the Vite plugin:
-
-```ts
-import { defineConfig } from "vite";
-import { rivetTs } from "rivet-ts/vite";
-
-export default defineConfig({
-  root: "./ui",
-  plugins: [
-    rivetTs({
-      contract: "./packages/api/contracts.ts",
-      apiRoot: "./packages/api",
-      app: "./packages/api/src/api.ts",
-      rivet: {
-        version: "0.33.0",
-      },
-    }),
-  ],
-});
-```
-
-Use the generated client from the UI:
+Then use the generated client from `ui/src/main.ts`:
 
 ```ts
 import { users } from "@api/generated/rivet/client/index.js";
@@ -100,11 +81,12 @@ const user = await users.getUser("usr_123");
 console.log(user.name);
 ```
 
-The plugin keeps the local client/runtime artifacts updated under `packages/api`. During `vite dev`, contract changes regenerate the client/runtime artifacts and Vite reloads the UI against the updated local surface.
+The scaffold already includes the Vite plugin. During `vite dev`, contract changes regenerate the client/runtime artifacts under `packages/api` and Vite reloads the UI against the updated local surface.
 
 ## Pages
 
 - [Getting Started](/getting-started)
+- [Hono](/guides/hono)
 - [Vite Plugin](/guides/vite-plugin)
 - [Sample App](/guides/sample-app)
 - [Zero to API in 5 Minutes](/guides/tutorial)

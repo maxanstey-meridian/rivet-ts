@@ -1,1 +1,1 @@
-export type { MembersContract } from "./contract-source/contracts.js";
+export type { MembersContract } from "../contracts.js";

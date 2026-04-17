@@ -9,15 +9,13 @@ const render = async (): Promise<void> => {
     return;
   }
 
-  const list = await members.list();
-  const created = await members.create({ email: "ada@example.com" });
+  const result = await members.list();
 
   output.textContent = [
     "members.list()",
-    JSON.stringify(list, null, 2),
+    JSON.stringify(result, null, 2),
     "",
-    "members.create({ email: 'ada@example.com' })",
-    JSON.stringify(created, null, 2),
+    "Open ui/src/main.ts and keep consuming @api/generated/rivet/client.",
   ].join("\n");
 };
 

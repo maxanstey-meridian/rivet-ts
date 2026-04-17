@@ -2,6 +2,8 @@
 
 The Vite plugin is the primary browser-local workflow.
 
+`scaffold-mock` now emits the root Vite config for this by default. This page describes the generated integration and the lower-level plugin behavior.
+
 ## What it does
 
 `rivet-ts/vite` manages generated local artifacts for a scaffolded API package.
@@ -23,7 +25,7 @@ the plugin:
 It does not:
 
 - scaffold handlers
-- create new routes in `src/api.ts`
+- create new routes in `packages/api/src/api.ts`
 - create handler files for new endpoints
 - guarantee the authored API implementation matches the contract
 
@@ -47,7 +49,7 @@ myapp/
     └── src/main.ts
 ```
 
-`packages/api` is scaffolded once. `ui/` is the Vite app root.
+`packages/api` is scaffolded once. `ui/` is the Vite app root. The default scaffold already emits this shape.
 
 ## Usage
 

@@ -7,13 +7,6 @@ import { RivetContractDocument } from "../../domain/rivet-contract.js";
 import { ScaffoldMockConfig } from "../../domain/scaffold-mock-config.js";
 import { ScaffoldMockResult } from "../../domain/scaffold-mock-result.js";
 
-const toKebabCase = (value: string): string =>
-  value
-    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
-    .replace(/[^a-zA-Z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .toLowerCase();
-
 const EMPTY_DOCUMENT = new RivetContractDocument({});
 
 export class ScaffoldMockProject {
@@ -54,7 +47,7 @@ export class ScaffoldMockProject {
     }
 
     const projectName = config.projectName ?? path.basename(config.outDir);
-    const contractJsonFileName = `${toKebabCase(projectName) || "contract"}.contract.json`;
+    const contractJsonFileName = "api.contract.json";
 
     await this.emitter.emit({
       outDir: config.outDir,

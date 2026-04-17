@@ -75,7 +75,7 @@ Legacy singular example keys also still exist:
 
 The current local runtime shape is:
 
-- Hono transport via `rivet-ts/hono`
+- Hono transport via [`rivet-ts/hono`](/guides/hono)
 - generated Rivet client
 - in-process dispatch via `configureLocalRivet()`
 - later Bun or other Hono-compatible server entry

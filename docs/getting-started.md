@@ -1,10 +1,10 @@
 # Getting Started
 
 1. install `rivet-ts`
-2. create `packages/api` and `ui`
-3. write a TypeScript contract in `packages/api`
-4. scaffold the API package once
-5. add the Vite plugin and import from `@api`
+2. write a TypeScript contract
+3. scaffold the full app
+4. run `pnpm install`
+5. open `ui/src/main.ts` and start consuming the generated client
 
 ## 1. Install
 
@@ -12,9 +12,11 @@
 pnpm add -D github:maxanstey-meridian/rivet-ts#v0.8
 ```
 
-The browser-local flow does not require a separate `dotnet` install. The Vite plugin downloads a pinned Rivet binary automatically when it needs one.
+The browser-local flow does not require a separate `dotnet` install. The scaffolded Vite plugin downloads a pinned Rivet binary automatically when it needs one.
 
-## 2. Write a contract in `packages/api`
+## 2. Write a contract
+
+Create `contracts.ts`:
 
 ```ts
 import type { Contract, Endpoint } from "rivet-ts";
@@ -55,64 +57,47 @@ export interface MembersContract extends Contract<"MembersContract"> {
 }
 ```
 
-## 3. Scaffold the API package once
+## 3. Scaffold the full app
 
 ```bash
-pnpm exec rivet-ts scaffold-mock --entry ./packages/api/contracts.ts --out ./packages/api
-```
-
-This creates the API package shape:
-
-```text
-packages/api/
-├── contracts.ts
-├── src/
-│   ├── api.ts
-│   ├── contract.ts
-│   ├── handlers/
-│   └── local-rivet.ts
-├── package.json
-└── generated/
-```
-
-## 4. Add the Vite plugin
-
-At the app root:
-
-```bash
+pnpm exec rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp
+cd ./myapp
 pnpm install
 ```
 
-```ts
-import { defineConfig } from "vite";
-import { rivetTs } from "rivet-ts/vite";
+This creates the default browser-local app shape:
 
-export default defineConfig({
-  root: "./ui",
-  plugins: [
-    rivetTs({
-      contract: "./packages/api/contracts.ts",
-      apiRoot: "./packages/api",
-      app: "./packages/api/src/api.ts",
-      rivet: {
-        version: "0.33.0",
-      },
-    }),
-  ],
-});
+```text
+myapp/
+├── package.json
+├── vite.config.ts
+├── packages/
+│   └── api/
+│       ├── contracts.ts
+│       ├── generated/
+│       ├── package.json
+│       └── src/
+│           ├── api.ts
+│           ├── contract.ts
+│           ├── handlers/
+│           └── local-rivet.ts
+└── ui/
+    ├── index.html
+    └── src/main.ts
 ```
 
-The plugin:
+The scaffold already includes:
 
-- reflects the contract
-- generates `packages/api/generated/rivet/*`
-- generates `packages/api/generated/*.contract.json`
-- generates `packages/api/src/local-rivet.ts`
-- aliases `@api` to `packages/api`
+- the API package under `packages/api`
+- the root Vite config with `rivet-ts/vite`
+- the `ui/` root
+- an initial `ui/src/main.ts` that configures local transport and consumes the generated client when possible
 
-During `vite dev`, contract changes regenerate those artifacts and reload the UI with the updated local client surface.
+## 4. Start consuming from the UI
 
-## 5. Use `@api` from the UI
+Open `ui/src/main.ts`.
+
+Typical usage looks like this:
 
 ```ts
 import { members } from "@api/generated/rivet/client/index.js";
@@ -124,13 +109,19 @@ const all = await members.list();
 console.log(all);
 ```
 
-Run Vite:
+During `vite dev`, contract changes regenerate:
+
+- `packages/api/generated/*.contract.json`
+- `packages/api/generated/rivet/*`
+- `packages/api/src/local-rivet.ts`
+
+Vite then reloads the UI against the updated client surface.
+
+## 5. Run the app
 
 ```bash
 pnpm run dev
 ```
-
-The UI imports `@api`. The plugin keeps the generated local client/runtime artifacts under `packages/api` up to date.
 
 ## Manual artifact generation
 

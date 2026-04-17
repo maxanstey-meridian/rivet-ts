@@ -61,37 +61,39 @@ export interface MembersContract extends Contract<"MembersContract"> {
 pnpm exec rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp
 cd ./myapp
 pnpm install
-pnpm run generate
 pnpm run dev
 ```
 
 The scaffold gives you:
 
-- a Hono app wired from your contract
+- a root Vite app with `ui/` ready to run
+- a Hono API package under `packages/api`
 - plain async handlers, one per endpoint
 - `configureLocalRivet()` for in-process local transport
-- Vite boilerplate so the app runs immediately in the browser
+- the Vite plugin already configured
 - copied contract source so the scaffold is self-contained
 
 For the `MembersContract` above, the current scaffold emits:
 
 ```text
 myapp/
-├── generated/
-├── index.html
 ├── package.json
-├── src/
-│   ├── api.ts
-│   ├── contract-source/
-│   │   └── contracts.ts
-│   ├── contract.ts
-│   ├── handlers/
-│   │   ├── create.ts
-│   │   └── list.ts
-│   ├── local-rivet.ts
-│   └── main.ts
-├── tsconfig.json
-└── vite.config.ts
+├── vite.config.ts
+├── packages/
+│   └── api/
+│       ├── contracts.ts
+│       ├── generated/
+│       ├── package.json
+│       └── src/
+│           ├── api.ts
+│           ├── contract.ts
+│           ├── handlers/
+│           │   ├── create.ts
+│           │   └── list.ts
+│           └── local-rivet.ts
+└── ui/
+    ├── index.html
+    └── src/main.ts
 ```
 
 Example emitted handler:
@@ -114,22 +116,18 @@ export const list: RivetHandler<MembersContract, "List"> = async () => {
 The intended path is:
 
 1. write the contract
-2. scaffold a local Hono app
-3. replace stub handlers with real logic
-4. add a real server entry later if browser-runtime limits become a problem
+2. scaffold the whole local app
+3. open `ui/src/main.ts` and start consuming `@api/generated/rivet/client`
+4. replace stub handlers with real logic as needed
+5. add a real server entry later if browser-runtime limits become a problem
 
 ## Reference app
 
 This repository includes `samples/myapp` as the reference browser-local shape.
 
-It was created by:
+It was created by writing a TypeScript contract and running `scaffold-mock`.
 
-1. writing a TypeScript contract under `packages/api`
-2. scaffolding the API package with `scaffold-mock`
-3. adding the Vite plugin at the app root
-4. pointing `ui/` at `@api`
-
-That sample is the intended day-to-day structure after you follow the scaffold-plus-plugin workflow:
+That sample is the intended day-to-day structure after you follow the scaffold workflow:
 
 ```text
 myapp/
@@ -177,11 +175,11 @@ Downstream Rivet emits the same artifacts it emits for C# sources: TypeScript ty
 
 ## Local now, server later
 
-The scaffolded app starts in local mode:
+The scaffolded app starts in local mode. In `ui/src/main.ts`:
 
 ```ts
-import { members } from "./generated/rivet/client/index.js";
-import { configureLocalRivet } from "./local-rivet.js";
+import { members } from "@api/generated/rivet/client/index.js";
+import { configureLocalRivet } from "@api/src/local-rivet.js";
 
 configureLocalRivet();
 
@@ -199,7 +197,7 @@ With the Vite plugin in place, contract changes regenerate the local client/runt
 
 When you want a real server, the happy path is almost a literal lift-and-shift:
 
-1. keep the contract, handlers, and `src/api.ts` as-is
+1. keep the contract, handlers, and `packages/api/src/api.ts` as-is
 2. add a real server entry that exposes `app.fetch`
 3. deploy that Hono app somewhere real
 4. stop using `configureLocalRivet()`
@@ -208,7 +206,7 @@ When you want a real server, the happy path is almost a literal lift-and-shift:
 Example server entry:
 
 ```ts
-import { app } from "./src/api.js";
+import { app } from "./packages/api/src/api.js";
 
 // Expose the same Hono app over HTTP so it can use real server-side concerns
 // like databases, secrets, queues, and file storage without changing the
@@ -221,7 +219,7 @@ Bun.serve({
 Then point the generated client at the deployed API:
 
 ```ts
-import { configureRivet } from "./generated/rivet/rivet.js";
+import { configureRivet } from "@api/generated/rivet/rivet.js";
 
 configureRivet({ baseUrl: "https://api.example.com" });
 ```
@@ -326,7 +324,7 @@ export const createMember: RivetHandler<MembersContract, "Create"> = async ({ bo
 };
 ```
 
-To mount handlers onto Hono manually, use `rivet-ts/hono`.
+To mount handlers onto Hono manually, use [`rivet-ts/hono`](./docs/guides/hono.md).
 
 ## Endpoint options
 

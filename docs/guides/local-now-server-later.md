@@ -9,7 +9,7 @@ Server mode uses the same generated client against a deployed HTTP endpoint.
 The scaffold starts here:
 
 ```ts
-import { configureLocalRivet } from "./local-rivet.js";
+import { configureLocalRivet } from "@api/src/local-rivet.js";
 
 configureLocalRivet();
 ```
@@ -27,12 +27,12 @@ Keep:
 - the contract
 - the generated client
 - the handler signatures
-- `src/api.ts`
+- `packages/api/src/api.ts`
 
 Add a real server entry:
 
 ```ts
-import { app } from "./src/api.js";
+import { app } from "./packages/api/src/api.js";
 
 // Expose the same Hono app over HTTP so it can use real server-side concerns
 // like databases, secrets, queues, and file storage without changing the
@@ -45,7 +45,7 @@ Bun.serve({
 Then switch the client config:
 
 ```ts
-import { configureRivet } from "./generated/rivet/rivet.js";
+import { configureRivet } from "@api/generated/rivet/rivet.js";
 
 configureRivet({ baseUrl: "https://api.example.com" });
 ```

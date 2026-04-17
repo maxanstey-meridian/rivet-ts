@@ -34,10 +34,11 @@ That document is the bridge between:
 
 `rivet-ts scaffold-mock` uses the lowered contract to emit:
 
-- a Hono app
+- a root app shell with `ui/`
+- a Hono API package under `packages/api`
 - plain async handlers
 - local transport wiring through `configureLocalRivet()`
-- a minimal Vite shell
+- a root Vite config with the plugin preconfigured
 - copied contract source
 
 The handlers are plain TypeScript functions typed against the contract surface with `RivetHandler<...>`.

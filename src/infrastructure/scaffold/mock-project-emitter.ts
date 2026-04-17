@@ -21,6 +21,7 @@ type HandlerDescriptor = {
   readonly exportName: string;
   readonly pattern: string;
   readonly body: string;
+  readonly supportsDemoCall: boolean;
 };
 
 type PackageManifest = {
@@ -29,9 +30,16 @@ type PackageManifest = {
   readonly devDependencies?: Record<string, string>;
 };
 
+type DemoClientCall = {
+  readonly clientNamespace: string;
+  readonly methodName: string;
+  readonly label: string;
+};
+
 const DEFAULT_TYPESCRIPT_VERSION = "^6.0.2";
-const DEFAULT_VITE_VERSION = "^6.0.5";
+const DEFAULT_VITE_VERSION = "^6.4.2";
 const DEFAULT_RIVET_TS_DEPENDENCY = "github:maxanstey-meridian/rivet-ts#v0.8";
+const DEFAULT_RIVET_VERSION = "0.33.0";
 
 const toCamelCase = (value: string): string => {
   const kebab = toKebabCase(value);
@@ -71,6 +79,12 @@ const indent = (value: string, spaces: number): string => {
     .map((line) => `${prefix}${line}`)
     .join("\n");
 };
+
+const toRuntimeModulePath = (relativePath: string): string =>
+  relativePath
+    .replace(/\.tsx?$/u, ".js")
+    .replace(/\.mts$/u, ".mjs")
+    .replace(/\.cts$/u, ".cjs");
 
 const readPackageManifest = async (): Promise<PackageManifest> => {
   const manifestPath = new URL("../../../package.json", import.meta.url);
@@ -175,11 +189,36 @@ const buildHandlerDescriptors = (
         exportName,
         pattern,
         body,
+        supportsDemoCall: supportedSources.length === 0 && mock.result.kind === "value",
       });
     }
   }
 
   return descriptors;
+};
+
+const selectDemoClientCall = (
+  groups: readonly ContractGroup[],
+  handlers: readonly HandlerDescriptor[],
+): DemoClientCall | undefined => {
+  for (const group of groups) {
+    const supportedHandler = handlers.find(
+      (handler) => handler.contractName === group.contractName && handler.supportsDemoCall,
+    );
+
+    if (!supportedHandler) {
+      continue;
+    }
+
+    const clientNamespace = toCamelCase(group.controllerName);
+    return {
+      clientNamespace,
+      methodName: supportedHandler.runtimeEndpointName,
+      label: `${clientNamespace}.${supportedHandler.runtimeEndpointName}()`,
+    };
+  }
+
+  return undefined;
 };
 
 const emitHandlerSource = (descriptor: HandlerDescriptor): string => {
@@ -205,7 +244,7 @@ const emitContractSource = (
     .sort()
     .join(", ");
 
-  return `export type { ${exports} } from "./contract-source/${entryRelativePath.replace(/\.tsx?$/u, ".js").replace(/\.mts$/u, ".mjs").replace(/\.cts$/u, ".cjs")}";\n`;
+  return `export type { ${exports} } from "../${toRuntimeModulePath(entryRelativePath)}";\n`;
 };
 
 const emitApiSource = (
@@ -249,23 +288,53 @@ const emitApiSource = (
   return lines.join("\n");
 };
 
-const emitMainSource = (): string => [
-  'import { configureLocalRivet } from "./local-rivet.js";',
-  "",
-  "configureLocalRivet();",
-  "",
-  'const output = document.getElementById("output");',
-  "",
-  "if (output) {",
-  '  output.textContent = [',
-  '    "Local Rivet transport configured.",',
-  '    "Run pnpm run generate, then import your generated client from ../generated/rivet/client.",',
-  '  ].join("\\n");',
-  "}",
-  "",
-].join("\n");
+const emitUiMainSource = (demoCall: DemoClientCall | undefined): string => {
+  if (!demoCall) {
+    return [
+      'import { configureLocalRivet } from "@api/src/local-rivet.js";',
+      "",
+      "configureLocalRivet();",
+      "",
+      'const output = document.getElementById("output");',
+      "",
+      "if (output) {",
+      '  output.textContent = [',
+      '    "Local Rivet transport configured.",',
+      '    "Open ui/src/main.ts and start consuming @api/generated/rivet/client.",',
+      '  ].join("\\n");',
+      "}",
+      "",
+    ].join("\n");
+  }
 
-const emitIndexHtmlSource = (projectName: string): string => `<!DOCTYPE html>
+  return [
+    `import { ${demoCall.clientNamespace} } from "@api/generated/rivet/client/index.js";`,
+    'import { configureLocalRivet } from "@api/src/local-rivet.js";',
+    "",
+    "const render = async (): Promise<void> => {",
+    "  configureLocalRivet();",
+    "",
+    '  const output = document.getElementById("output");',
+    "  if (!output) {",
+    "    return;",
+    "  }",
+    "",
+    `  const result = await ${demoCall.label};`,
+    "",
+    '  output.textContent = [',
+    `    ${JSON.stringify(demoCall.label)},`,
+    '    JSON.stringify(result, null, 2),',
+    '    "",',
+    '    "Open ui/src/main.ts and keep consuming @api/generated/rivet/client.",',
+    '  ].join("\\n");',
+    "};",
+    "",
+    "void render();",
+    "",
+  ].join("\n");
+};
+
+const emitUiIndexHtmlSource = (projectName: string): string => `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -279,24 +348,34 @@ const emitIndexHtmlSource = (projectName: string): string => `<!DOCTYPE html>
 </head>
 <body>
   <h1>${projectName}</h1>
-  <p>Hono-backed Rivet mock scaffold. Local transport is configured with configureLocalRivet().</p>
+  <p>Hono-backed Rivet mock scaffold. Start consuming the generated client in ui/src/main.ts.</p>
   <pre id="output"></pre>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
 `;
 
-const emitViteConfigSource = (): string => [
+const emitRootViteConfigSource = (entryRelativePath: string): string => [
   'import { defineConfig } from "vite";',
+  'import { rivetTs } from "rivet-ts/vite";',
   "",
   "export default defineConfig({",
-  '  root: ".",',
-  "  server: { port: 3333 },",
+  '  root: "./ui",',
+  "  plugins: [",
+  "    rivetTs({",
+  `      contract: "./packages/api/${entryRelativePath}",`,
+  '      apiRoot: "./packages/api",',
+  '      app: "./packages/api/src/api.ts",',
+  "      rivet: {",
+  `        version: ${JSON.stringify(DEFAULT_RIVET_VERSION)},`,
+  "      },",
+  "    }),",
+  "  ],",
   "});",
   "",
 ].join("\n");
 
-const emitTsconfigSource = (): string => JSON.stringify(
+const emitApiTsconfigSource = (): string => JSON.stringify(
   {
     compilerOptions: {
       target: "ESNext",
@@ -308,17 +387,13 @@ const emitTsconfigSource = (): string => JSON.stringify(
       resolveJsonModule: true,
       lib: ["ESNext", "DOM"],
     },
-    include: ["src", "generated"],
+    include: ["./**/*.ts", "./**/*.tsx", "./**/*.mts", "./**/*.cts"],
   },
   null,
   2,
 ) + "\n";
 
-const emitPackageJsonSource = async (
-  projectName: string,
-  contractJsonFileName: string,
-  entryRelativePath: string,
-): Promise<string> => {
+const emitRootPackageJsonSource = async (projectName: string): Promise<string> => {
   const manifest = await readPackageManifest();
   const honoVersion = manifest.peerDependencies?.hono ?? "^4.0.0";
   const typescriptVersion = manifest.devDependencies?.typescript ?? DEFAULT_TYPESCRIPT_VERSION;
@@ -329,9 +404,38 @@ const emitPackageJsonSource = async (
       private: true,
       type: "module",
       scripts: {
-        generate: `pnpm exec rivet-reflect-ts --entry src/contract-source/${entryRelativePath} --out generated/${contractJsonFileName} && rivet --from generated/${contractJsonFileName} --output generated/rivet`,
         dev: "vite",
         build: "vite build",
+      },
+      dependencies: {
+        hono: honoVersion,
+        "rivet-ts": DEFAULT_RIVET_TS_DEPENDENCY,
+      },
+      devDependencies: {
+        typescript: typescriptVersion,
+        vite: DEFAULT_VITE_VERSION,
+      },
+    },
+    null,
+    2,
+  ) + "\n";
+};
+
+const emitApiPackageJsonSource = async (
+  contractJsonFileName: string,
+  entryRelativePath: string,
+): Promise<string> => {
+  const manifest = await readPackageManifest();
+  const honoVersion = manifest.peerDependencies?.hono ?? "^4.0.0";
+  const typescriptVersion = manifest.devDependencies?.typescript ?? DEFAULT_TYPESCRIPT_VERSION;
+
+  return JSON.stringify(
+    {
+      name: "api",
+      private: true,
+      type: "module",
+      scripts: {
+        generate: `pnpm exec rivet-reflect-ts --entry ${entryRelativePath} --out generated/${contractJsonFileName} && rivet --from generated/${contractJsonFileName} --output generated/rivet`,
       },
       dependencies: {
         hono: honoVersion,
@@ -360,43 +464,44 @@ export class FileSystemMockProjectEmitter extends MockProjectEmitter {
 
     const groups = buildContractGroups(config);
     const handlers = buildHandlerDescriptors(config, groups);
-    const contractSourceDir = path.join(config.outDir, "src", "contract-source");
-    const localRivetPath = path.join(config.outDir, "src", "local-rivet.ts");
+    const demoCall = selectDemoClientCall(groups, handlers);
+    const apiRoot = path.join(config.outDir, "packages", "api");
+    const apiSourceRoot = path.join(apiRoot, "src");
+    const uiRoot = path.join(config.outDir, "ui");
+    const localRivetPath = path.join(apiSourceRoot, "local-rivet.ts");
 
-    await fs.mkdir(path.join(config.outDir, "src", "handlers"), { recursive: true });
-    await fs.mkdir(contractSourceDir, { recursive: true });
-    await fs.mkdir(path.join(config.outDir, "generated"), { recursive: true });
+    await fs.mkdir(path.join(apiSourceRoot, "handlers"), { recursive: true });
+    await fs.mkdir(path.join(apiRoot, "generated"), { recursive: true });
+    await fs.mkdir(path.join(uiRoot, "src"), { recursive: true });
 
     await Promise.all([
-      fs.writeFile(path.join(config.outDir, "src", "contract.ts"), emitContractSource(groups, entryDependency.relativePath)),
-      fs.writeFile(path.join(config.outDir, "src", "api.ts"), emitApiSource(config.contractJsonFileName, groups, handlers)),
+      fs.writeFile(path.join(config.outDir, "package.json"), await emitRootPackageJsonSource(config.projectName)),
+      fs.writeFile(path.join(config.outDir, "vite.config.ts"), emitRootViteConfigSource(entryDependency.relativePath)),
+      fs.writeFile(path.join(uiRoot, "index.html"), emitUiIndexHtmlSource(config.projectName)),
+      fs.writeFile(path.join(uiRoot, "src", "main.ts"), emitUiMainSource(demoCall)),
+      fs.writeFile(path.join(apiRoot, "package.json"), await emitApiPackageJsonSource(config.contractJsonFileName, entryDependency.relativePath)),
+      fs.writeFile(path.join(apiRoot, "tsconfig.json"), emitApiTsconfigSource()),
+      fs.writeFile(path.join(apiSourceRoot, "contract.ts"), emitContractSource(groups, entryDependency.relativePath)),
+      fs.writeFile(path.join(apiSourceRoot, "api.ts"), emitApiSource(config.contractJsonFileName, groups, handlers)),
       fs.writeFile(
         localRivetPath,
         emitLocalRivetSource({
           filePath: localRivetPath,
-          appFilePath: path.join(config.outDir, "src", "api.ts"),
-          generatedRivetFilePath: path.join(config.outDir, "generated", "rivet", "rivet.ts"),
+          appFilePath: path.join(apiSourceRoot, "api.ts"),
+          generatedRivetFilePath: path.join(apiRoot, "generated", "rivet", "rivet.ts"),
         }),
-      ),
-      fs.writeFile(path.join(config.outDir, "src", "main.ts"), emitMainSource()),
-      fs.writeFile(path.join(config.outDir, "index.html"), emitIndexHtmlSource(config.projectName)),
-      fs.writeFile(path.join(config.outDir, "vite.config.ts"), emitViteConfigSource()),
-      fs.writeFile(path.join(config.outDir, "tsconfig.json"), emitTsconfigSource()),
-      fs.writeFile(
-        path.join(config.outDir, "package.json"),
-        await emitPackageJsonSource(config.projectName, config.contractJsonFileName, entryDependency.relativePath),
       ),
     ]);
 
     await Promise.all([
       ...handlers.map((handler) =>
         fs.writeFile(
-          path.join(config.outDir, "src", "handlers", `${handler.fileBaseName}.ts`),
+          path.join(apiSourceRoot, "handlers", `${handler.fileBaseName}.ts`),
           emitHandlerSource(handler),
         )
       ),
       ...sourceDependencies.map(async (dependency) => {
-        const targetPath = path.join(contractSourceDir, dependency.relativePath);
+        const targetPath = path.join(apiRoot, dependency.relativePath);
         await fs.mkdir(path.dirname(targetPath), { recursive: true });
         const content = await fs.readFile(dependency.absolutePath, "utf8");
         await fs.writeFile(targetPath, content);

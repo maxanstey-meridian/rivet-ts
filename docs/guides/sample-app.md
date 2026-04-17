@@ -4,10 +4,9 @@
 
 It was produced by:
 
-1. writing a TypeScript contract in `packages/api/contracts.ts`
-2. scaffolding `packages/api` with `rivet-ts scaffold-mock`
-3. adding the Vite plugin at the app root
-4. pointing the UI at `@api`
+1. writing a TypeScript contract
+2. running `rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp`
+3. opening `ui/src/main.ts` and continuing from there
 
 ## Structure
 
@@ -32,11 +31,15 @@ samples/myapp/
 
 ## What is scaffolded once
 
+- root `package.json`
+- root `vite.config.ts`
+- `ui/index.html`
+- `ui/src/main.ts`
 - `packages/api/src/api.ts`
 - `packages/api/src/handlers/*`
 - `packages/api/src/contract.ts`
 - `packages/api/package.json`
-- the initial `ui`-facing local app shape
+- copied contract source under `packages/api`
 
 ## What the Vite plugin keeps generated
 
@@ -49,6 +52,7 @@ During `vite dev`, contract changes regenerate those artifacts and Vite reloads 
 ## What stays authored
 
 - `packages/api/contracts.ts`
+- any copied sibling contract source files under `packages/api`
 - `packages/api/src/handlers/*`
 - route registration in `packages/api/src/api.ts`
 - `ui/src/main.ts`

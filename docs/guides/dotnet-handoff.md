@@ -11,8 +11,8 @@ For the frontend:
 - your client call sites do not need a new abstraction
 
 ```ts
-import { configureRivet } from "./generated/rivet/rivet.js";
-import { users } from "./generated/rivet/client/index.js";
+import { configureRivet } from "@api/generated/rivet/rivet.js";
+import { users } from "@api/generated/rivet/client/index.js";
 
 configureRivet({ baseUrl: "https://api.example.com" });
 
@@ -41,8 +41,8 @@ That is part of main Rivet:
 
 ## Practical handoff model
 
-1. start with a TS contract and local Hono scaffold
-2. generate the client and OpenAPI downstream
+1. start with a TS contract and scaffold the local app
+2. use the generated client from the scaffolded UI
 3. stabilize the frontend against that client
 4. when `.NET` ownership becomes necessary, re-express the contract in main Rivet and implement the real server there
 5. keep the frontend client usage stable and change the URL

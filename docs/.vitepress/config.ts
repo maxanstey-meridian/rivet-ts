@@ -23,6 +23,7 @@ export default defineConfig({
       {
         text: "Guides",
         items: [
+          { text: "Hono", link: "/guides/hono" },
           { text: "Vite Plugin", link: "/guides/vite-plugin" },
           { text: "Sample App", link: "/guides/sample-app" },
           { text: "Zero to API in 5 Minutes", link: "/guides/tutorial" },

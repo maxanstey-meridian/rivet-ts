@@ -16,22 +16,24 @@ describe("vite plugin lifecycle", () => {
     const projectRoot = getProjectRoot();
     const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-vite-plugin-"));
     const sampleRoot = path.join(tempDirectory, "myapp");
-    const apiRoot = path.join(sampleRoot, "packages", "api");
-    const uiRoot = path.join(sampleRoot, "ui");
     const nodeModulesDirectory = path.join(sampleRoot, "node_modules");
+    const sourceDirectory = path.join(tempDirectory, "source");
+    const sourceNodeModulesDirectory = path.join(sourceDirectory, "node_modules");
 
-    await fs.mkdir(path.join(apiRoot), { recursive: true });
-    await fs.mkdir(path.join(uiRoot, "src"), { recursive: true });
+    await fs.mkdir(sourceDirectory, { recursive: true });
     await fs.mkdir(nodeModulesDirectory, { recursive: true });
+    await fs.mkdir(sourceNodeModulesDirectory, { recursive: true });
     await fs.symlink(projectRoot, path.join(nodeModulesDirectory, "rivet-ts"), "dir");
+    await fs.symlink(projectRoot, path.join(sourceNodeModulesDirectory, "rivet-ts"), "dir");
     await fs.symlink(
       path.join(projectRoot, "node_modules", "hono"),
       path.join(nodeModulesDirectory, "hono"),
       "dir",
     );
+    await fs.writeFile(path.join(sourceDirectory, "package.json"), '{ "type": "module" }\n');
 
     await fs.writeFile(
-      path.join(apiRoot, "contracts.ts"),
+      path.join(sourceDirectory, "contracts.ts"),
       [
         'import type { Contract, Endpoint } from "rivet-ts";',
         "",
@@ -66,47 +68,13 @@ describe("vite plugin lifecycle", () => {
     const scaffoldExitCode = await runCli([
       "scaffold-mock",
       "--entry",
-      path.join(apiRoot, "contracts.ts"),
+      path.join(sourceDirectory, "contracts.ts"),
       "--out",
-      apiRoot,
+      sampleRoot,
     ]);
 
     expect(scaffoldExitCode).toBe(0);
-
-    await fs.writeFile(
-      path.join(uiRoot, "index.html"),
-      [
-        "<!doctype html>",
-        '<html lang="en">',
-        "  <body>",
-        '    <div id="app"></div>',
-        '    <script type="module" src="/src/main.ts"></script>',
-        "  </body>",
-        "</html>",
-        "",
-      ].join("\n"),
-    );
-
-    await fs.writeFile(
-      path.join(uiRoot, "src", "main.ts"),
-      [
-        'import { members } from "@api/generated/rivet/client/index.js";',
-        'import { configureLocalRivet } from "@api/src/local-rivet.js";',
-        "",
-        "const run = async (): Promise<void> => {",
-        "  configureLocalRivet();",
-        '  const output = document.getElementById("app");',
-        "  if (!output) {",
-        "    return;",
-        "  }",
-        "  const list = await members.list();",
-        '  output.textContent = JSON.stringify(list);',
-        "};",
-        "",
-        "void run();",
-        "",
-      ].join("\n"),
-    );
+    const apiRoot = path.join(sampleRoot, "packages", "api");
 
     const fakeRivetBinaryPath = path.join(sampleRoot, "fake-rivet.mjs");
     await fs.writeFile(
@@ -180,7 +148,10 @@ describe("vite plugin lifecycle", () => {
     await expect(fs.stat(path.join(apiRoot, "generated", "rivet", "client", "index.ts"))).resolves.toBeTruthy();
     await expect(fs.stat(path.join(sampleRoot, "dist", "index.html"))).resolves.toBeTruthy();
 
+    const uiMainSource = await fs.readFile(path.join(sampleRoot, "ui", "src", "main.ts"), "utf8");
     const localRivetSource = await fs.readFile(path.join(apiRoot, "src", "local-rivet.ts"), "utf8");
+    expect(uiMainSource).toContain('import { members } from "@api/generated/rivet/client/index.js";');
+    expect(uiMainSource).toContain("members.list()");
     expect(localRivetSource).toContain("app.request");
   });
 });

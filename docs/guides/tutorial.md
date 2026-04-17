@@ -3,9 +3,9 @@
 Build a contract-first local app from scratch:
 
 1. define a TypeScript contract
-2. scaffold a Hono app around it
-3. generate the separate client
-4. call that client locally
+2. scaffold the full app around it
+3. open the generated UI entrypoint
+4. call the generated client locally
 
 ## 1. Create a contract
 
@@ -68,29 +68,30 @@ export interface TodoContract extends Contract<"TodoContract"> {
 pnpm exec rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp
 cd ./myapp
 pnpm install
-pnpm run generate
 ```
 
 The scaffold emits this shape:
 
 ```text
 myapp/
-├── generated/
-├── index.html
 ├── package.json
-├── src/
-│   ├── api.ts
-│   ├── contract-source/
-│   │   └── contracts.ts
-│   ├── contract.ts
-│   ├── handlers/
-│   │   ├── create-todo.ts
-│   │   ├── get-todo.ts
-│   │   └── list-todos.ts
-│   ├── local-rivet.ts
-│   └── main.ts
-├── tsconfig.json
-└── vite.config.ts
+├── vite.config.ts
+├── packages/
+│   └── api/
+│       ├── contracts.ts
+│       ├── generated/
+│       ├── package.json
+│       └── src/
+│           ├── api.ts
+│           ├── contract.ts
+│           ├── handlers/
+│           │   ├── create-todo.ts
+│           │   ├── get-todo.ts
+│           │   └── list-todos.ts
+│           └── local-rivet.ts
+└── ui/
+    ├── index.html
+    └── src/main.ts
 ```
 
 ## 3. Inspect the generated handler shape
@@ -112,9 +113,40 @@ export const getTodo: RivetHandler<TodoContract, "GetTodo"> = async ({ params })
 
 Replace those stubs with application logic as needed.
 
-## 4. See how local transport is wired
+## 4. Open the generated UI entrypoint
 
-Generated `src/local-rivet.ts`:
+Generated `ui/src/main.ts`:
+
+```ts
+import { todo } from "@api/generated/rivet/client/index.js";
+import { configureLocalRivet } from "@api/src/local-rivet.js";
+
+const render = async (): Promise<void> => {
+  configureLocalRivet();
+
+  const output = document.getElementById("output");
+  if (!output) {
+    return;
+  }
+
+  const result = await todo.listTodos();
+
+  output.textContent = [
+    "todo.listTodos()",
+    JSON.stringify(result, null, 2),
+    "",
+    "Open ui/src/main.ts and keep consuming @api/generated/rivet/client.",
+  ].join("\n");
+};
+
+void render();
+```
+
+This is the place to start consuming the API from the frontend.
+
+## 5. See how local transport is wired
+
+Generated `packages/api/src/local-rivet.ts`:
 
 ```ts
 import { app } from "./api.js";
@@ -134,26 +166,6 @@ export const configureLocalRivet = (config: LocalRivetConfig = {}): void => {
 ```
 
 The UI does not call `app.request(...)` directly. It calls `configureLocalRivet()` once and then uses the generated Rivet client.
-
-## 5. Call the generated client
-
-```ts
-import { configureLocalRivet } from "./src/local-rivet.js";
-import { todo } from "./generated/rivet/client/index.js";
-
-configureLocalRivet();
-
-const all = await todo.listTodos();
-const single = await todo.getTodo("1");
-const created = await todo.createTodo({ title: "Prove the scaffold works" });
-```
-
-The generated project contains:
-
-- a contract
-- a local Hono app
-- a generated client
-- a fixed API surface
 
 ## 6. Run the app
 

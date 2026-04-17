@@ -3,9 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "generate": "pnpm exec rivet-reflect-ts --entry src/contract-source/contracts.ts --out generated/api.contract.json && rivet --from generated/api.contract.json --output generated/rivet",
-    "dev": "vite",
-    "build": "vite build"
+    "generate": "pnpm exec rivet-reflect-ts --entry contracts.ts --out generated/api.contract.json && rivet --from generated/api.contract.json --output generated/rivet"
   },
   "dependencies": {
     "hono": "^4.0.0",

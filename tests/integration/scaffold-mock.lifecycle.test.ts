@@ -111,32 +111,51 @@ describe("scaffold-mock lifecycle", () => {
     expect(stdout).toHaveLength(0);
     expect(stderr).toHaveLength(0);
 
-    await expect(fs.stat(path.join(outputDirectory, "src", "contract-source", "contracts.ts"))).resolves.toBeTruthy();
-    await expect(fs.stat(path.join(outputDirectory, "src", "contract-source", "models.ts"))).resolves.toBeTruthy();
-    await expect(fs.stat(path.join(outputDirectory, "src", "rivet-hono.ts"))).rejects.toThrow();
+    await expect(fs.stat(path.join(outputDirectory, "packages", "api", "contracts.ts"))).resolves.toBeTruthy();
+    await expect(fs.stat(path.join(outputDirectory, "packages", "api", "models.ts"))).resolves.toBeTruthy();
+    await expect(fs.stat(path.join(outputDirectory, "packages", "api", "src", "main.ts"))).rejects.toThrow();
+    await expect(fs.stat(path.join(outputDirectory, "packages", "api", "index.html"))).rejects.toThrow();
 
-    const apiSource = await fs.readFile(path.join(outputDirectory, "src", "api.ts"), "utf8");
-    const localRivetSource = await fs.readFile(
-      path.join(outputDirectory, "src", "local-rivet.ts"),
-      "utf8",
-    );
-    const listHandlerSource = await fs.readFile(
-      path.join(outputDirectory, "src", "handlers", "list.ts"),
-      "utf8",
-    );
-    const createHandlerSource = await fs.readFile(
-      path.join(outputDirectory, "src", "handlers", "create.ts"),
-      "utf8",
-    );
-    const removeHandlerSource = await fs.readFile(
-      path.join(outputDirectory, "src", "handlers", "remove.ts"),
-      "utf8",
-    );
-    const packageJsonSource = await fs.readFile(
+    const rootPackageJsonSource = await fs.readFile(
       path.join(outputDirectory, "package.json"),
       "utf8",
     );
+    const rootViteConfigSource = await fs.readFile(
+      path.join(outputDirectory, "vite.config.ts"),
+      "utf8",
+    );
+    const uiMainSource = await fs.readFile(
+      path.join(outputDirectory, "ui", "src", "main.ts"),
+      "utf8",
+    );
+    const apiSource = await fs.readFile(path.join(outputDirectory, "packages", "api", "src", "api.ts"), "utf8");
+    const localRivetSource = await fs.readFile(
+      path.join(outputDirectory, "packages", "api", "src", "local-rivet.ts"),
+      "utf8",
+    );
+    const listHandlerSource = await fs.readFile(
+      path.join(outputDirectory, "packages", "api", "src", "handlers", "list.ts"),
+      "utf8",
+    );
+    const createHandlerSource = await fs.readFile(
+      path.join(outputDirectory, "packages", "api", "src", "handlers", "create.ts"),
+      "utf8",
+    );
+    const removeHandlerSource = await fs.readFile(
+      path.join(outputDirectory, "packages", "api", "src", "handlers", "remove.ts"),
+      "utf8",
+    );
+    const apiPackageJsonSource = await fs.readFile(
+      path.join(outputDirectory, "packages", "api", "package.json"),
+      "utf8",
+    );
 
+    expect(rootPackageJsonSource).toContain('"dev": "vite"');
+    expect(rootViteConfigSource).toContain('import { rivetTs } from "rivet-ts/vite";');
+    expect(rootViteConfigSource).toContain('contract: "./packages/api/contracts.ts"');
+    expect(uiMainSource).toContain('import { members } from "@api/generated/rivet/client/index.js";');
+    expect(uiMainSource).toContain("configureLocalRivet()");
+    expect(uiMainSource).toContain("members.list()");
     expect(apiSource).toContain('import { mount } from "rivet-ts/hono";');
     expect(apiSource).toContain('{ controllerName: "members" }');
     expect(localRivetSource).toContain("export const configureLocalRivet");
@@ -146,8 +165,8 @@ describe("scaffold-mock lifecycle", () => {
     expect(createHandlerSource).toContain('"id": "mem_001"');
     expect(createHandlerSource).toContain('"email": "jane@example.com"');
     expect(removeHandlerSource).toContain("return undefined;");
-    expect(packageJsonSource).toContain(
-      "src/contract-source/contracts.ts --out generated/members-mock.contract.json",
+    expect(apiPackageJsonSource).toContain(
+      "contracts.ts --out generated/api.contract.json",
     );
   });
 
@@ -198,13 +217,13 @@ describe("scaffold-mock lifecycle", () => {
 
     expect(exitCode).toBe(0);
 
-    const apiSource = await fs.readFile(path.join(outputDirectory, "src", "api.ts"), "utf8");
+    const apiSource = await fs.readFile(path.join(outputDirectory, "packages", "api", "src", "api.ts"), "utf8");
     const petHandlerSource = await fs.readFile(
-      path.join(outputDirectory, "src", "handlers", "pet-get.ts"),
+      path.join(outputDirectory, "packages", "api", "src", "handlers", "pet-get.ts"),
       "utf8",
     );
     const summaryHandlerSource = await fs.readFile(
-      path.join(outputDirectory, "src", "handlers", "summary-get.ts"),
+      path.join(outputDirectory, "packages", "api", "src", "handlers", "summary-get.ts"),
       "utf8",
     );
 
