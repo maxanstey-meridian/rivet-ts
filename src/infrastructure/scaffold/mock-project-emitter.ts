@@ -1,8 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import ts from "typescript";
 import { MockProjectEmitter, type MockProjectEmitterConfig } from "../../application/ports/mock-project-emitter.js";
+import { emitLocalRivetSource } from "../codegen/local-rivet-emitter.js";
+import { toKebabCase } from "../codegen/kebab-case.js";
 import { generateEndpointMock } from "./mock-value-generator.js";
+import { collectLocalDependencies } from "../typescript/local-source-dependencies.js";
 
 type ContractGroup = {
   readonly contractName: string;
@@ -21,11 +23,6 @@ type HandlerDescriptor = {
   readonly body: string;
 };
 
-type SourceDependency = {
-  readonly absolutePath: string;
-  readonly relativePath: string;
-};
-
 type PackageManifest = {
   readonly version?: string;
   readonly peerDependencies?: Record<string, string>;
@@ -34,13 +31,7 @@ type PackageManifest = {
 
 const DEFAULT_TYPESCRIPT_VERSION = "^6.0.2";
 const DEFAULT_VITE_VERSION = "^6.0.5";
-
-const toKebabCase = (value: string): string =>
-  value
-    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
-    .replace(/[^a-zA-Z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .toLowerCase();
+const DEFAULT_RIVET_TS_DEPENDENCY = "github:maxanstey-meridian/rivet-ts";
 
 const toCamelCase = (value: string): string => {
   const kebab = toKebabCase(value);
@@ -79,121 +70,6 @@ const indent = (value: string, spaces: number): string => {
     .split("\n")
     .map((line) => `${prefix}${line}`)
     .join("\n");
-};
-
-const findCommonRoot = (filePaths: readonly string[]): string => {
-  const [firstPath, ...rest] = filePaths.map((filePath) => path.resolve(filePath));
-  if (!firstPath) {
-    throw new Error("Cannot determine common root for an empty file list.");
-  }
-
-  let common = path.dirname(firstPath);
-
-  for (const candidate of rest) {
-    while (!candidate.startsWith(`${common}${path.sep}`) && candidate !== common) {
-      const parent = path.dirname(common);
-      if (parent === common) {
-        break;
-      }
-      common = parent;
-    }
-  }
-
-  return common;
-};
-
-const resolveLocalModulePath = async (
-  fromFilePath: string,
-  specifier: string,
-): Promise<string | null> => {
-  const candidate = path.resolve(path.dirname(fromFilePath), specifier);
-  const extension = path.extname(candidate);
-
-  const candidates = extension.length > 0
-    ? [
-        candidate,
-        candidate.replace(/\.(c|m)?js$/u, ".ts"),
-        candidate.replace(/\.(c|m)?js$/u, ".tsx"),
-        candidate.replace(/\.(c|m)?js$/u, ".mts"),
-        candidate.replace(/\.(c|m)?js$/u, ".cts"),
-      ]
-    : [
-        candidate,
-        `${candidate}.ts`,
-        `${candidate}.tsx`,
-        `${candidate}.mts`,
-        `${candidate}.cts`,
-        path.join(candidate, "index.ts"),
-        path.join(candidate, "index.tsx"),
-        path.join(candidate, "index.mts"),
-        path.join(candidate, "index.cts"),
-      ];
-
-  for (const filePath of candidates) {
-    try {
-      const stat = await fs.stat(filePath);
-      if (stat.isFile()) {
-        return filePath;
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  return null;
-};
-
-const collectLocalDependencies = async (entryPath: string): Promise<readonly SourceDependency[]> => {
-  const queue = [path.resolve(entryPath)];
-  const discovered = new Set<string>();
-
-  while (queue.length > 0) {
-    const currentPath = queue.pop();
-    if (!currentPath || discovered.has(currentPath)) {
-      continue;
-    }
-
-    discovered.add(currentPath);
-    const sourceText = await fs.readFile(currentPath, "utf8");
-    const sourceFile = ts.createSourceFile(
-      currentPath,
-      sourceText,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TS,
-    );
-
-    const moduleSpecifiers = new Set<string>();
-
-    for (const statement of sourceFile.statements) {
-      if (
-        (ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement))
-        && statement.moduleSpecifier
-        && ts.isStringLiteral(statement.moduleSpecifier)
-      ) {
-        moduleSpecifiers.add(statement.moduleSpecifier.text);
-      }
-    }
-
-    for (const specifier of moduleSpecifiers) {
-      if (!specifier.startsWith(".")) {
-        continue;
-      }
-
-      const dependencyPath = await resolveLocalModulePath(currentPath, specifier);
-      if (dependencyPath) {
-        queue.push(dependencyPath);
-      }
-    }
-  }
-
-  const commonRoot = findCommonRoot([...discovered]);
-  return [...discovered]
-    .sort()
-    .map((absolutePath) => ({
-      absolutePath,
-      relativePath: path.relative(commonRoot, absolutePath).split(path.sep).join("/"),
-    }));
 };
 
 const readPackageManifest = async (): Promise<PackageManifest> => {
@@ -373,24 +249,6 @@ const emitApiSource = (
   return lines.join("\n");
 };
 
-const emitLocalRivetSource = (): string => [
-  'import { app } from "./api.js";',
-  'import { configureRivet as configureGeneratedRivet, type RivetConfig } from "../generated/rivet/rivet.js";',
-  "",
-  'type LocalRivetConfig = Omit<RivetConfig, "fetch" | "baseUrl"> & {',
-  "  readonly baseUrl?: string;",
-  "};",
-  "",
-  "export const configureLocalRivet = (config: LocalRivetConfig = {}): void => {",
-  "  configureGeneratedRivet({",
-  "    ...config,",
-  '    baseUrl: config.baseUrl ?? "http://local",',
-  "    fetch: (input, init) => Promise.resolve(app.request(input as string, init)),",
-  "  });",
-  "};",
-  "",
-].join("\n");
-
 const emitMainSource = (): string => [
   'import { configureLocalRivet } from "./local-rivet.js";',
   "",
@@ -462,7 +320,6 @@ const emitPackageJsonSource = async (
   entryRelativePath: string,
 ): Promise<string> => {
   const manifest = await readPackageManifest();
-  const rivetTsVersion = manifest.version ? `^${manifest.version}` : "latest";
   const honoVersion = manifest.peerDependencies?.hono ?? "^4.0.0";
   const typescriptVersion = manifest.devDependencies?.typescript ?? DEFAULT_TYPESCRIPT_VERSION;
 
@@ -478,7 +335,7 @@ const emitPackageJsonSource = async (
       },
       dependencies: {
         hono: honoVersion,
-        "rivet-ts": rivetTsVersion,
+        "rivet-ts": DEFAULT_RIVET_TS_DEPENDENCY,
       },
       devDependencies: {
         typescript: typescriptVersion,
@@ -504,6 +361,7 @@ export class FileSystemMockProjectEmitter extends MockProjectEmitter {
     const groups = buildContractGroups(config);
     const handlers = buildHandlerDescriptors(config, groups);
     const contractSourceDir = path.join(config.outDir, "src", "contract-source");
+    const localRivetPath = path.join(config.outDir, "src", "local-rivet.ts");
 
     await fs.mkdir(path.join(config.outDir, "src", "handlers"), { recursive: true });
     await fs.mkdir(contractSourceDir, { recursive: true });
@@ -512,7 +370,14 @@ export class FileSystemMockProjectEmitter extends MockProjectEmitter {
     await Promise.all([
       fs.writeFile(path.join(config.outDir, "src", "contract.ts"), emitContractSource(groups, entryDependency.relativePath)),
       fs.writeFile(path.join(config.outDir, "src", "api.ts"), emitApiSource(config.contractJsonFileName, groups, handlers)),
-      fs.writeFile(path.join(config.outDir, "src", "local-rivet.ts"), emitLocalRivetSource()),
+      fs.writeFile(
+        localRivetPath,
+        emitLocalRivetSource({
+          filePath: localRivetPath,
+          appFilePath: path.join(config.outDir, "src", "api.ts"),
+          generatedRivetFilePath: path.join(config.outDir, "generated", "rivet", "rivet.ts"),
+        }),
+      ),
       fs.writeFile(path.join(config.outDir, "src", "main.ts"), emitMainSource()),
       fs.writeFile(path.join(config.outDir, "index.html"), emitIndexHtmlSource(config.projectName)),
       fs.writeFile(path.join(config.outDir, "vite.config.ts"), emitViteConfigSource()),
