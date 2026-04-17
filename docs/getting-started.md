@@ -110,6 +110,8 @@ The plugin:
 - generates `packages/api/src/local-rivet.ts`
 - aliases `@api` to `packages/api`
 
+During `vite dev`, contract changes regenerate those artifacts and reload the UI with the updated local client surface.
+
 ## 5. Use `@api` from the UI
 
 ```ts
@@ -142,6 +144,7 @@ dotnet rivet --from ./contract.json --output ./generated --openapi ./openapi.jso
 
 ## Next steps
 
+- Read [Sample App](/guides/sample-app)
 - Read [Vite Plugin](/guides/vite-plugin)
 - Follow the [5 minute tutorial](/guides/tutorial)
 - Read [Local Now, Bun Later](/guides/local-now-server-later)

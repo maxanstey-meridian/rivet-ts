@@ -24,6 +24,7 @@ export default defineConfig({
         text: "Guides",
         items: [
           { text: "Vite Plugin", link: "/guides/vite-plugin" },
+          { text: "Sample App", link: "/guides/sample-app" },
           { text: "Zero to API in 5 Minutes", link: "/guides/tutorial" },
           { text: "Local Now, Bun Later", link: "/guides/local-now-server-later" },
           { text: "OpenAPI and Validators", link: "/guides/openapi-and-validators" },

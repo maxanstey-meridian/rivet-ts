@@ -20,7 +20,7 @@ features:
     details: Generate a runnable Hono API package with plain async handlers and local transport wiring.
   - icon: "📦"
     title: Plugin-managed local artifacts
-    details: Use the Vite plugin to keep the reflected contract, generated client, and local-rivet glue updated under the API package.
+    details: Use the Vite plugin to keep the reflected contract, generated client, and local-rivet glue updated under the API package as contracts change during dev and build.
   - icon: "🚀"
     title: Promote later
     details: Keep the contract and client shape stable while moving from browser-local Hono to Bun, then to .NET.
@@ -100,12 +100,13 @@ const user = await users.getUser("usr_123");
 console.log(user.name);
 ```
 
-The plugin keeps the local client/runtime artifacts updated under `packages/api`.
+The plugin keeps the local client/runtime artifacts updated under `packages/api`. During `vite dev`, contract changes regenerate the client/runtime artifacts and Vite reloads the UI against the updated local surface.
 
 ## Pages
 
 - [Getting Started](/getting-started)
 - [Vite Plugin](/guides/vite-plugin)
+- [Sample App](/guides/sample-app)
 - [Zero to API in 5 Minutes](/guides/tutorial)
 - [Local Now, Bun Later](/guides/local-now-server-later)
 - [.NET Handoff](/guides/dotnet-handoff)

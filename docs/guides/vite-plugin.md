@@ -18,6 +18,7 @@ the plugin:
 - runs downstream Rivet to generate `generated/rivet/*`
 - generates `src/local-rivet.ts`
 - aliases `@api` to the API package root
+- watches contract changes during `vite dev` and regenerates those artifacts
 
 It does not:
 
@@ -89,6 +90,8 @@ import { configureLocalRivet } from "@api/src/local-rivet.js";
 
 configureLocalRivet();
 ```
+
+During `vite dev`, contract changes regenerate the local client/runtime artifacts and Vite reloads the UI with the updated client surface.
 
 ## Contract changes
 

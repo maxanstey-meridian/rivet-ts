@@ -118,6 +118,36 @@ The intended path is:
 3. replace stub handlers with real logic
 4. add a real server entry later if browser-runtime limits become a problem
 
+## Reference app
+
+This repository includes `samples/myapp` as the reference browser-local shape.
+
+It was created by:
+
+1. writing a TypeScript contract under `packages/api`
+2. scaffolding the API package with `scaffold-mock`
+3. adding the Vite plugin at the app root
+4. pointing `ui/` at `@api`
+
+That sample is the intended day-to-day structure after you follow the scaffold-plus-plugin workflow:
+
+```text
+myapp/
+├── package.json
+├── vite.config.ts
+├── packages/
+│   └── api/
+│       ├── contracts.ts
+│       ├── generated/
+│       ├── package.json
+│       └── src/
+└── ui/
+    ├── index.html
+    └── src/main.ts
+```
+
+The API package stays scaffold-shaped. The UI stays separate. The Vite plugin keeps the reflected contract, generated client, and `src/local-rivet.ts` current under `packages/api`.
+
 ## Generate a separate client, OpenAPI, and validators
 
 First reflect your TypeScript contract to Rivet contract JSON:
@@ -156,6 +186,8 @@ configureLocalRivet();
 ```
 
 That lets the generated Rivet client call the Hono app in-process via `app.request(...)`.
+
+With the Vite plugin in place, contract changes regenerate the local client/runtime artifacts during `vite dev`, so the frontend sees the updated client surface without a manual generate step.
 
 When you want a real server, the happy path is almost a literal lift-and-shift:
 
