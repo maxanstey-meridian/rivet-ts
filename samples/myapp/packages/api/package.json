@@ -2,12 +2,15 @@
   "name": "api",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./generated/index.ts"
+  },
   "scripts": {
     "generate": "pnpm exec rivet-reflect-ts --entry contracts.ts --out generated/api.contract.json && rivet --from generated/api.contract.json --output generated/rivet"
   },
   "dependencies": {
     "hono": "^4.0.0",
-    "rivet-ts": "github:maxanstey-meridian/rivet-ts#v0.8"
+    "rivet-ts": "file:../../.."
   },
   "devDependencies": {
     "typescript": "^6.0.2",

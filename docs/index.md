@@ -73,8 +73,7 @@ pnpm --dir packages/api run generate
 Then use the generated client from `ui/src/main.ts`:
 
 ```ts
-import { users } from "@api/generated/rivet/client/index.js";
-import { configureLocalRivet } from "@api/src/local-rivet.js";
+import { users, configureLocalRivet } from "@api";
 
 configureLocalRivet();
 
@@ -82,7 +81,7 @@ const user = await users.getUser("usr_123");
 console.log(user.name);
 ```
 
-`scaffold-mock` creates the project shape. `pnpm --dir packages/api run generate` creates the initial generated contract/client artifacts under `packages/api/generated`. After that, the scaffolded Vite plugin keeps them current during `vite dev`.
+`scaffold-mock` creates the project shape. `pnpm --dir packages/api run generate` creates the initial generated contract/client artifacts and the public `@api` surface under `packages/api/generated`. After that, the scaffolded Vite plugin keeps them current during `vite dev`.
 
 ## Pages
 

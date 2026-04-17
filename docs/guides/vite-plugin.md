@@ -18,7 +18,7 @@ the plugin:
 
 - reflects the contract to `generated/*.contract.json`
 - runs downstream Rivet to generate `generated/rivet/*`
-- generates `src/local-rivet.ts`
+- generates `generated/local-rivet.ts` and `generated/index.ts`
 - aliases `@api` to the API package root
 - watches contract changes during `vite dev` and regenerates those artifacts
 
@@ -38,12 +38,11 @@ myapp/
 ├── packages/
 │   └── api/
 │       ├── contracts.ts
+│       ├── generated/
 │       ├── src/
 │       │   ├── api.ts
 │       │   ├── contract.ts
-│       │   ├── handlers/
-│       │   └── local-rivet.ts
-│       └── generated/
+│       │   └── handlers/
 └── ui/
     ├── index.html
     └── src/main.ts
@@ -78,7 +77,7 @@ export default defineConfig({
 | --- | --- |
 | `contract` | Contract entrypoint path |
 | `apiRoot` | Root of the scaffolded API package |
-| `app` | Hono app entry used by generated `src/local-rivet.ts` |
+| `app` | Hono app entry used by the generated local transport helper |
 | `tsconfig` | Optional TypeScript project file |
 | `rivet.version` | Pinned downstream Rivet version |
 | `rivet.autoInstall` | Auto-download the Rivet binary when missing |
@@ -87,8 +86,7 @@ export default defineConfig({
 ## UI imports
 
 ```ts
-import { members } from "@api/generated/rivet/client/index.js";
-import { configureLocalRivet } from "@api/src/local-rivet.js";
+import { members, configureLocalRivet } from "@api";
 
 configureLocalRivet();
 ```
@@ -101,6 +99,7 @@ When a contract file changes, the plugin regenerates:
 
 - `generated/*.contract.json`
 - `generated/rivet/*`
-- `src/local-rivet.ts`
+- `generated/local-rivet.ts`
+- `generated/index.ts`
 
 The plugin does not add handlers or route registrations for new endpoints. If a new endpoint is added to the contract, the generated client updates immediately, but local calls will still fail until the handler is implemented and mounted.

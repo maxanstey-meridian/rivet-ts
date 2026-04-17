@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import type { Plugin, ResolvedConfig } from "vite";
 import { TypeScriptContractFrontend } from "./infrastructure/typescript/typescript-contract-frontend.js";
 import { TypeScriptRivetContractLowerer } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
-import { emitLocalRivetSource } from "./infrastructure/codegen/local-rivet-emitter.js";
+import { emitLocalRivetSource, emitPublicApiSource } from "./infrastructure/codegen/local-rivet-emitter.js";
 import { toKebabCase } from "./infrastructure/codegen/kebab-case.js";
 import { collectLocalDependencies } from "./infrastructure/typescript/local-source-dependencies.js";
 import { ensureRivetBinary, type RivetBinaryConfig } from "./infrastructure/vite/rivet-binary.js";
@@ -63,8 +63,10 @@ type NormalizedPluginOptions = {
   readonly tsconfigPath?: string;
   readonly contractJsonPath: string;
   readonly generatedRivetDir: string;
+  readonly generatedRivetClientIndexPath: string;
   readonly generatedRivetRuntimePath: string;
-  readonly localRivetPath: string;
+  readonly generatedLocalRivetPath: string;
+  readonly publicApiPath: string;
   readonly binaryConfig?: RivetBinaryConfig;
 };
 
@@ -82,8 +84,10 @@ const normalizeOptions = (options: RivetTsVitePluginOptions): NormalizedPluginOp
     tsconfigPath: options.tsconfig ? resolveConfigPath(options.tsconfig) : undefined,
     contractJsonPath: path.join(apiRoot, "generated", contractJsonFileName),
     generatedRivetDir: path.join(apiRoot, "generated", "rivet"),
+    generatedRivetClientIndexPath: path.join(apiRoot, "generated", "rivet", "client", "index.ts"),
     generatedRivetRuntimePath: path.join(apiRoot, "generated", "rivet", "rivet.ts"),
-    localRivetPath: path.join(apiRoot, "src", "local-rivet.ts"),
+    generatedLocalRivetPath: path.join(apiRoot, "generated", "local-rivet.ts"),
+    publicApiPath: path.join(apiRoot, "generated", "index.ts"),
     binaryConfig: options.rivet,
   };
 };
@@ -128,11 +132,21 @@ const generateArtifacts = async (
   });
 
   await writeIfChanged(
-    options.localRivetPath,
+    options.generatedLocalRivetPath,
     emitLocalRivetSource({
-      filePath: options.localRivetPath,
+      filePath: options.generatedLocalRivetPath,
       appFilePath: options.appPath,
       generatedRivetFilePath: options.generatedRivetRuntimePath,
+    }),
+  );
+
+  await writeIfChanged(
+    options.publicApiPath,
+    emitPublicApiSource({
+      filePath: options.publicApiPath,
+      generatedLocalRivetFilePath: options.generatedLocalRivetPath,
+      generatedRivetClientIndexFilePath: options.generatedRivetClientIndexPath,
+      generatedRivetRuntimeFilePath: options.generatedRivetRuntimePath,
     }),
   );
 
@@ -171,8 +185,12 @@ export const rivetTs = (options: RivetTsVitePluginOptions): Plugin => {
       resolve: {
         alias: [
           {
-            find: "@api",
-            replacement: normalized.apiRoot,
+            find: /^@api$/u,
+            replacement: path.join(normalized.apiRoot, "generated", "index.ts"),
+          },
+          {
+            find: /^@api\//u,
+            replacement: `${normalized.apiRoot}/`,
           },
         ],
       },

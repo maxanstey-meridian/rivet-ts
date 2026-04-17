@@ -39,3 +39,30 @@ export const emitLocalRivetSource = (config: {
     "",
   ].join("\n");
 };
+
+export const emitPublicApiSource = (config: {
+  readonly filePath: string;
+  readonly generatedLocalRivetFilePath: string;
+  readonly generatedRivetClientIndexFilePath: string;
+  readonly generatedRivetRuntimeFilePath: string;
+}): string => {
+  const localRivetImportPath = toModuleImportPath(
+    config.filePath,
+    config.generatedLocalRivetFilePath,
+  );
+  const generatedRivetClientImportPath = toModuleImportPath(
+    config.filePath,
+    config.generatedRivetClientIndexFilePath,
+  );
+  const generatedRivetRuntimeImportPath = toModuleImportPath(
+    config.filePath,
+    config.generatedRivetRuntimeFilePath,
+  );
+
+  return [
+    `export { configureLocalRivet } from ${JSON.stringify(localRivetImportPath)};`,
+    `export * from ${JSON.stringify(generatedRivetClientImportPath)};`,
+    `export { configureRivet, type RivetConfig, RivetError } from ${JSON.stringify(generatedRivetRuntimeImportPath)};`,
+    "",
+  ].join("\n");
+};

@@ -22,8 +22,7 @@ samples/myapp/
 │       └── src/
 │           ├── api.ts
 │           ├── contract.ts
-│           ├── handlers/
-│           └── local-rivet.ts
+│           └── handlers/
 └── ui/
     ├── index.html
     └── src/main.ts
@@ -45,7 +44,7 @@ samples/myapp/
 
 - `packages/api/generated/*.contract.json`
 - `packages/api/generated/rivet/*`
-- `packages/api/src/local-rivet.ts`
+- `packages/api/generated/local-rivet.ts`
 
 During `vite dev`, contract changes regenerate those artifacts and Vite reloads the UI with the updated client surface.
 

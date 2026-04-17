@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { MockProjectEmitter, type MockProjectEmitterConfig } from "../../application/ports/mock-project-emitter.js";
-import { emitLocalRivetSource } from "../codegen/local-rivet-emitter.js";
+import { emitLocalRivetSource, emitPublicApiSource } from "../codegen/local-rivet-emitter.js";
 import { toKebabCase } from "../codegen/kebab-case.js";
 import { generateEndpointMock } from "./mock-value-generator.js";
 import { collectLocalDependencies } from "../typescript/local-source-dependencies.js";
@@ -291,7 +291,7 @@ const emitApiSource = (
 const emitUiMainSource = (demoCall: DemoClientCall | undefined): string => {
   if (!demoCall) {
     return [
-      'import { configureLocalRivet } from "@api/src/local-rivet.js";',
+      'import { configureLocalRivet } from "@api";',
       "",
       "configureLocalRivet();",
       "",
@@ -300,7 +300,7 @@ const emitUiMainSource = (demoCall: DemoClientCall | undefined): string => {
       "if (output) {",
       '  output.textContent = [',
       '    "Local Rivet transport configured.",',
-      '    "Open ui/src/main.ts and start consuming @api/generated/rivet/client.",',
+      '    "Open ui/src/main.ts and start consuming @api.",',
       '  ].join("\\n");',
       "}",
       "",
@@ -308,8 +308,7 @@ const emitUiMainSource = (demoCall: DemoClientCall | undefined): string => {
   }
 
   return [
-    `import { ${demoCall.clientNamespace} } from "@api/generated/rivet/client/index.js";`,
-    'import { configureLocalRivet } from "@api/src/local-rivet.js";',
+    `import { ${demoCall.clientNamespace}, configureLocalRivet } from "@api";`,
     "",
     "const render = async (): Promise<void> => {",
     "  configureLocalRivet();",
@@ -325,7 +324,7 @@ const emitUiMainSource = (demoCall: DemoClientCall | undefined): string => {
     `    ${JSON.stringify(demoCall.label)},`,
     '    JSON.stringify(result, null, 2),',
     '    "",',
-    '    "Open ui/src/main.ts and keep consuming @api/generated/rivet/client.",',
+    '    "Open ui/src/main.ts and keep consuming @api.",',
     '  ].join("\\n");',
     "};",
     "",
@@ -434,6 +433,9 @@ const emitApiPackageJsonSource = async (
       name: "api",
       private: true,
       type: "module",
+      exports: {
+        ".": "./generated/index.ts",
+      },
       scripts: {
         generate: `pnpm exec rivet-reflect-ts --entry ${entryRelativePath} --out generated/${contractJsonFileName} && rivet --from generated/${contractJsonFileName} --output generated/rivet`,
       },
@@ -468,10 +470,12 @@ export class FileSystemMockProjectEmitter extends MockProjectEmitter {
     const apiRoot = path.join(config.outDir, "packages", "api");
     const apiSourceRoot = path.join(apiRoot, "src");
     const uiRoot = path.join(config.outDir, "ui");
-    const localRivetPath = path.join(apiSourceRoot, "local-rivet.ts");
+    const generatedRoot = path.join(apiRoot, "generated");
+    const localRivetPath = path.join(generatedRoot, "local-rivet.ts");
+    const publicApiPath = path.join(generatedRoot, "index.ts");
 
     await fs.mkdir(path.join(apiSourceRoot, "handlers"), { recursive: true });
-    await fs.mkdir(path.join(apiRoot, "generated"), { recursive: true });
+    await fs.mkdir(generatedRoot, { recursive: true });
     await fs.mkdir(path.join(uiRoot, "src"), { recursive: true });
 
     await Promise.all([
@@ -489,6 +493,15 @@ export class FileSystemMockProjectEmitter extends MockProjectEmitter {
           filePath: localRivetPath,
           appFilePath: path.join(apiSourceRoot, "api.ts"),
           generatedRivetFilePath: path.join(apiRoot, "generated", "rivet", "rivet.ts"),
+        }),
+      ),
+      fs.writeFile(
+        publicApiPath,
+        emitPublicApiSource({
+          filePath: publicApiPath,
+          generatedLocalRivetFilePath: localRivetPath,
+          generatedRivetClientIndexFilePath: path.join(apiRoot, "generated", "rivet", "client", "index.ts"),
+          generatedRivetRuntimeFilePath: path.join(apiRoot, "generated", "rivet", "rivet.ts"),
         }),
       ),
     ]);

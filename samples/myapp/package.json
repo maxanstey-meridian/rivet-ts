@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "hono": "^4.0.0",
-    "rivet-ts": "github:maxanstey-meridian/rivet-ts#v0.8"
+    "rivet-ts": "file:../.."
   },
   "devDependencies": {
     "typescript": "^6.0.2",

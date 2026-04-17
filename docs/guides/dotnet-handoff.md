@@ -11,8 +11,7 @@ For the frontend:
 - your client call sites do not need a new abstraction
 
 ```ts
-import { configureRivet } from "@api/generated/rivet/rivet.js";
-import { users } from "@api/generated/rivet/client/index.js";
+import { configureRivet, users } from "@api";
 
 configureRivet({ baseUrl: "https://api.example.com" });
 

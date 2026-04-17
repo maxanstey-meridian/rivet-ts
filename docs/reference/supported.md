@@ -40,7 +40,7 @@ Legacy singular example keys also still exist:
 | --- | --- |
 | `string`, `number`, `boolean` | Primitive JSON-compatible values |
 | `unknown` | Escape hatch for dynamic data |
-| `T[]`, `Array<T>`, `ReadonlyArray<T>` | Arrays |
+| `T[]`, `Array<T>`, `ReadonlyArray<T>` | Arrays. `ReadonlyArray<T>` lowers as an array shape, not a stronger collection-mutability contract |
 | `Record<string, T>` | Dictionaries with string keys |
 | `T \| null` | Nullable wrapper |
 | `"a" \| "b"` | String literal unions |
@@ -52,7 +52,7 @@ Legacy singular example keys also still exist:
 | `Format<string, "uuid">` | Primitive plus format metadata |
 | generic types | Concrete substitutions are lowered |
 | optional properties | Preserved |
-| readonly properties | Preserved as type information |
+| plain `readonly` properties | Preserved as property-level type information |
 
 ## Happy-path scaffold support
 

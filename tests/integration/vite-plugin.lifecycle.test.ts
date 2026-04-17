@@ -149,9 +149,11 @@ describe("vite plugin lifecycle", () => {
     await expect(fs.stat(path.join(sampleRoot, "dist", "index.html"))).resolves.toBeTruthy();
 
     const uiMainSource = await fs.readFile(path.join(sampleRoot, "ui", "src", "main.ts"), "utf8");
-    const localRivetSource = await fs.readFile(path.join(apiRoot, "src", "local-rivet.ts"), "utf8");
-    expect(uiMainSource).toContain('import { members } from "@api/generated/rivet/client/index.js";');
+    const localRivetSource = await fs.readFile(path.join(apiRoot, "generated", "local-rivet.ts"), "utf8");
+    const publicApiSource = await fs.readFile(path.join(apiRoot, "generated", "index.ts"), "utf8");
+    expect(uiMainSource).toContain('import { members, configureLocalRivet } from "@api";');
     expect(uiMainSource).toContain("members.list()");
     expect(localRivetSource).toContain("app.request");
+    expect(publicApiSource).toContain('export { configureLocalRivet }');
   });
 });

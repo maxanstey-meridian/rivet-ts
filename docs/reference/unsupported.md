@@ -8,6 +8,7 @@ These shapes are not part of the contract system and should produce diagnostics 
 - mapped types
 - indexed access types
 - general intersection types
+- utility-wrapper object transforms such as `Readonly<T>`, `Partial<T>`, `Required<T>`, `Pick<T, ...>`, and `Omit<T, ...>`
 - tuple types
 - function types
 - `any`
@@ -19,6 +20,8 @@ The only intentional intersection exceptions are the explicit utility types:
 
 - `Brand<T, Name>`
 - `Format<T, FormatName>`
+
+Plain property-level `readonly` modifiers are supported. What is not supported is authoring contracts through generic utility wrappers that transform object shapes.
 
 ## Shapes that are reflected but not scaffolded cleanly yet
 

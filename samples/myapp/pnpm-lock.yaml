@@ -12,8 +12,8 @@ importers:
         specifier: ^4.0.0
         version: 4.12.14
       rivet-ts:
-        specifier: github:maxanstey-meridian/rivet-ts#v0.8
-        version: https://codeload.github.com/maxanstey-meridian/rivet-ts/tar.gz/fb951b3077a26ce9fc5e75c8338147b09a815ae1(hono@4.12.14)(vite@6.4.2)
+        specifier: file:../..
+        version: file:../..(hono@4.12.14)(vite@6.4.2)
     devDependencies:
       typescript:
         specifier: ^6.0.2
@@ -363,9 +363,8 @@ packages:
     resolution: {integrity: sha512-pMMHxBOZKFU6HgAZ4eyGnwXF/EvPGGqUr0MnZ5+99485wwW41kW91A4LOGxSHhgugZmSChL5AlElNdwlNgcnLQ==}
     engines: {node: ^10 || ^12 || >=14}
 
-  rivet-ts@https://codeload.github.com/maxanstey-meridian/rivet-ts/tar.gz/fb951b3077a26ce9fc5e75c8338147b09a815ae1:
-    resolution: {tarball: https://codeload.github.com/maxanstey-meridian/rivet-ts/tar.gz/fb951b3077a26ce9fc5e75c8338147b09a815ae1}
-    version: 0.7.0
+  rivet-ts@file:../..:
+    resolution: {directory: ../.., type: directory}
     hasBin: true
     peerDependencies:
       hono: ^4.0.0
@@ -661,7 +660,7 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  rivet-ts@https://codeload.github.com/maxanstey-meridian/rivet-ts/tar.gz/fb951b3077a26ce9fc5e75c8338147b09a815ae1(hono@4.12.14)(vite@6.4.2):
+  rivet-ts@file:../..(hono@4.12.14)(vite@6.4.2):
     dependencies:
       tar: 7.5.13
       typescript: 6.0.3

@@ -80,8 +80,7 @@ myapp/
 │       └── src/
 │           ├── api.ts
 │           ├── contract.ts
-│           ├── handlers/
-│           └── local-rivet.ts
+│           └── handlers/
 └── ui/
     ├── index.html
     └── src/main.ts
@@ -100,6 +99,8 @@ Important:
 - `pnpm --dir packages/api run generate` produces `packages/api/generated/*.contract.json` and `packages/api/generated/rivet/*`
 - once those initial artifacts exist, `vite dev` keeps them current
 
+The important boundary is that the UI consumes `@api`, not `@api/src/*` and not `@api/generated/*` directly. `@api` is the bundled API seam for the app, so local now and remote later stay decoupled from frontend call sites.
+
 ## 4. Start consuming from the UI
 
 Open `ui/src/main.ts`.
@@ -107,8 +108,7 @@ Open `ui/src/main.ts`.
 Typical usage looks like this:
 
 ```ts
-import { members } from "@api/generated/rivet/client/index.js";
-import { configureLocalRivet } from "@api/src/local-rivet.js";
+import { members, configureLocalRivet } from "@api";
 
 configureLocalRivet();
 
@@ -116,11 +116,14 @@ const all = await members.list();
 console.log(all);
 ```
 
+That means the client code is written against the API surface, not against its hosting mode. Later, you can swap `configureLocalRivet()` for `configureRivet({ baseUrl })` without rewriting the generated client calls.
+
 During `vite dev`, contract changes regenerate:
 
 - `packages/api/generated/*.contract.json`
 - `packages/api/generated/rivet/*`
-- `packages/api/src/local-rivet.ts`
+- `packages/api/generated/local-rivet.ts`
+- `packages/api/generated/index.ts`
 
 Vite then reloads the UI against the updated client surface.
 

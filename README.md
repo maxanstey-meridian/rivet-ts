@@ -72,12 +72,20 @@ pnpm run dev
 
 After that initial generate, the Vite plugin keeps those artifacts current during `vite dev`.
 
+The important boundary is:
+
+- the UI consumes `@api`
+- `@api` is the bundled API surface for the current app shape
+- local in-process transport versus later HTTP transport is hidden behind that surface
+
+So the client code stays decoupled from API internals. You can change how the API is hosted later without rewriting frontend call sites.
+
 The scaffold gives you:
 
 - a root Vite app with `ui/` ready to run
 - a Hono API package under `packages/api`
 - plain async handlers, one per endpoint
-- `configureLocalRivet()` for in-process local transport
+- generated `configureLocalRivet()` for in-process local transport
 - the Vite plugin already configured
 - copied contract source so the scaffold is self-contained
 
@@ -90,7 +98,7 @@ myapp/
 ├── packages/
 │   └── api/
 │       ├── contracts.ts
-│       ├── generated/          # created by `pnpm --dir packages/api run generate`
+│       ├── generated/          # generated artifacts and public @api surface
 │       ├── package.json
 │       └── src/
 │           ├── api.ts
@@ -98,7 +106,6 @@ myapp/
 │           ├── handlers/
 │           │   ├── create.ts
 │           │   └── list.ts
-│           └── local-rivet.ts
 └── ui/
     ├── index.html
     └── src/main.ts
@@ -126,8 +133,7 @@ Example frontend consumption:
 The scaffolded app starts in local mode. In `ui/src/main.ts`:
 
 ```ts
-import { members } from "@api/generated/rivet/client/index.js";
-import { configureLocalRivet } from "@api/src/local-rivet.js";
+import { members, configureLocalRivet } from "@api";
 
 configureLocalRivet();
 
@@ -139,11 +145,13 @@ const created = await members.create({
 console.log(created.id);
 ```
 
+The point of this shape is that the UI depends on `@api`, not on `packages/api/src/*` and not on `packages/api/generated/*` directly. The bundled API seam can move from browser-local to a real server later, and the client usage stays the same apart from configuration.
+
 The intended path is:
 
 1. write the contract
 2. scaffold the whole local app
-3. open `ui/src/main.ts` and start consuming `@api/generated/rivet/client`
+3. open `ui/src/main.ts` and start consuming `@api`
 4. replace stub handlers with real logic as needed
 5. add a real server entry later if browser-runtime limits become a problem
 
@@ -170,7 +178,7 @@ myapp/
     └── src/main.ts
 ```
 
-The API package stays scaffold-shaped. The UI stays separate. The Vite plugin keeps the reflected contract, generated client, and `src/local-rivet.ts` current under `packages/api`.
+The API package stays scaffold-shaped. The UI stays separate. The Vite plugin keeps the reflected contract, generated client, generated local transport helper, and public `@api` surface current under `packages/api/generated`.
 
 ## Generate a separate client, OpenAPI, and validators
 
@@ -204,8 +212,7 @@ Downstream Rivet emits the same artifacts it emits for C# sources: TypeScript ty
 The scaffolded app starts in local mode. In `ui/src/main.ts`:
 
 ```ts
-import { members } from "@api/generated/rivet/client/index.js";
-import { configureLocalRivet } from "@api/src/local-rivet.js";
+import { members, configureLocalRivet } from "@api";
 
 configureLocalRivet();
 
@@ -245,10 +252,12 @@ Bun.serve({
 Then point the generated client at the deployed API:
 
 ```ts
-import { configureRivet } from "@api/generated/rivet/rivet.js";
+import { configureRivet } from "@api";
 
 configureRivet({ baseUrl: "https://api.example.com" });
 ```
+
+From the UI's perspective, that is the key decoupling: it still consumes `@api`, and transport changes from local `configureLocalRivet()` to remote `configureRivet(...)` without changing the generated client calls themselves.
 
 The important distinction is:
 

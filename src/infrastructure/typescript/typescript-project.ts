@@ -1,11 +1,16 @@
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
+const packageRoot = path.resolve(currentDir, "..", "..", "..");
+const rivetTypeEntryPath = path.resolve(packageRoot, "dist", "index.d.ts");
+
 const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
   target: ts.ScriptTarget.ES2023,
-  module: ts.ModuleKind.NodeNext,
-  moduleResolution: ts.ModuleResolutionKind.NodeNext,
+  module: ts.ModuleKind.ESNext,
+  moduleResolution: ts.ModuleResolutionKind.Bundler,
   strict: true,
   skipLibCheck: true,
   allowJs: false,
@@ -14,6 +19,22 @@ const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
   ignoreDeprecations: "6.0",
   esModuleInterop: true,
   verbatimModuleSyntax: true,
+};
+
+const toPortableRelativePath = (fromDirectory: string, targetPath: string): string => {
+  return path.relative(fromDirectory, targetPath).split(path.sep).join("/");
+};
+
+const createSyntheticCompilerOptions = (absoluteEntryPath: string): ts.CompilerOptions => {
+  const entryDirectory = path.dirname(absoluteEntryPath);
+
+  return {
+    ...DEFAULT_COMPILER_OPTIONS,
+    baseUrl: entryDirectory,
+    paths: {
+      "rivet-ts": [toPortableRelativePath(entryDirectory, rivetTypeEntryPath)],
+    },
+  };
 };
 
 export type ResolvedTypeScriptProject = Readonly<{
@@ -64,7 +85,7 @@ export const resolveTypeScriptProject = (
   if (resolvedTsconfigPath === null) {
     return {
       absoluteEntryPath,
-      compilerOptions: DEFAULT_COMPILER_OPTIONS,
+      compilerOptions: createSyntheticCompilerOptions(absoluteEntryPath),
       configDiagnostics: [],
       configFilePath: null,
     };

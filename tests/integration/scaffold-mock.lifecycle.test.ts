@@ -130,7 +130,11 @@ describe("scaffold-mock lifecycle", () => {
     );
     const apiSource = await fs.readFile(path.join(outputDirectory, "packages", "api", "src", "api.ts"), "utf8");
     const localRivetSource = await fs.readFile(
-      path.join(outputDirectory, "packages", "api", "src", "local-rivet.ts"),
+      path.join(outputDirectory, "packages", "api", "generated", "local-rivet.ts"),
+      "utf8",
+    );
+    const publicApiSource = await fs.readFile(
+      path.join(outputDirectory, "packages", "api", "generated", "index.ts"),
       "utf8",
     );
     const listHandlerSource = await fs.readFile(
@@ -153,13 +157,15 @@ describe("scaffold-mock lifecycle", () => {
     expect(rootPackageJsonSource).toContain('"dev": "vite"');
     expect(rootViteConfigSource).toContain('import { rivetTs } from "rivet-ts/vite";');
     expect(rootViteConfigSource).toContain('contract: "./packages/api/contracts.ts"');
-    expect(uiMainSource).toContain('import { members } from "@api/generated/rivet/client/index.js";');
+    expect(uiMainSource).toContain('import { members, configureLocalRivet } from "@api";');
     expect(uiMainSource).toContain("configureLocalRivet()");
     expect(uiMainSource).toContain("members.list()");
     expect(apiSource).toContain('import { mount } from "rivet-ts/hono";');
     expect(apiSource).toContain('{ controllerName: "members" }');
     expect(localRivetSource).toContain("export const configureLocalRivet");
     expect(localRivetSource).toContain("app.request");
+    expect(publicApiSource).toContain('export { configureLocalRivet }');
+    expect(publicApiSource).toContain('export * from "./rivet/client/index.js";');
     expect(listHandlerSource).toContain("totalCount");
     expect(listHandlerSource).toContain('"items": [');
     expect(createHandlerSource).toContain('"id": "mem_001"');
@@ -168,6 +174,8 @@ describe("scaffold-mock lifecycle", () => {
     expect(apiPackageJsonSource).toContain(
       "contracts.ts --out generated/api.contract.json",
     );
+    expect(apiPackageJsonSource).toContain('"exports"');
+    expect(apiPackageJsonSource).toContain("./generated/index.ts");
   });
 
   it("prefixes handler files when multiple contracts reuse endpoint names", async () => {
@@ -231,6 +239,66 @@ describe("scaffold-mock lifecycle", () => {
     expect(apiSource).toContain('{ controllerName: "summary" }');
     expect(petHandlerSource).toContain("export const petGet");
     expect(summaryHandlerSource).toContain("export const summaryGet");
+  });
+
+  it("scaffolds from a bare contract file without tsconfig or node_modules", async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-bare-"));
+    const sourceDirectory = path.join(tempDirectory, "source");
+    const outputDirectory = path.join(tempDirectory, "mock-app");
+    await fs.mkdir(sourceDirectory, { recursive: true });
+
+    await fs.writeFile(
+      path.join(sourceDirectory, "contracts.ts"),
+      [
+        'import type { Contract, Endpoint } from "rivet-ts";',
+        "",
+        'export interface HelloContract extends Contract<"HelloContract"> {',
+        "  Ping: Endpoint<{",
+        '    method: "GET";',
+        '    route: "/api/ping";',
+        '    response: { message: "pong" };',
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const exitCode = await runCli(
+      [
+        "scaffold-mock",
+        "--entry",
+        path.join(sourceDirectory, "contracts.ts"),
+        "--out",
+        outputDirectory,
+      ],
+      {
+        stdout: (text) => stdout.push(text),
+        stderr: (text) => stderr.push(text),
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toHaveLength(0);
+    expect(stderr).toHaveLength(0);
+
+    const rootPackageJsonSource = await fs.readFile(
+      path.join(outputDirectory, "package.json"),
+      "utf8",
+    );
+    const apiSource = await fs.readFile(
+      path.join(outputDirectory, "packages", "api", "src", "api.ts"),
+      "utf8",
+    );
+    const uiMainSource = await fs.readFile(
+      path.join(outputDirectory, "ui", "src", "main.ts"),
+      "utf8",
+    );
+
+    expect(rootPackageJsonSource).toContain('"dev": "vite"');
+    expect(apiSource).toContain('const helloApp = mount<HelloContract>');
+    expect(uiMainSource).toContain("configureLocalRivet()");
   });
 
   it("filters controllers and returns empty responses correctly in rivet-ts/hono", async () => {

@@ -89,11 +89,12 @@ myapp/
 │           │   ├── create-todo.ts
 │           │   ├── get-todo.ts
 │           │   └── list-todos.ts
-│           └── local-rivet.ts
 └── ui/
     ├── index.html
     └── src/main.ts
 ```
+
+The important boundary is that the UI consumes `@api`. It does not reach into API source files and it does not import generated implementation paths directly. The bundled API seam can move from in-process local mode to HTTP later without changing the frontend call sites.
 
 ## 3. Inspect the generated handler shape
 
@@ -126,8 +127,7 @@ Example frontend consumption:
 The scaffolded app starts in local mode. In `ui/src/main.ts`:
 
 ```ts
-import { members } from "@api/generated/rivet/client/index.js";
-import { configureLocalRivet } from "@api/src/local-rivet.js";
+import { members, configureLocalRivet } from "@api";
 
 configureLocalRivet();
 
@@ -139,13 +139,14 @@ const created = await members.create({
 console.log(created.id);
 ```
 
+That is the intended decoupling: write the UI against `@api`, and let the API package decide whether that surface is currently backed by local `app.request(...)` transport or a remote server.
+
 ## 4. Open the generated UI entrypoint
 
 Generated `ui/src/main.ts`:
 
 ```ts
-import { todo } from "@api/generated/rivet/client/index.js";
-import { configureLocalRivet } from "@api/src/local-rivet.js";
+import { todo, configureLocalRivet } from "@api";
 
 const render = async (): Promise<void> => {
   configureLocalRivet();
@@ -161,7 +162,7 @@ const render = async (): Promise<void> => {
     "todo.listTodos()",
     JSON.stringify(result, null, 2),
     "",
-    "Open ui/src/main.ts and keep consuming @api/generated/rivet/client.",
+    "Open ui/src/main.ts and keep consuming @api.",
   ].join("\n");
 };
 
@@ -172,11 +173,11 @@ This is the place to start consuming the API from the frontend.
 
 ## 5. See how local transport is wired
 
-Generated `packages/api/src/local-rivet.ts`:
+Generated `packages/api/generated/local-rivet.ts`:
 
 ```ts
-import { app } from "./api.js";
-import { configureRivet as configureGeneratedRivet, type RivetConfig } from "../generated/rivet/rivet.js";
+import { app } from "../src/api.js";
+import { configureRivet as configureGeneratedRivet, type RivetConfig } from "./rivet/rivet.js";
 
 type LocalRivetConfig = Omit<RivetConfig, "fetch" | "baseUrl"> & {
   readonly baseUrl?: string;
@@ -192,6 +193,8 @@ export const configureLocalRivet = (config: LocalRivetConfig = {}): void => {
 ```
 
 The UI does not call `app.request(...)` directly. It calls `configureLocalRivet()` once and then uses the generated Rivet client.
+
+That separation is deliberate. The frontend depends on the API surface, not the transport mechanics, so promotion to a real server later is a hosting/configuration change rather than a client rewrite.
 
 ## 6. Run the app
 
