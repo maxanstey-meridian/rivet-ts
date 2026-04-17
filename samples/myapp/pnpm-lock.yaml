@@ -12,8 +12,8 @@ importers:
         specifier: ^4.0.0
         version: 4.12.14
       rivet-ts:
-        specifier: github:maxanstey-meridian/rivet-ts
-        version: https://codeload.github.com/maxanstey-meridian/rivet-ts/tar.gz/462964c73a88160623e3e112d1633663e627d830(hono@4.12.14)
+        specifier: github:maxanstey-meridian/rivet-ts#v0.8
+        version: https://codeload.github.com/maxanstey-meridian/rivet-ts/tar.gz/fb951b3077a26ce9fc5e75c8338147b09a815ae1(hono@4.12.14)(vite@6.4.2)
     devDependencies:
       typescript:
         specifier: ^6.0.2
@@ -180,6 +180,10 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@isaacs/fs-minipass@4.0.1':
+    resolution: {integrity: sha512-wgm9Ehl2jpeqP3zw/7mo3kRHFp5MEDhqAdwy1fTGkHAwnkGOVsgpvQhL8B5n1qlb01jV3n/bI0ZfZp5lWA1k4w==}
+    engines: {node: '>=18.0.0'}
+
   '@rollup/rollup-android-arm-eabi@4.60.1':
     resolution: {integrity: sha512-d6FinEBLdIiK+1uACUttJKfgZREXrF0Qc2SmLII7W2AD8FfiZ9Wjd+rD/iRuf5s5dWrr1GgwXCvPqOuDquOowA==}
     cpu: [arm]
@@ -308,6 +312,10 @@ packages:
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
 
+  chownr@3.0.0:
+    resolution: {integrity: sha512-+IxzY9BZOQd/XuYPRmrvEVjF/nqj5kgT4kEq7VofrDoM1MxoRjEWkrCC3EtLi59TVawxTAn+orJwFQcrqEN1+g==}
+    engines: {node: '>=18'}
+
   esbuild@0.25.12:
     resolution: {integrity: sha512-bbPBYYrtZbkt6Os6FiTLCTFxvq4tt3JKall1vRwshA3fdVztsLAatFaZobhkBC8/BrPetoa0oksYoKXoG4ryJg==}
     engines: {node: '>=18'}
@@ -331,6 +339,14 @@ packages:
     resolution: {integrity: sha512-am5zfg3yu6sqn5yjKBNqhnTX7Cv+m00ox+7jbaKkrLMRJ4rAdldd1xPd/JzbBWspqaQv6RSTrgFN95EsfhC+7w==}
     engines: {node: '>=16.9.0'}
 
+  minipass@7.1.3:
+    resolution: {integrity: sha512-tEBHqDnIoM/1rXME1zgka9g6Q2lcoCkxHLuc7ODJ5BxbP5d4c2Z5cGgtXAku59200Cx7diuHTOYfSBD8n6mm8A==}
+    engines: {node: '>=16 || 14 >=14.17'}
+
+  minizlib@3.1.0:
+    resolution: {integrity: sha512-KZxYo1BUkWD2TVFLr0MQoM8vUUigWD3LlD83a/75BqC+4qE0Hb1Vo5v1FgcfaNXvfXzr+5EhQ6ing/CaBijTlw==}
+    engines: {node: '>= 18'}
+
   nanoid@3.3.11:
     resolution: {integrity: sha512-N8SpfPUnUp1bK+PMYW8qSWdl9U+wwNWI4QKxOYDy9JAro3WMX7p2OeVRF9v+347pnakNevPmiHhNmZ2HbFA76w==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
@@ -347,14 +363,17 @@ packages:
     resolution: {integrity: sha512-pMMHxBOZKFU6HgAZ4eyGnwXF/EvPGGqUr0MnZ5+99485wwW41kW91A4LOGxSHhgugZmSChL5AlElNdwlNgcnLQ==}
     engines: {node: ^10 || ^12 || >=14}
 
-  rivet-ts@https://codeload.github.com/maxanstey-meridian/rivet-ts/tar.gz/462964c73a88160623e3e112d1633663e627d830:
-    resolution: {tarball: https://codeload.github.com/maxanstey-meridian/rivet-ts/tar.gz/462964c73a88160623e3e112d1633663e627d830}
-    version: 0.6.0
+  rivet-ts@https://codeload.github.com/maxanstey-meridian/rivet-ts/tar.gz/fb951b3077a26ce9fc5e75c8338147b09a815ae1:
+    resolution: {tarball: https://codeload.github.com/maxanstey-meridian/rivet-ts/tar.gz/fb951b3077a26ce9fc5e75c8338147b09a815ae1}
+    version: 0.7.0
     hasBin: true
     peerDependencies:
       hono: ^4.0.0
+      vite: ^6.0.0
     peerDependenciesMeta:
       hono:
+        optional: true
+      vite:
         optional: true
 
   rollup@4.60.1:
@@ -365,6 +384,10 @@ packages:
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
     engines: {node: '>=0.10.0'}
+
+  tar@7.5.13:
+    resolution: {integrity: sha512-tOG/7GyXpFevhXVh8jOPJrmtRpOTsYqUIkVdVooZYJS/z8WhfQUX8RJILmeuJNinGAMSu1veBr4asSHFt5/hng==}
+    engines: {node: '>=18'}
 
   tinyglobby@0.2.16:
     resolution: {integrity: sha512-pn99VhoACYR8nFHhxqix+uvsbXineAasWm5ojXoN8xEwK5Kd3/TrhNn1wByuD52UxWRLy8pu+kRMniEi6Eq9Zg==}
@@ -414,6 +437,10 @@ packages:
         optional: true
       yaml:
         optional: true
+
+  yallist@5.0.0:
+    resolution: {integrity: sha512-YgvUTfwqyc7UXVMrB+SImsVYSmTS8X/tSrtdNZMImM+n7+QTriRXyXim0mBrTXNeqzVF0KWGgHPeiyViFFrNDw==}
+    engines: {node: '>=18'}
 
 snapshots:
 
@@ -495,6 +522,10 @@ snapshots:
   '@esbuild/win32-x64@0.25.12':
     optional: true
 
+  '@isaacs/fs-minipass@4.0.1':
+    dependencies:
+      minipass: 7.1.3
+
   '@rollup/rollup-android-arm-eabi@4.60.1':
     optional: true
 
@@ -572,6 +603,8 @@ snapshots:
 
   '@types/estree@1.0.8': {}
 
+  chownr@3.0.0: {}
+
   esbuild@0.25.12:
     optionalDependencies:
       '@esbuild/aix-ppc64': 0.25.12
@@ -610,6 +643,12 @@ snapshots:
 
   hono@4.12.14: {}
 
+  minipass@7.1.3: {}
+
+  minizlib@3.1.0:
+    dependencies:
+      minipass: 7.1.3
+
   nanoid@3.3.11: {}
 
   picocolors@1.1.1: {}
@@ -622,11 +661,13 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  rivet-ts@https://codeload.github.com/maxanstey-meridian/rivet-ts/tar.gz/462964c73a88160623e3e112d1633663e627d830(hono@4.12.14):
+  rivet-ts@https://codeload.github.com/maxanstey-meridian/rivet-ts/tar.gz/fb951b3077a26ce9fc5e75c8338147b09a815ae1(hono@4.12.14)(vite@6.4.2):
     dependencies:
+      tar: 7.5.13
       typescript: 6.0.3
     optionalDependencies:
       hono: 4.12.14
+      vite: 6.4.2
 
   rollup@4.60.1:
     dependencies:
@@ -661,6 +702,14 @@ snapshots:
 
   source-map-js@1.2.1: {}
 
+  tar@7.5.13:
+    dependencies:
+      '@isaacs/fs-minipass': 4.0.1
+      chownr: 3.0.0
+      minipass: 7.1.3
+      minizlib: 3.1.0
+      yallist: 5.0.0
+
   tinyglobby@0.2.16:
     dependencies:
       fdir: 6.5.0(picomatch@4.0.4)
@@ -678,3 +727,5 @@ snapshots:
       tinyglobby: 0.2.16
     optionalDependencies:
       fsevents: 2.3.3
+
+  yallist@5.0.0: {}

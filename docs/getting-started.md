@@ -9,7 +9,7 @@
 ## 1. Install
 
 ```bash
-pnpm add -D github:maxanstey-meridian/rivet-ts#v0.7
+pnpm add -D github:maxanstey-meridian/rivet-ts#v0.8
 ```
 
 The browser-local flow does not require a separate `dotnet` install. The Vite plugin downloads a pinned Rivet binary automatically when it needs one.

@@ -31,7 +31,7 @@ type PackageManifest = {
 
 const DEFAULT_TYPESCRIPT_VERSION = "^6.0.2";
 const DEFAULT_VITE_VERSION = "^6.0.5";
-const DEFAULT_RIVET_TS_DEPENDENCY = "github:maxanstey-meridian/rivet-ts";
+const DEFAULT_RIVET_TS_DEPENDENCY = "github:maxanstey-meridian/rivet-ts#v0.8";
 
 const toCamelCase = (value: string): string => {
   const kebab = toKebabCase(value);

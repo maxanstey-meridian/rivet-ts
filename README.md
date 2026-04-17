@@ -180,9 +180,17 @@ Downstream Rivet emits the same artifacts it emits for C# sources: TypeScript ty
 The scaffolded app starts in local mode:
 
 ```ts
+import { members } from "./generated/rivet/client/index.js";
 import { configureLocalRivet } from "./local-rivet.js";
 
 configureLocalRivet();
+
+// Fully type-safe; runtime-safe when generated with --compile.
+const created = await members.create({
+  email: "ada@example.com",
+});
+
+console.log(created.id);
 ```
 
 That lets the generated Rivet client call the Hono app in-process via `app.request(...)`.
