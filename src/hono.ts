@@ -10,6 +10,7 @@ type ContractEndpointJson = {
   readonly name: string;
   readonly httpMethod: string;
   readonly routeTemplate: string;
+  readonly controllerName?: string;
   readonly params: ReadonlyArray<ContractEndpointParamJson>;
   readonly responses: ReadonlyArray<{ readonly statusCode: number }>;
 };
@@ -27,14 +28,31 @@ type HttpMethod = "get" | "post" | "put" | "patch" | "delete";
 const toHonoRoute = (routeTemplate: string): string =>
   routeTemplate.replace(/\{([^}]+)\}/g, ":$1");
 
+const toRuntimeEndpointName = (value: string): string => {
+  if (value.length === 0) {
+    return value;
+  }
+
+  return `${value[0]?.toLowerCase() ?? ""}${value.slice(1)}`;
+};
+
 export const mount = <TContract>(
   contract: ContractJson,
   handlers: HandlerMap<TContract>,
+  options?: { controllerName?: string },
 ): Hono => {
   const app = new Hono();
+  const handlerEntries = Object.entries(handlers as Record<string, unknown>);
 
   for (const endpoint of contract.endpoints) {
-    const handler = handlers[endpoint.name as ContractEndpointKey<TContract>];
+    if (options?.controllerName && endpoint.controllerName !== options.controllerName) {
+      continue;
+    }
+
+    const directHandler = handlers[endpoint.name as ContractEndpointKey<TContract>];
+    const handler = directHandler ?? handlerEntries.find(
+      ([key]) => toRuntimeEndpointName(key) === endpoint.name,
+    )?.[1];
 
     if (!handler) {
       continue;
@@ -68,6 +86,10 @@ export const mount = <TContract>(
       const result = Object.keys(input).length > 0
         ? await (handler as (input: unknown) => Promise<unknown>)(input)
         : await (handler as () => Promise<unknown>)();
+
+      if (result === undefined || status === 204 || status === 205 || status === 304) {
+        return c.body(null, status as 204);
+      }
 
       return c.json(result as object, status as 200);
     });

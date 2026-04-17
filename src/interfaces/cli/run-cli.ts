@@ -1,9 +1,12 @@
 import fs from "node:fs/promises";
 import { ExtractTsContracts } from "../../application/use-cases/extract-ts-contracts.js";
 import { LowerContractBundleToRivetContract } from "../../application/use-cases/lower-contract-bundle-to-rivet-contract.js";
+import { ScaffoldMockProject } from "../../application/use-cases/scaffold-mock-project.js";
 import type { ExtractionDiagnostic } from "../../domain/diagnostic.js";
+import { ScaffoldMockConfig } from "../../domain/scaffold-mock-config.js";
 import { TypeScriptContractFrontend } from "../../infrastructure/typescript/typescript-contract-frontend.js";
 import { TypeScriptRivetContractLowerer } from "../../infrastructure/typescript/typescript-rivet-contract-lowerer.js";
+import { FileSystemMockProjectEmitter } from "../../infrastructure/scaffold/mock-project-emitter.js";
 
 type CliIO = {
   stdout: (text: string) => void;
@@ -25,6 +28,10 @@ const reportDiagnostics = (diagnostics: readonly ExtractionDiagnostic[], io: Cli
 };
 
 export const runCli = async (args: readonly string[], io: CliIO = DEFAULT_IO): Promise<number> => {
+  if (args[0] === "scaffold-mock") {
+    return runScaffoldMock(args.slice(1), io);
+  }
+
   const parsed = parseReflectArgs(args);
 
   if (!parsed.entryPath) {
@@ -52,6 +59,35 @@ export const runCli = async (args: readonly string[], io: CliIO = DEFAULT_IO): P
   return lowered.hasErrors ? 1 : 0;
 };
 
+const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<number> => {
+  const parsed = parseScaffoldMockArgs(args);
+
+  if (!parsed.entryPath || !parsed.outDir) {
+    io.stderr(
+      "Usage: rivet-ts scaffold-mock --entry <file> --out <dir> [--name <project-name>] [--tsconfig <file>]\n",
+    );
+    return 1;
+  }
+
+  const frontend = new TypeScriptContractFrontend(parsed.tsconfigPath);
+  const lowerer = new TypeScriptRivetContractLowerer(parsed.tsconfigPath);
+  const emitter = new FileSystemMockProjectEmitter();
+  const useCase = new ScaffoldMockProject(frontend, lowerer, emitter);
+
+  const result = await useCase.execute(
+    new ScaffoldMockConfig({
+      entryPath: parsed.entryPath,
+      outDir: parsed.outDir,
+      projectName: parsed.projectName,
+      tsconfigPath: parsed.tsconfigPath,
+    }),
+  );
+
+  reportDiagnostics(result.diagnostics, io);
+
+  return result.hasErrors ? 1 : 0;
+};
+
 const parseReflectArgs = (args: readonly string[]): { entryPath?: string; outputPath?: string } => {
   let entryPath: string | undefined;
   let outputPath: string | undefined;
@@ -72,4 +108,47 @@ const parseReflectArgs = (args: readonly string[]): { entryPath?: string; output
   }
 
   return { entryPath, outputPath };
+};
+
+const parseScaffoldMockArgs = (
+  args: readonly string[],
+): {
+  entryPath?: string;
+  outDir?: string;
+  projectName?: string;
+  tsconfigPath?: string;
+} => {
+  let entryPath: string | undefined;
+  let outDir: string | undefined;
+  let projectName: string | undefined;
+  let tsconfigPath: string | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (arg === "--entry" && index + 1 < args.length) {
+      entryPath = args[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--out" && index + 1 < args.length) {
+      outDir = args[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--name" && index + 1 < args.length) {
+      projectName = args[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--tsconfig" && index + 1 < args.length) {
+      tsconfigPath = args[index + 1];
+      index += 1;
+    }
+  }
+
+  return { entryPath, outDir, projectName, tsconfigPath };
 };

@@ -62,3 +62,4 @@ export { LowerContractBundleToRivetContract } from "./application/use-cases/lowe
 export { TypeScriptContractFrontend } from "./infrastructure/typescript/typescript-contract-frontend.js";
 export { TypeScriptRivetContractLowerer } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 export { runCli } from "./interfaces/cli/run-cli.js";
+export { rivetTs, type RivetTsVitePluginOptions } from "./vite.js";

@@ -1,0 +1,17 @@
+{
+  "name": "myapp",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "hono": "^4.0.0",
+    "rivet-ts": "github:maxanstey-meridian/rivet-ts"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2",
+    "vite": "^6.4.2"
+  }
+}
