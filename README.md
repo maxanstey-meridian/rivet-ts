@@ -61,8 +61,16 @@ export interface MembersContract extends Contract<"MembersContract"> {
 pnpm exec rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp
 cd ./myapp
 pnpm install
+pnpm --dir packages/api run generate
 pnpm run dev
 ```
+
+`scaffold-mock` creates the project shape and authored source files. The API package `generate` step produces:
+
+- `packages/api/generated/*.contract.json`
+- `packages/api/generated/rivet/*`
+
+After that initial generate, the Vite plugin keeps those artifacts current during `vite dev`.
 
 The scaffold gives you:
 
@@ -82,7 +90,7 @@ myapp/
 ├── packages/
 │   └── api/
 │       ├── contracts.ts
-│       ├── generated/
+│       ├── generated/          # created by `pnpm --dir packages/api run generate`
 │       ├── package.json
 │       └── src/
 │           ├── api.ts

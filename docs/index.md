@@ -67,6 +67,7 @@ Scaffold the app:
 pnpm exec rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp
 cd ./myapp
 pnpm install
+pnpm --dir packages/api run generate
 ```
 
 Then use the generated client from `ui/src/main.ts`:
@@ -81,7 +82,7 @@ const user = await users.getUser("usr_123");
 console.log(user.name);
 ```
 
-The scaffold already includes the Vite plugin. During `vite dev`, contract changes regenerate the client/runtime artifacts under `packages/api` and Vite reloads the UI against the updated local surface.
+`scaffold-mock` creates the project shape. `pnpm --dir packages/api run generate` creates the initial generated contract/client artifacts under `packages/api/generated`. After that, the scaffolded Vite plugin keeps them current during `vite dev`.
 
 ## Pages
 

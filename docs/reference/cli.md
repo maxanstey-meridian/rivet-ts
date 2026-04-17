@@ -36,7 +36,12 @@ Example:
 
 ```bash
 pnpm exec rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp
+cd ./myapp
+pnpm install
+pnpm --dir packages/api run generate
 ```
+
+`scaffold-mock` creates the project shape and authored source files. It does not itself produce `packages/api/generated/*`; that comes from the API package `generate` step.
 
 Options:
 

@@ -68,9 +68,10 @@ export interface TodoContract extends Contract<"TodoContract"> {
 pnpm exec rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp
 cd ./myapp
 pnpm install
+pnpm --dir packages/api run generate
 ```
 
-The scaffold emits this shape:
+The scaffold emits the project shape, and the API `generate` step produces the generated client/runtime artifacts:
 
 ```text
 myapp/
@@ -95,6 +96,13 @@ myapp/
 ```
 
 ## 3. Inspect the generated handler shape
+
+`scaffold-mock` creates the authored source layer under `packages/api/src`.
+
+`pnpm --dir packages/api run generate` creates:
+
+- `packages/api/generated/api.contract.json`
+- `packages/api/generated/rivet/*`
 
 Example generated handler:
 

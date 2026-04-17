@@ -63,9 +63,10 @@ export interface MembersContract extends Contract<"MembersContract"> {
 pnpm exec rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp
 cd ./myapp
 pnpm install
+pnpm --dir packages/api run generate
 ```
 
-This creates the default browser-local app shape:
+This creates the default browser-local app shape and then generates the initial local artifacts:
 
 ```text
 myapp/
@@ -92,6 +93,12 @@ The scaffold already includes:
 - the root Vite config with `rivet-ts/vite`
 - the `ui/` root
 - an initial `ui/src/main.ts` that configures local transport and consumes the generated client when possible
+
+Important:
+
+- `scaffold-mock` creates the project shape and authored handlers
+- `pnpm --dir packages/api run generate` produces `packages/api/generated/*.contract.json` and `packages/api/generated/rivet/*`
+- once those initial artifacts exist, `vite dev` keeps them current
 
 ## 4. Start consuming from the UI
 
