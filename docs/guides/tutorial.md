@@ -121,6 +121,24 @@ export const getTodo: RivetHandler<TodoContract, "GetTodo"> = async ({ params })
 
 Replace those stubs with application logic as needed.
 
+Example frontend consumption:
+
+The scaffolded app starts in local mode. In `ui/src/main.ts`:
+
+```ts
+import { members } from "@api/generated/rivet/client/index.js";
+import { configureLocalRivet } from "@api/src/local-rivet.js";
+
+configureLocalRivet();
+
+// Fully type-safe; runtime-safe when generated with --compile.
+const created = await members.create({
+  email: "ada@example.com",
+});
+
+console.log(created.id);
+```
+
 ## 4. Open the generated UI entrypoint
 
 Generated `ui/src/main.ts`:

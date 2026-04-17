@@ -121,6 +121,24 @@ export const list: RivetHandler<MembersContract, "List"> = async () => {
 };
 ```
 
+Example frontend consumption:
+
+The scaffolded app starts in local mode. In `ui/src/main.ts`:
+
+```ts
+import { members } from "@api/generated/rivet/client/index.js";
+import { configureLocalRivet } from "@api/src/local-rivet.js";
+
+configureLocalRivet();
+
+// Fully type-safe; runtime-safe when generated with --compile.
+const created = await members.create({
+  email: "ada@example.com",
+});
+
+console.log(created.id);
+```
+
 The intended path is:
 
 1. write the contract
