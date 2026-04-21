@@ -6,6 +6,7 @@ import {
   type EndpointSpecOf,
   type RivetHandler,
   type RivetHandlerOwner,
+  type RivetHandlerResult,
 } from "../../src/domain/handler-types.js";
 
 interface DirectorySearchRequest {
@@ -127,6 +128,7 @@ test("RivetHandler receives { body: TInput } for form-encoded endpoints", async 
 test("contract helpers expose only endpoint keys", () => {
   type EndpointKeys = ContractEndpointKey<DirectoryContract>;
   type SearchSpec = EndpointSpecOf<DirectoryContract, "Search">;
+  type SearchResult = RivetHandlerResult<DirectoryContract, "Search">;
 
   expectTypeOf<EndpointKeys>().toEqualTypeOf<"Search" | "Health" | "Export" | "SubmitForm">();
   expectTypeOf<SearchSpec>().toEqualTypeOf<{
@@ -135,6 +137,7 @@ test("contract helpers expose only endpoint keys", () => {
     input: DirectorySearchRequest;
     response: DirectorySearchResponse;
   }>();
+  expectTypeOf<SearchResult>().toEqualTypeOf<DirectorySearchResponse>();
 });
 
 test("asRivetHandler binds a class handle method", async () => {

@@ -16,6 +16,7 @@
     "rivet-ts": "github:maxanstey-meridian/rivet-ts#v0.9"
   },
   "devDependencies": {
+    "@types/node": "^25.5.2",
     "dependency-cruiser": "^17.3.10",
     "typescript": "^6.0.2",
     "vite": "^6.4.2"

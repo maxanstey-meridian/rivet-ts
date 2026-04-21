@@ -232,6 +232,7 @@ describe("scaffold-mock lifecycle", () => {
     );
     expect(rootPackageJsonSource).toContain('"@members-mock/api": "workspace:*"');
     expect(rootPackageJsonSource).toContain('"@members-mock/client": "workspace:*"');
+    expect(rootPackageJsonSource).toContain('"@types/node": "^25.5.2"');
     expect(rootPackageJsonSource).toContain('"dependency-cruiser": "^17.3.10"');
     expect(rootViteConfigSource).toContain('import { rivetTs } from "rivet-ts/vite";');
     expect(rootViteConfigSource).toContain('entry: "./packages/api/src/app/contracts.ts"');

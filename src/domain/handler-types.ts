@@ -25,21 +25,24 @@ export type RivetHandlerInput<TContract, TKey extends ContractEndpointKey<TContr
   ? {}
   : HandlerInputBag<EndpointSpecOf<TContract, TKey>>;
 
+export type RivetHandlerResult<TContract, TKey extends ContractEndpointKey<TContract>> =
+  RivetHandlerSuccessResponse<EndpointSpecOf<TContract, TKey>>;
+
 export type RivetHandler<TContract, TKey extends ContractEndpointKey<TContract>> = [
   keyof RivetHandlerInput<TContract, TKey>,
 ] extends [never]
-  ? () => Promise<RivetHandlerSuccessResponse<EndpointSpecOf<TContract, TKey>>>
+  ? () => Promise<RivetHandlerResult<TContract, TKey>>
   : (
       input: RivetHandlerInput<TContract, TKey>,
-    ) => Promise<RivetHandlerSuccessResponse<EndpointSpecOf<TContract, TKey>>>;
+    ) => Promise<RivetHandlerResult<TContract, TKey>>;
 
 export type RivetInvokableHandler<
   TContract,
   TKey extends ContractEndpointKey<TContract>,
   TInput extends RivetHandlerInput<TContract, TKey> = RivetHandlerInput<TContract, TKey>,
 > = [keyof TInput] extends [never]
-  ? () => Promise<RivetHandlerSuccessResponse<EndpointSpecOf<TContract, TKey>>>
-  : (input: TInput) => Promise<RivetHandlerSuccessResponse<EndpointSpecOf<TContract, TKey>>>;
+  ? () => Promise<RivetHandlerResult<TContract, TKey>>
+  : (input: TInput) => Promise<RivetHandlerResult<TContract, TKey>>;
 
 export type RivetHandlerOwner<
   TContract,

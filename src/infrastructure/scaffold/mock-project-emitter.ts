@@ -230,11 +230,11 @@ const emitUseCaseSource = (descriptor: HandlerDescriptor): string => {
   const outputTypeName = `${descriptor.endpointName}Output`;
 
   return [
-    'import type { RivetHandler, RivetHandlerInput } from "rivet-ts";',
+    'import type { RivetHandlerInput, RivetHandlerResult } from "rivet-ts";',
     `import type { ${descriptor.contractName} } from "#contract";`,
     "",
     `type ${inputTypeName} = RivetHandlerInput<${descriptor.contractName}, "${descriptor.endpointName}">;`,
-    `type ${outputTypeName} = Awaited<ReturnType<RivetHandler<${descriptor.contractName}, "${descriptor.endpointName}">>>;`,
+    `type ${outputTypeName} = RivetHandlerResult<${descriptor.contractName}, "${descriptor.endpointName}">;`,
     "",
     `export const ${descriptor.useCaseExportName} = async (_input: ${inputTypeName}): Promise<${outputTypeName}> => {`,
     descriptor.body,
@@ -708,6 +708,7 @@ const emitRootPackageJsonSource = async (
   packageScope: string,
 ): Promise<string> => {
   const manifest = await readPackageManifest();
+  const nodeTypesVersion = manifest.devDependencies?.["@types/node"] ?? "^25.5.2";
   const typescriptVersion = manifest.devDependencies?.typescript ?? DEFAULT_TYPESCRIPT_VERSION;
   const dependencyCruiserVersion =
     manifest.devDependencies?.["dependency-cruiser"] ?? DEFAULT_DEPENDENCY_CRUISER_VERSION;
@@ -733,6 +734,7 @@ const emitRootPackageJsonSource = async (
           "rivet-ts": DEFAULT_RIVET_TS_DEPENDENCY,
         },
         devDependencies: {
+          "@types/node": nodeTypesVersion,
           "dependency-cruiser": dependencyCruiserVersion,
           typescript: typescriptVersion,
           vite: DEFAULT_VITE_VERSION,

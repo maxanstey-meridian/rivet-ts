@@ -123,11 +123,11 @@ myapp/
 Example scaffolded use case:
 
 ```ts
-import type { RivetHandler, RivetHandlerInput } from "rivet-ts";
+import type { RivetHandlerInput, RivetHandlerResult } from "rivet-ts";
 import type { MembersContract } from "#contract";
 
 type ListInput = RivetHandlerInput<MembersContract, "List">;
-type ListOutput = Awaited<ReturnType<RivetHandler<MembersContract, "List">>>;
+type ListOutput = RivetHandlerResult<MembersContract, "List">;
 
 export const executeList = async (_input: ListInput): Promise<ListOutput> => {
   return [

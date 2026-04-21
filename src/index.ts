@@ -22,6 +22,7 @@ export {
   type EndpointSpecOf,
   type RivetHandler,
   type RivetHandlerInput,
+  type RivetHandlerResult,
   type RivetHandlerOwner,
 } from "./domain/handler-types.js";
 export { type RivetInvokable } from "./hono.js";
