@@ -13,7 +13,7 @@
   "dependencies": {
     "@myapp/api": "workspace:*",
     "@myapp/client": "workspace:*",
-    "rivet-ts": "github:maxanstey-meridian/rivet-ts#v0.9"
+    "rivet-ts": "github:maxanstey-meridian/rivet-ts#v0.9.1"
   },
   "devDependencies": {
     "@types/node": "^25.5.2",

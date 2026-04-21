@@ -47,7 +47,7 @@ type DemoClientCall = {
 const DEFAULT_TYPESCRIPT_VERSION = "^6.0.2";
 const DEFAULT_VITE_VERSION = "^6.4.2";
 const DEFAULT_DEPENDENCY_CRUISER_VERSION = "^17.3.10";
-const DEFAULT_RIVET_TS_DEPENDENCY = "github:maxanstey-meridian/rivet-ts#v0.9";
+const DEFAULT_RIVET_TS_DEPENDENCY = "github:maxanstey-meridian/rivet-ts#v0.9.1";
 const DEFAULT_RIVET_VERSION = "0.34.0";
 const DEFAULT_ZOD_VERSION = "^4.1.12";
 
