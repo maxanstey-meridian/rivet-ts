@@ -11,11 +11,11 @@ For the frontend:
 - your client call sites do not need a new abstraction
 
 ```ts
-import { configureRivet, users } from "@api";
+import { configureRivet, users } from "@myapp/client";
 
 configureRivet({ baseUrl: "https://api.example.com" });
 
-const user = await users.getUser("usr_123");
+const user = await users.getUser({ params: { id: "usr_123" } });
 ```
 
 ## What changes

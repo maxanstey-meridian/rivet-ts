@@ -1,0 +1,12 @@
+{
+  "name": "@myapp/client",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./generated/index.ts"
+  },
+  "dependencies": {
+    "rivet-ts": "github:maxanstey-meridian/rivet-ts#v0.9",
+    "zod": "^4.1.12"
+  }
+}

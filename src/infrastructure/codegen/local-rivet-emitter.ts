@@ -1,7 +1,10 @@
 import path from "node:path";
 
 const toModuleImportPath = (fromFilePath: string, targetFilePath: string): string => {
-  const relativePath = path.relative(path.dirname(fromFilePath), targetFilePath).split(path.sep).join("/");
+  const relativePath = path
+    .relative(path.dirname(fromFilePath), targetFilePath)
+    .split(path.sep)
+    .join("/");
   const importPath = relativePath.startsWith(".") ? relativePath : `./${relativePath}`;
 
   return importPath

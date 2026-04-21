@@ -54,9 +54,7 @@ export const emitTypeExpression = (type: RivetType): string => {
 
     case "brand": {
       const underlying = emitTypeExpression(type.underlying);
-      const base = needsParensForBrand(type.underlying)
-        ? `(${underlying})`
-        : underlying;
+      const base = needsParensForBrand(type.underlying) ? `(${underlying})` : underlying;
       return `${base} & { readonly __brand: "${type.name}" }`;
     }
 

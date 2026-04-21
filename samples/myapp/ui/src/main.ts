@@ -1,6 +1,7 @@
-import { members, configureLocalRivet } from "@api";
+import { members } from "@myapp/client";
+import { configureLocalRivet } from "../rivet-local";
 
-const render = async (): Promise<void> => {
+const render = async () => {
   configureLocalRivet();
 
   const output = document.getElementById("output");
@@ -14,7 +15,7 @@ const render = async (): Promise<void> => {
     "members.list()",
     JSON.stringify(result, null, 2),
     "",
-    "Open ui/src/main.ts and keep consuming @api.",
+    "Open ui/src/main.ts and keep consuming @myapp/client.",
   ].join("\n");
 };
 

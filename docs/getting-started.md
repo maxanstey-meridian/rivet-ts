@@ -9,7 +9,7 @@
 ## 1. Install
 
 ```bash
-pnpm add -D github:maxanstey-meridian/rivet-ts#v0.8
+pnpm add -D github:maxanstey-meridian/rivet-ts#v0.9
 ```
 
 The browser-local flow does not require a separate `dotnet` install. The scaffolded Vite plugin downloads a pinned Rivet binary automatically when it needs one.
@@ -71,18 +71,23 @@ This creates the default browser-local app shape and then generates the initial 
 ```text
 myapp/
 ├── package.json
+├── pnpm-workspace.yaml
 ├── vite.config.ts
+├── tsconfig.json
 ├── packages/
-│   └── api/
-│       ├── contracts.ts
+│   ├── api/
+│   │   ├── generated/
+│   │   ├── package.json
+│   │   └── src/
+│   │       ├── app.ts
+│   │       ├── app/
+│   │       └── modules/
+│   └── client/
 │       ├── generated/
-│       ├── package.json
-│       └── src/
-│           ├── api.ts
-│           ├── contract.ts
-│           └── handlers/
+│       └── package.json
 └── ui/
     ├── index.html
+    ├── rivet-local.ts
     └── src/main.ts
 ```
 
@@ -96,10 +101,10 @@ The scaffold already includes:
 Important:
 
 - `scaffold-mock` creates the project shape and authored handlers
-- `pnpm --dir packages/api run generate` produces `packages/api/generated/*.contract.json` and `packages/api/generated/rivet/*`
+- `pnpm --dir packages/api run generate` produces `packages/api/generated/api.contract.json`, `packages/client/generated/rivet/*`, and `packages/client/generated/index.ts`
 - once those initial artifacts exist, `vite dev` keeps them current
 
-The important boundary is that the UI consumes `@api`, not `@api/src/*` and not `@api/generated/*` directly. `@api` is the bundled API seam for the app, so local now and remote later stay decoupled from frontend call sites.
+The important boundary is that the UI consumes `@myapp/client`, and local browser transport is wired once in `ui/rivet-local.ts` via `@myapp/api/local`. The UI does not import `packages/api/src/*` or generated internals directly.
 
 ## 4. Start consuming from the UI
 
@@ -108,7 +113,8 @@ Open `ui/src/main.ts`.
 Typical usage looks like this:
 
 ```ts
-import { members, configureLocalRivet } from "@api";
+import { members } from "@myapp/client";
+import { configureLocalRivet } from "../rivet-local";
 
 configureLocalRivet();
 
@@ -116,14 +122,13 @@ const all = await members.list();
 console.log(all);
 ```
 
-That means the client code is written against the API surface, not against its hosting mode. Later, you can swap `configureLocalRivet()` for `configureRivet({ baseUrl })` without rewriting the generated client calls.
+That means the client code is written against the generated client surface, not against its hosting mode. Later, you can swap `configureLocalRivet()` for `configureRivet({ baseUrl })` without rewriting the generated client calls.
 
 During `vite dev`, contract changes regenerate:
 
 - `packages/api/generated/*.contract.json`
-- `packages/api/generated/rivet/*`
-- `packages/api/generated/local-rivet.ts`
-- `packages/api/generated/index.ts`
+- `packages/client/generated/rivet/*`
+- `packages/client/generated/index.ts`
 
 Vite then reloads the UI against the updated client surface.
 
@@ -139,7 +144,7 @@ For OpenAPI, validators, JSON Schema, or non-plugin/manual flows:
 
 ```bash
 dotnet tool install --global dotnet-rivet
-pnpm exec rivet-reflect-ts --entry ./packages/api/contracts.ts --out ./contract.json
+pnpm exec rivet-reflect-ts --entry ./packages/api/src/app/contracts.ts --out ./contract.json
 dotnet rivet --from ./contract.json --output ./generated --openapi ./openapi.json
 ```
 

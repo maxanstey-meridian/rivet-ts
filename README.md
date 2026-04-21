@@ -67,16 +67,17 @@ pnpm run dev
 
 `scaffold-mock` creates the project shape and authored source files. The API package `generate` step produces:
 
-- `packages/api/generated/*.contract.json`
-- `packages/api/generated/rivet/*`
+- `packages/api/generated/api.contract.json`
+- `packages/client/generated/rivet/*`
+- `packages/client/generated/index.ts`
 
 After that initial generate, the Vite plugin keeps those artifacts current during `vite dev`.
 
 The important boundary is:
 
-- the UI consumes `@api`
-- `@api` is the bundled API surface for the current app shape
-- local in-process transport versus later HTTP transport is hidden behind that surface
+- the UI consumes `@myapp/client`
+- local in-process transport is wired once in `ui/rivet-local.ts`
+- the local browser runtime couples to `@myapp/api/local`, not to `packages/api/src/*`
 
 So the client code stays decoupled from API internals. You can change how the API is hosted later without rewriting frontend call sites.
 
@@ -84,8 +85,9 @@ The scaffold gives you:
 
 - a root Vite app with `ui/` ready to run
 - a Hono API package under `packages/api`
-- plain async handlers, one per endpoint
-- generated `configureLocalRivet()` for in-process local transport
+- a generated client package under `packages/client`
+- one scaffolded API module per contract
+- scaffolded `ui/rivet-local.ts` for in-process local transport
 - the Vite plugin already configured
 - copied contract source so the scaffold is self-contained
 
@@ -94,36 +96,46 @@ For the `MembersContract` above, the current scaffold emits:
 ```text
 myapp/
 ├── package.json
+├── pnpm-workspace.yaml
 ├── vite.config.ts
 ├── packages/
-│   └── api/
-│       ├── contracts.ts
-│       ├── generated/          # generated artifacts and public @api surface
-│       ├── package.json
-│       └── src/
-│           ├── api.ts
-│           ├── contract.ts
-│           ├── handlers/
-│           │   ├── create.ts
-│           │   └── list.ts
+│   ├── api/
+│   │   ├── generated/
+│   │   ├── package.json
+│   │   └── src/
+│   │       ├── app.ts
+│   │       ├── composition.ts
+│   │       ├── contract.ts
+│   │       ├── contracts.ts
+│   │       ├── interface/http/
+│   │       └── modules/
+│   │           ├── common/
+│   │           └── members/
+│   └── client/
+│       ├── generated/
+│       └── package.json
 └── ui/
     ├── index.html
+    ├── rivet-local.ts
     └── src/main.ts
 ```
 
-Example emitted handler:
+Example scaffolded use case:
 
 ```ts
-import type { RivetHandler } from "rivet-ts";
-import type { MembersContract } from "../contract.js";
+import type { RivetHandler, RivetHandlerInput } from "rivet-ts";
+import type { MembersContract } from "#contract";
 
-export const list: RivetHandler<MembersContract, "List"> = async () => {
+type ListInput = RivetHandlerInput<MembersContract, "List">;
+type ListOutput = Awaited<ReturnType<RivetHandler<MembersContract, "List">>>;
+
+export const executeList = async (_input: ListInput): Promise<ListOutput> => {
   return [
     {
-      "id": "example",
-      "email": "example",
-      "role": "admin"
-    }
+      id: "example",
+      email: "example",
+      role: "admin",
+    },
   ];
 };
 ```
@@ -133,7 +145,8 @@ Example frontend consumption:
 The scaffolded app starts in local mode. In `ui/src/main.ts`:
 
 ```ts
-import { members, configureLocalRivet } from "@api";
+import { members } from "@myapp/client";
+import { configureLocalRivet } from "../rivet-local";
 
 configureLocalRivet();
 
@@ -145,13 +158,13 @@ const created = await members.create({
 console.log(created.id);
 ```
 
-The point of this shape is that the UI depends on `@api`, not on `packages/api/src/*` and not on `packages/api/generated/*` directly. The bundled API seam can move from browser-local to a real server later, and the client usage stays the same apart from configuration.
+The point of this shape is that the UI depends on the generated client package, not on API internals. Local browser transport is an honest app-owned seam in `ui/rivet-local.ts`, and it can later be replaced with normal remote `configureRivet(...)` setup without changing the generated client calls themselves.
 
 The intended path is:
 
 1. write the contract
 2. scaffold the whole local app
-3. open `ui/src/main.ts` and start consuming `@api`
+3. open `ui/src/main.ts` and start consuming `@myapp/client`
 4. replace stub handlers with real logic as needed
 5. add a real server entry later if browser-runtime limits become a problem
 
@@ -166,19 +179,23 @@ That sample is the intended day-to-day structure after you follow the scaffold w
 ```text
 myapp/
 ├── package.json
+├── pnpm-workspace.yaml
 ├── vite.config.ts
 ├── packages/
-│   └── api/
-│       ├── contracts.ts
+│   ├── api/
+│   │   ├── generated/
+│   │   ├── package.json
+│   │   └── src/
+│   └── client/
 │       ├── generated/
-│       ├── package.json
-│       └── src/
+│       └── package.json
 └── ui/
     ├── index.html
+    ├── rivet-local.ts
     └── src/main.ts
 ```
 
-The API package stays scaffold-shaped. The UI stays separate. The Vite plugin keeps the reflected contract, generated client, generated local transport helper, and public `@api` surface current under `packages/api/generated`.
+The API package stays scaffold-shaped. The client package stays generated. The UI stays separate. The Vite plugin keeps the reflected contract JSON under `packages/api/generated` and the generated client/runtime under `packages/client/generated`.
 
 ## Generate a separate client, OpenAPI, and validators
 
@@ -212,7 +229,8 @@ Downstream Rivet emits the same artifacts it emits for C# sources: TypeScript ty
 The scaffolded app starts in local mode. In `ui/src/main.ts`:
 
 ```ts
-import { members, configureLocalRivet } from "@api";
+import { members } from "@myapp/client";
+import { configureLocalRivet } from "../rivet-local";
 
 configureLocalRivet();
 
@@ -226,20 +244,20 @@ console.log(created.id);
 
 That lets the generated Rivet client call the Hono app in-process via `app.request(...)`.
 
-With the Vite plugin in place, contract changes regenerate the local client/runtime artifacts during `vite dev`, so the frontend sees the updated client surface without a manual generate step.
+With the Vite plugin in place, contract changes regenerate the local contract JSON and client/runtime artifacts during `vite dev`, so the frontend sees the updated client surface without a manual generate step.
 
 When you want a real server, the happy path is almost a literal lift-and-shift:
 
-1. keep the contract, handlers, and `packages/api/src/api.ts` as-is
+1. keep the contract, handlers, and `packages/api/src/app.ts` as-is
 2. add a real server entry that exposes `app.fetch`
 3. deploy that Hono app somewhere real
-4. stop using `configureLocalRivet()`
+4. stop using `ui/rivet-local.ts`
 5. switch the UI to the normal generated Rivet runtime config
 
 Example server entry:
 
 ```ts
-import { app } from "./packages/api/src/api.js";
+import { app } from "./packages/api/src/app.js";
 
 // Expose the same Hono app over HTTP so it can use real server-side concerns
 // like databases, secrets, queues, and file storage without changing the
@@ -252,12 +270,12 @@ Bun.serve({
 Then point the generated client at the deployed API:
 
 ```ts
-import { configureRivet } from "@api";
+import { configureRivet } from "@myapp/client";
 
 configureRivet({ baseUrl: "https://api.example.com" });
 ```
 
-From the UI's perspective, that is the key decoupling: it still consumes `@api`, and transport changes from local `configureLocalRivet()` to remote `configureRivet(...)` without changing the generated client calls themselves.
+From the UI's perspective, that is the key decoupling: it still consumes `@myapp/client`, and transport changes from local `ui/rivet-local.ts` to remote `configureRivet(...)` without changing the generated client calls themselves.
 
 The important distinction is:
 
@@ -274,7 +292,7 @@ What changes at that point is not the contract or the generated client. What cha
 - email and webhooks
 - logging, monitoring, and rate limiting
 
-So yes: if your handlers are already server-safe, promotion can be as simple as deploying the Hono app and replacing `configureLocalRivet()` with `configureRivet({ baseUrl })`.
+So yes: if your handlers are already server-safe, promotion can be as simple as deploying the Hono app and replacing the scaffolded local runtime wiring with `configureRivet({ baseUrl })`.
 
 ## TS now, .NET later
 
@@ -370,8 +388,8 @@ Every endpoint is an `Endpoint<{ ... }>` type literal. These are the supported k
 | `method`                 | `"GET" \| "POST" \| "PUT" \| "PATCH" \| "DELETE"` | Yes      | HTTP method                                                               |
 | `route`                  | `string`                                          | Yes      | Route template, e.g. `"/api/members/{id}"`                                |
 | `input`                  | type reference                                    |          | Request body (POST/PUT/PATCH) or query params (GET/DELETE)                |
-| `params`                 | type reference                                    |          | Explicit route params shape                                                |
-| `query`                  | type reference                                    |          | Explicit query shape                                                       |
+| `params`                 | type reference                                    |          | Explicit route params shape                                               |
+| `query`                  | type reference                                    |          | Explicit query shape                                                      |
 | `response`               | type reference                                    |          | Success response body type. Omit or use `void` for no-content             |
 | `successStatus`          | `number`                                          |          | Override default success status (200 GET/PUT/PATCH, 201 POST, 204 DELETE) |
 | `errors`                 | tuple of error specs                              |          | Error responses with status codes and optional types                      |

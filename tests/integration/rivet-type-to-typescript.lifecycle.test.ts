@@ -1,10 +1,14 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import type { RivetContractEnum, RivetType, RivetTypeDefinition } from "../../src/domain/rivet-contract.js";
+import { promisify } from "node:util";
+import type {
+  RivetContractEnum,
+  RivetType,
+  RivetTypeDefinition,
+} from "../../src/domain/rivet-contract.js";
 import {
   emitTypeExpression,
   emitTypeDefinition,
@@ -87,7 +91,12 @@ describe("emitTypeExpression", () => {
     });
 
     it("ignores format and csharpType metadata", () => {
-      const type: RivetType = { kind: "primitive", type: "string", format: "uuid", csharpType: "Guid" };
+      const type: RivetType = {
+        kind: "primitive",
+        type: "string",
+        format: "uuid",
+        csharpType: "Guid",
+      };
       expect(emitTypeExpression(type)).toBe("string");
     });
   });
@@ -164,7 +173,9 @@ describe("emitTypeExpression", () => {
           { name: "lng", type: { kind: "primitive", type: "number" } },
         ],
       };
-      expect(emitTypeExpression(type)).toBe("{\n  readonly lat: number;\n  readonly lng: number;\n}");
+      expect(emitTypeExpression(type)).toBe(
+        "{\n  readonly lat: number;\n  readonly lng: number;\n}",
+      );
     });
 
     it("emits empty inline object", () => {
@@ -271,7 +282,12 @@ describe("emitTypeDefinition", () => {
       name: "MemberDto",
       typeParameters: [],
       properties: [
-        { name: "id", type: { kind: "primitive", type: "string" }, optional: false, readOnly: true },
+        {
+          name: "id",
+          type: { kind: "primitive", type: "string" },
+          optional: false,
+          readOnly: true,
+        },
         { name: "email", type: { kind: "primitive", type: "string" }, optional: false },
         { name: "nickname", type: { kind: "primitive", type: "string" }, optional: true },
       ],
@@ -279,10 +295,10 @@ describe("emitTypeDefinition", () => {
     const result = emitTypeDefinition(typeDef);
     expect(result).toBe(
       "export interface MemberDto {\n" +
-      "  readonly id: string;\n" +
-      "  email: string;\n" +
-      "  nickname?: string;\n" +
-      "}",
+        "  readonly id: string;\n" +
+        "  email: string;\n" +
+        "  nickname?: string;\n" +
+        "}",
     );
   });
 
@@ -291,7 +307,11 @@ describe("emitTypeDefinition", () => {
       name: "PagedResult",
       typeParameters: ["TItem"],
       properties: [
-        { name: "items", type: { kind: "array", element: { kind: "typeParam", name: "TItem" } }, optional: false },
+        {
+          name: "items",
+          type: { kind: "array", element: { kind: "typeParam", name: "TItem" } },
+          optional: false,
+        },
         { name: "totalCount", type: { kind: "primitive", type: "number" }, optional: false },
       ],
     };
@@ -398,18 +418,14 @@ describe("round-trip: golden fixture to TS source validates with tsc", () => {
   it("emits tagged union contract as valid TypeScript", async () => {
     // The tagged-union fixture doesn't have a golden JSON file,
     // so we extract and lower it to get the RivetContractDocument
-    const { TypeScriptContractFrontend } = await import(
-      "../../src/infrastructure/typescript/typescript-contract-frontend.js"
-    );
-    const { TypeScriptRivetContractLowerer } = await import(
-      "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js"
-    );
-    const { ExtractTsContracts } = await import(
-      "../../src/application/use-cases/extract-ts-contracts.js"
-    );
-    const { LowerContractBundleToRivetContract } = await import(
-      "../../src/application/use-cases/lower-contract-bundle-to-rivet-contract.js"
-    );
+    const { TypeScriptContractFrontend } =
+      await import("../../src/infrastructure/typescript/typescript-contract-frontend.js");
+    const { TypeScriptRivetContractLowerer } =
+      await import("../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js");
+    const { ExtractTsContracts } =
+      await import("../../src/application/use-cases/extract-ts-contracts.js");
+    const { LowerContractBundleToRivetContract } =
+      await import("../../src/application/use-cases/lower-contract-bundle-to-rivet-contract.js");
 
     const frontend = new TypeScriptContractFrontend();
     const lowerer = new TypeScriptRivetContractLowerer();

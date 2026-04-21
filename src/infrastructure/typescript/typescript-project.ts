@@ -79,8 +79,8 @@ export const resolveTypeScriptProject = (
   const resolvedTsconfigPath =
     tsconfigPath !== undefined
       ? path.resolve(tsconfigPath)
-      : ts.findConfigFile(path.dirname(absoluteEntryPath), ts.sys.fileExists, "tsconfig.json") ??
-        null;
+      : (ts.findConfigFile(path.dirname(absoluteEntryPath), ts.sys.fileExists, "tsconfig.json") ??
+        null);
 
   if (resolvedTsconfigPath === null) {
     return {

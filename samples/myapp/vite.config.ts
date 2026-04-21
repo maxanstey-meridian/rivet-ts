@@ -1,15 +1,16 @@
-import { defineConfig } from "vite";
 import { rivetTs } from "rivet-ts/vite";
+import { defineConfig } from "vite";
 
 export default defineConfig({
   root: "./ui",
   plugins: [
     rivetTs({
-      contract: "./packages/api/contracts.ts",
+      entry: "./packages/api/src/app/contracts.ts",
       apiRoot: "./packages/api",
-      app: "./packages/api/src/api.ts",
+      runtimeContractOut: "./packages/api/generated/api.contract.json",
+      clientOutDir: "./packages/client/generated",
       rivet: {
-        version: "0.33.0",
+        version: "0.34.0",
       },
     }),
   ],

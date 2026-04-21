@@ -35,25 +35,26 @@ const resolveLocalModulePath = async (
   const candidate = path.resolve(path.dirname(fromFilePath), specifier);
   const extension = path.extname(candidate);
 
-  const candidates = extension.length > 0
-    ? [
-        candidate,
-        candidate.replace(/\.(c|m)?js$/u, ".ts"),
-        candidate.replace(/\.(c|m)?js$/u, ".tsx"),
-        candidate.replace(/\.(c|m)?js$/u, ".mts"),
-        candidate.replace(/\.(c|m)?js$/u, ".cts"),
-      ]
-    : [
-        candidate,
-        `${candidate}.ts`,
-        `${candidate}.tsx`,
-        `${candidate}.mts`,
-        `${candidate}.cts`,
-        path.join(candidate, "index.ts"),
-        path.join(candidate, "index.tsx"),
-        path.join(candidate, "index.mts"),
-        path.join(candidate, "index.cts"),
-      ];
+  const candidates =
+    extension.length > 0
+      ? [
+          candidate,
+          candidate.replace(/\.(c|m)?js$/u, ".ts"),
+          candidate.replace(/\.(c|m)?js$/u, ".tsx"),
+          candidate.replace(/\.(c|m)?js$/u, ".mts"),
+          candidate.replace(/\.(c|m)?js$/u, ".cts"),
+        ]
+      : [
+          candidate,
+          `${candidate}.ts`,
+          `${candidate}.tsx`,
+          `${candidate}.mts`,
+          `${candidate}.cts`,
+          path.join(candidate, "index.ts"),
+          path.join(candidate, "index.tsx"),
+          path.join(candidate, "index.mts"),
+          path.join(candidate, "index.cts"),
+        ];
 
   for (const filePath of candidates) {
     try {
@@ -95,9 +96,9 @@ export const collectLocalDependencies = async (
 
     for (const statement of sourceFile.statements) {
       if (
-        (ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement))
-        && statement.moduleSpecifier
-        && ts.isStringLiteral(statement.moduleSpecifier)
+        (ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) &&
+        statement.moduleSpecifier &&
+        ts.isStringLiteral(statement.moduleSpecifier)
       ) {
         moduleSpecifiers.add(statement.moduleSpecifier.text);
       }
@@ -116,10 +117,8 @@ export const collectLocalDependencies = async (
   }
 
   const commonRoot = findCommonRoot([...discovered]);
-  return [...discovered]
-    .sort()
-    .map((absolutePath) => ({
-      absolutePath,
-      relativePath: path.relative(commonRoot, absolutePath).split(path.sep).join("/"),
-    }));
+  return [...discovered].sort().map((absolutePath) => ({
+    absolutePath,
+    relativePath: path.relative(commonRoot, absolutePath).split(path.sep).join("/"),
+  }));
 };

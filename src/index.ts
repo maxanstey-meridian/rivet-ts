@@ -17,10 +17,14 @@ export type {
   RefEndpointRequestExampleAuthoringSpec,
 } from "./domain/authoring-types.js";
 export {
+  asRivetHandler,
   type ContractEndpointKey,
   type EndpointSpecOf,
   type RivetHandler,
+  type RivetHandlerInput,
+  type RivetHandlerOwner,
 } from "./domain/handler-types.js";
+export { type RivetInvokable } from "./hono.js";
 export {
   RivetError,
   type RivetEndpointResult,

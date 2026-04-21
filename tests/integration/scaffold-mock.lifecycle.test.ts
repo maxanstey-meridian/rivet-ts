@@ -1,19 +1,19 @@
+import { Hono } from "hono";
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { runCli } from "../../src/interfaces/cli/run-cli.js";
-import { mount } from "../../src/hono.js";
+import { promisify } from "node:util";
+import { registerRivetHonoRoutes } from "../../src/hono.js";
 import type { Contract, Endpoint, RivetHandler } from "../../src/index.js";
+import { runCli } from "../../src/interfaces/cli/run-cli.js";
+
+const execFileAsync = promisify(execFile);
 
 const getProjectRoot = (): string => {
   const currentFilePath = fileURLToPath(import.meta.url);
   return path.resolve(path.dirname(currentFilePath), "..", "..");
-};
-
-const toImportPath = (fromDirectory: string, targetFilePath: string): string => {
-  const relativePath = path.relative(fromDirectory, targetFilePath).split(path.sep).join("/");
-  return relativePath.startsWith(".") ? relativePath : `./${relativePath}`;
 };
 
 describe("scaffold-mock lifecycle", () => {
@@ -111,74 +111,240 @@ describe("scaffold-mock lifecycle", () => {
     expect(stdout).toHaveLength(0);
     expect(stderr).toHaveLength(0);
 
-    await expect(fs.stat(path.join(outputDirectory, "packages", "api", "contracts.ts"))).resolves.toBeTruthy();
-    await expect(fs.stat(path.join(outputDirectory, "packages", "api", "models.ts"))).resolves.toBeTruthy();
-    await expect(fs.stat(path.join(outputDirectory, "packages", "api", "src", "main.ts"))).rejects.toThrow();
-    await expect(fs.stat(path.join(outputDirectory, "packages", "api", "index.html"))).rejects.toThrow();
+    await expect(
+      fs.stat(path.join(outputDirectory, "packages", "api", "src", "app", "contracts.ts")),
+    ).resolves.toBeTruthy();
+    await expect(
+      fs.stat(path.join(outputDirectory, "packages", "api", "src", "app", "models.ts")),
+    ).resolves.toBeTruthy();
+    await expect(
+      fs.stat(path.join(outputDirectory, "packages", "api", "src", "main.ts")),
+    ).rejects.toThrow();
+    await expect(
+      fs.stat(path.join(outputDirectory, "packages", "api", "index.html")),
+    ).rejects.toThrow();
 
     const rootPackageJsonSource = await fs.readFile(
       path.join(outputDirectory, "package.json"),
+      "utf8",
+    );
+    const workspaceSource = await fs.readFile(
+      path.join(outputDirectory, "pnpm-workspace.yaml"),
       "utf8",
     );
     const rootViteConfigSource = await fs.readFile(
       path.join(outputDirectory, "vite.config.ts"),
       "utf8",
     );
+    const rootTsconfigSource = await fs.readFile(
+      path.join(outputDirectory, "tsconfig.json"),
+      "utf8",
+    );
+    const dependencyCruiserConfigSource = await fs.readFile(
+      path.join(outputDirectory, ".dependency-cruiser.cjs"),
+      "utf8",
+    );
     const uiMainSource = await fs.readFile(
       path.join(outputDirectory, "ui", "src", "main.ts"),
       "utf8",
     );
-    const apiSource = await fs.readFile(path.join(outputDirectory, "packages", "api", "src", "api.ts"), "utf8");
-    const localRivetSource = await fs.readFile(
-      path.join(outputDirectory, "packages", "api", "generated", "local-rivet.ts"),
+    const uiLocalRivetSource = await fs.readFile(
+      path.join(outputDirectory, "ui", "rivet-local.ts"),
       "utf8",
     );
-    const publicApiSource = await fs.readFile(
-      path.join(outputDirectory, "packages", "api", "generated", "index.ts"),
+    const appSource = await fs.readFile(
+      path.join(outputDirectory, "packages", "api", "src", "app.ts"),
       "utf8",
     );
-    const listHandlerSource = await fs.readFile(
-      path.join(outputDirectory, "packages", "api", "src", "handlers", "list.ts"),
+    const authModuleSource = await fs.readFile(
+      path.join(
+        outputDirectory,
+        "packages",
+        "api",
+        "src",
+        "modules",
+        "members",
+        "members.module.ts",
+      ),
+      "utf8",
+    );
+    const listUseCaseSource = await fs.readFile(
+      path.join(
+        outputDirectory,
+        "packages",
+        "api",
+        "src",
+        "modules",
+        "members",
+        "application",
+        "list.use-case.ts",
+      ),
       "utf8",
     );
     const createHandlerSource = await fs.readFile(
-      path.join(outputDirectory, "packages", "api", "src", "handlers", "create.ts"),
+      path.join(
+        outputDirectory,
+        "packages",
+        "api",
+        "src",
+        "modules",
+        "members",
+        "interface",
+        "http",
+        "create.handler.ts",
+      ),
       "utf8",
     );
-    const removeHandlerSource = await fs.readFile(
-      path.join(outputDirectory, "packages", "api", "src", "handlers", "remove.ts"),
+    const mapContractErrorSource = await fs.readFile(
+      path.join(outputDirectory, "packages", "api", "src", "app", "map-contract-error.ts"),
+      "utf8",
+    );
+    const compositionSource = await fs.readFile(
+      path.join(outputDirectory, "packages", "api", "src", "app", "composition.ts"),
+      "utf8",
+    );
+    const contractSource = await fs.readFile(
+      path.join(outputDirectory, "packages", "api", "src", "app", "contract.ts"),
+      "utf8",
+    );
+    const localSource = await fs.readFile(
+      path.join(outputDirectory, "packages", "api", "src", "app", "local.ts"),
       "utf8",
     );
     const apiPackageJsonSource = await fs.readFile(
       path.join(outputDirectory, "packages", "api", "package.json"),
       "utf8",
     );
+    const clientPackageJsonSource = await fs.readFile(
+      path.join(outputDirectory, "packages", "client", "package.json"),
+      "utf8",
+    );
 
+    expect(workspaceSource).toContain("packages/*");
     expect(rootPackageJsonSource).toContain('"dev": "vite"');
+    expect(rootPackageJsonSource).toContain('"generate": "pnpm --dir packages/api run generate"');
+    expect(rootPackageJsonSource).toContain('"check": "tsc --noEmit"');
+    expect(rootPackageJsonSource).toContain(
+      '"check:architecture": "depcruise --config .dependency-cruiser.cjs --ts-config tsconfig.json packages/api/src"',
+    );
+    expect(rootPackageJsonSource).toContain(
+      '"test": "pnpm run check && pnpm run check:architecture"',
+    );
+    expect(rootPackageJsonSource).toContain('"@members-mock/api": "workspace:*"');
+    expect(rootPackageJsonSource).toContain('"@members-mock/client": "workspace:*"');
+    expect(rootPackageJsonSource).toContain('"dependency-cruiser": "^17.3.10"');
     expect(rootViteConfigSource).toContain('import { rivetTs } from "rivet-ts/vite";');
-    expect(rootViteConfigSource).toContain('contract: "./packages/api/contracts.ts"');
-    expect(uiMainSource).toContain('import { members, configureLocalRivet } from "@api";');
+    expect(rootViteConfigSource).toContain('entry: "./packages/api/src/app/contracts.ts"');
+    expect(rootViteConfigSource).toContain('clientOutDir: "./packages/client/generated"');
+    expect(rootViteConfigSource).not.toContain('app: "./packages/api/src/app.ts"');
+    expect(dependencyCruiserConfigSource).toContain('name: "no-feature-to-feature"');
+    expect(dependencyCruiserConfigSource).toContain('name: "no-api-to-client"');
+    expect(dependencyCruiserConfigSource).toContain('path: "^node_modules"');
+    expect(dependencyCruiserConfigSource).toContain('fileName: "tsconfig.json"');
+    expect(rootTsconfigSource).toContain('"baseUrl": "."');
+    expect(rootTsconfigSource).toContain('"@members-mock/client"');
+    expect(rootTsconfigSource).toContain('"./packages/client/generated/index.ts"');
+    expect(rootTsconfigSource).toContain('"@members-mock/api/local"');
+    expect(rootTsconfigSource).toContain('"./packages/api/src/app/local.ts"');
+    expect(uiMainSource).toContain('import { members } from "@members-mock/client";');
+    expect(uiMainSource).toContain('import { configureLocalRivet } from "../rivet-local";');
     expect(uiMainSource).toContain("configureLocalRivet()");
     expect(uiMainSource).toContain("members.list()");
-    expect(apiSource).toContain('import { mount } from "rivet-ts/hono";');
-    expect(apiSource).toContain('{ controllerName: "members" }');
-    expect(localRivetSource).toContain("export const configureLocalRivet");
-    expect(localRivetSource).toContain("app.request");
-    expect(publicApiSource).toContain('export { configureLocalRivet }');
-    expect(publicApiSource).toContain('export * from "./rivet/client/index.js";');
-    expect(listHandlerSource).toContain("totalCount");
-    expect(listHandlerSource).toContain('"items": [');
-    expect(createHandlerSource).toContain('"id": "mem_001"');
-    expect(createHandlerSource).toContain('"email": "jane@example.com"');
-    expect(removeHandlerSource).toContain("return undefined;");
-    expect(apiPackageJsonSource).toContain(
-      "contracts.ts --out generated/api.contract.json",
+    expect(uiLocalRivetSource).toContain(
+      'import { configureRivet, type RivetConfig } from "@members-mock/client";',
     );
-    expect(apiPackageJsonSource).toContain('"exports"');
-    expect(apiPackageJsonSource).toContain("./generated/index.ts");
+    expect(uiLocalRivetSource).toContain('import { app } from "@members-mock/api/local";');
+    expect(uiLocalRivetSource).toContain("app.request");
+    expect(appSource).toContain('import contract from "../generated/api.contract.json";');
+    expect(appSource).toContain('import { compose } from "./app/composition.js";');
+    expect(appSource).toContain(
+      'import { tryMapContractError } from "./app/map-contract-error.js";',
+    );
+    expect(appSource).toContain("compose();");
+    expect(appSource).toContain('import type { MembersContract } from "#contract";');
+    expect(appSource).toContain("registerRivetHonoRoutes<MembersContract>(app, contract, {");
+    expect(appSource).toContain('group: "members"');
+    expect(authModuleSource).toContain("export const registerMembersModule = (): void => {");
+    expect(authModuleSource).toContain("Module composition root goes here.");
+    expect(listUseCaseSource).toContain("totalCount");
+    expect(listUseCaseSource).toContain("export const executeList");
+    expect(listUseCaseSource).toContain('import type { MembersContract } from "#contract";');
+    expect(listUseCaseSource).toContain('"items": [');
+    expect(createHandlerSource).toContain("export const createHandler");
+    expect(createHandlerSource).toContain("executeCreate");
+    expect(createHandlerSource).toContain('import type { MembersContract } from "#contract";');
+    expect(createHandlerSource).toContain("async (input) => {");
+    expect(createHandlerSource).toContain("return executeCreate(input);");
+    expect(createHandlerSource).not.toContain("=> executeCreate(input)");
+    expect(mapContractErrorSource).toContain("App-level transport error hook.");
+    expect(compositionSource).toContain("../modules/members/members.module.js");
+    expect(contractSource).toContain('export type { MembersContract } from "./contracts.js";');
+    expect(localSource).toContain('export { app } from "../app.js";');
+    expect(apiPackageJsonSource).toContain(
+      "src/app/contracts.ts --out generated/api.contract.json",
+    );
+    expect(apiPackageJsonSource).toContain(
+      "pnpm exec rivet-ts generate --generated-root ../client/generated",
+    );
+    await expect(
+      fs.stat(path.join(outputDirectory, "scripts", "generate-client-entry.mjs")),
+    ).rejects.toThrow();
+    expect(apiPackageJsonSource).toContain('"#contract": "./src/app/contract.ts"');
+    expect(apiPackageJsonSource).toContain('"./local": "./src/app/local.ts"');
+    expect(clientPackageJsonSource).toContain('"name": "@members-mock/client"');
+    expect(clientPackageJsonSource).toContain('"."');
+    expect(clientPackageJsonSource).toContain('"zod": "^4.1.12"');
+    await expect(
+      fs.stat(
+        path.join(outputDirectory, "packages", "api", "test", "architecture.boundaries.test.ts"),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      execFileAsync("pnpm", [
+        "--dir",
+        getProjectRoot(),
+        "exec",
+        "depcruise",
+        "--config",
+        path.join(outputDirectory, ".dependency-cruiser.cjs"),
+        "--ts-config",
+        path.join(outputDirectory, "tsconfig.json"),
+        path.join(outputDirectory, "packages", "api", "src"),
+      ]),
+    ).resolves.toMatchObject({ stderr: "" });
+
+    const generatedClientRoot = path.join(outputDirectory, "packages", "client", "generated");
+    await fs.mkdir(path.join(generatedClientRoot, "rivet", "client"), { recursive: true });
+    await fs.mkdir(path.join(generatedClientRoot, "rivet", "types"), { recursive: true });
+    await fs.writeFile(
+      path.join(generatedClientRoot, "rivet", "client", "members.ts"),
+      "export const list = () => null;\n",
+    );
+    await fs.writeFile(
+      path.join(generatedClientRoot, "rivet", "rivet.ts"),
+      "export const configureRivet = () => undefined;\n",
+    );
+    await fs.writeFile(
+      path.join(generatedClientRoot, "rivet", "types", "common.ts"),
+      "export type MemberDto = { id: string };\n",
+    );
+    await fs.writeFile(
+      path.join(generatedClientRoot, "rivet", "schemas.ts"),
+      "export const memberSchema = {};\n",
+    );
+    await fs.writeFile(
+      path.join(generatedClientRoot, "rivet", "validators.ts"),
+      "export const validateMember = () => true;\n",
+    );
+
+    await expect(runCli(["generate", "--generated-root", generatedClientRoot])).resolves.toBe(0);
+
+    const clientEntrySource = await fs.readFile(path.join(generatedClientRoot, "index.ts"), "utf8");
+    expect(clientEntrySource).toContain('export * as schemas from "./rivet/schemas.js";');
+    expect(clientEntrySource).toContain('export * as validators from "./rivet/validators.js";');
   });
 
-  it("prefixes handler files when multiple contracts reuse endpoint names", async () => {
+  it("scaffolds one module per contract when multiple contracts are authored together", async () => {
     const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-dup-"));
     const sourceDirectory = path.join(tempDirectory, "source");
     const outputDirectory = path.join(tempDirectory, "mock-app");
@@ -225,20 +391,68 @@ describe("scaffold-mock lifecycle", () => {
 
     expect(exitCode).toBe(0);
 
-    const apiSource = await fs.readFile(path.join(outputDirectory, "packages", "api", "src", "api.ts"), "utf8");
+    const compositionSource = await fs.readFile(
+      path.join(outputDirectory, "packages", "api", "src", "app", "composition.ts"),
+      "utf8",
+    );
+    const petModuleSource = await fs.readFile(
+      path.join(outputDirectory, "packages", "api", "src", "modules", "pet", "pet.module.ts"),
+      "utf8",
+    );
+    const summaryModuleSource = await fs.readFile(
+      path.join(
+        outputDirectory,
+        "packages",
+        "api",
+        "src",
+        "modules",
+        "summary",
+        "summary.module.ts",
+      ),
+      "utf8",
+    );
     const petHandlerSource = await fs.readFile(
-      path.join(outputDirectory, "packages", "api", "src", "handlers", "pet-get.ts"),
+      path.join(
+        outputDirectory,
+        "packages",
+        "api",
+        "src",
+        "modules",
+        "pet",
+        "interface",
+        "http",
+        "get.handler.ts",
+      ),
       "utf8",
     );
     const summaryHandlerSource = await fs.readFile(
-      path.join(outputDirectory, "packages", "api", "src", "handlers", "summary-get.ts"),
+      path.join(
+        outputDirectory,
+        "packages",
+        "api",
+        "src",
+        "modules",
+        "summary",
+        "interface",
+        "http",
+        "get.handler.ts",
+      ),
+      "utf8",
+    );
+    const appSource = await fs.readFile(
+      path.join(outputDirectory, "packages", "api", "src", "app.ts"),
       "utf8",
     );
 
-    expect(apiSource).toContain('{ controllerName: "pet" }');
-    expect(apiSource).toContain('{ controllerName: "summary" }');
-    expect(petHandlerSource).toContain("export const petGet");
-    expect(summaryHandlerSource).toContain("export const summaryGet");
+    expect(compositionSource).toContain("registerCommonModule();");
+    expect(compositionSource).toContain("registerPetModule();");
+    expect(compositionSource).toContain("registerSummaryModule();");
+    expect(petModuleSource).toContain("Module composition root goes here.");
+    expect(summaryModuleSource).toContain("Module composition root goes here.");
+    expect(appSource).toContain('group: "pet"');
+    expect(appSource).toContain('group: "summary"');
+    expect(petHandlerSource).toContain("export const getHandler");
+    expect(summaryHandlerSource).toContain("export const getHandler");
   });
 
   it("scaffolds from a bare contract file without tsconfig or node_modules", async () => {
@@ -287,8 +501,12 @@ describe("scaffold-mock lifecycle", () => {
       path.join(outputDirectory, "package.json"),
       "utf8",
     );
-    const apiSource = await fs.readFile(
-      path.join(outputDirectory, "packages", "api", "src", "api.ts"),
+    const appSource = await fs.readFile(
+      path.join(outputDirectory, "packages", "api", "src", "app.ts"),
+      "utf8",
+    );
+    const rootTsconfigSource = await fs.readFile(
+      path.join(outputDirectory, "tsconfig.json"),
       "utf8",
     );
     const uiMainSource = await fs.readFile(
@@ -297,7 +515,10 @@ describe("scaffold-mock lifecycle", () => {
     );
 
     expect(rootPackageJsonSource).toContain('"dev": "vite"');
-    expect(apiSource).toContain('const helloApp = mount<HelloContract>');
+    expect(appSource).toContain("compose();");
+    expect(appSource).toContain("registerRivetHonoRoutes<HelloContract>(app, contract, {");
+    expect(rootTsconfigSource).toContain('"@mock-app/client"');
+    expect(rootTsconfigSource).toContain('"@mock-app/api/local"');
     expect(uiMainSource).toContain("configureLocalRivet()");
   });
 
@@ -315,37 +536,37 @@ describe("scaffold-mock lifecycle", () => {
       }>;
     }
 
-    const handlers: {
-      readonly Ping: RivetHandler<MultiContract, "Ping">;
-      readonly Health: RivetHandler<MultiContract, "Health">;
-    } = {
-      Ping: async () => undefined,
-      Health: async () => ({ status: "ok" }),
-    };
+    const pingHandler: RivetHandler<MultiContract, "Ping"> = async () => undefined;
 
-    const app = mount<MultiContract>(
+    const app = new Hono();
+    registerRivetHonoRoutes<MultiContract>(
+      app,
       {
         endpoints: [
           {
-            name: "Ping",
+            name: "ping",
             httpMethod: "POST",
             routeTemplate: "/api/ping",
-            controllerName: "pet",
+            group: "pet",
             params: [],
             responses: [{ statusCode: 204 }],
           },
           {
-            name: "Health",
+            name: "health",
             httpMethod: "GET",
             routeTemplate: "/api/health",
-            controllerName: "summary",
+            group: "summary",
             params: [],
             responses: [{ statusCode: 200 }],
           },
         ],
       },
-      handlers,
-      { controllerName: "pet" },
+      {
+        handlers: {
+          Ping: pingHandler,
+        },
+        group: "pet",
+      },
     );
 
     const pingResponse = await app.request("http://local/api/ping", { method: "POST" });

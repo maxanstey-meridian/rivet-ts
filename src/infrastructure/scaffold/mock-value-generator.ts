@@ -8,9 +8,7 @@ import type {
   RivetTypeDefinition,
 } from "../../domain/rivet-contract.js";
 
-type MockGenerationSuccess =
-  | { kind: "value"; value: RivetEndpointExampleValue }
-  | { kind: "void" };
+type MockGenerationSuccess = { kind: "value"; value: RivetEndpointExampleValue } | { kind: "void" };
 
 type MockGenerationFailure = {
   kind: "todo";
@@ -36,19 +34,14 @@ const createEnumValues = (
   document: RivetContractDocument,
 ): ReadonlyMap<string, readonly (string | number)[]> =>
   new Map(
-    document.enums.map((entry) => [
-      entry.name,
-      "values" in entry ? entry.values : entry.intValues,
-    ]),
+    document.enums.map((entry) => [entry.name, "values" in entry ? entry.values : entry.intValues]),
   );
 
 const findSuccessResponse = (endpoint: RivetEndpointDefinition) =>
-  endpoint.responses.find((response) => response.statusCode >= 200 && response.statusCode < 300)
-  ?? endpoint.responses[0];
+  endpoint.responses.find((response) => response.statusCode >= 200 && response.statusCode < 300) ??
+  endpoint.responses[0];
 
-const parseExample = (
-  example: RivetResponseExample,
-): RivetEndpointExampleValue | undefined => {
+const parseExample = (example: RivetResponseExample): RivetEndpointExampleValue | undefined => {
   const rawJson = example.resolvedJson ?? example.json;
   if (!rawJson) {
     return undefined;

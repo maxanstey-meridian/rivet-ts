@@ -85,7 +85,7 @@ const parseRouteParamNames = (route: string): string[] => {
   return [...matches].map((match) => match[1] ?? "").filter((name) => name.length > 0);
 };
 
-const deriveControllerName = (contractName: string): string => {
+const deriveGroupName = (contractName: string): string => {
   const baseName = contractName.endsWith("Contract")
     ? contractName.slice(0, -1 * "Contract".length)
     : contractName;
@@ -536,9 +536,17 @@ class TypeEmissionContext {
     const inputType = this.lowerOptionalTypeNode(inputNode);
     const responseType = this.lowerOptionalTypeNode(responseNode);
 
-    const params = paramsNode || queryNode
-      ? this.buildExplicitEndpointParams(routeLiteral, context, inputNode, inputType, paramsNode, queryNode)
-      : this.buildEndpointParams(routeLiteral, context, inputNode, inputType);
+    const params =
+      paramsNode || queryNode
+        ? this.buildExplicitEndpointParams(
+            routeLiteral,
+            context,
+            inputNode,
+            inputType,
+            paramsNode,
+            queryNode,
+          )
+        : this.buildEndpointParams(routeLiteral, context, inputNode, inputType);
     const baseResponses = this.buildResponses(
       specNode,
       context,
@@ -592,7 +600,7 @@ class TypeEmissionContext {
       routeTemplate: routeLiteral,
       params,
       returnType: responseType ?? undefined,
-      controllerName: deriveControllerName(context.contractName),
+      controllerName: deriveGroupName(context.contractName),
       responses,
       summary,
       description,

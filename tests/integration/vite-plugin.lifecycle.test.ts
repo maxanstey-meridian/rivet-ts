@@ -25,6 +25,7 @@ describe("vite plugin lifecycle", () => {
     await fs.mkdir(sourceNodeModulesDirectory, { recursive: true });
     await fs.symlink(projectRoot, path.join(nodeModulesDirectory, "rivet-ts"), "dir");
     await fs.symlink(projectRoot, path.join(sourceNodeModulesDirectory, "rivet-ts"), "dir");
+    await fs.mkdir(path.join(nodeModulesDirectory, "@myapp"), { recursive: true });
     await fs.symlink(
       path.join(projectRoot, "node_modules", "hono"),
       path.join(nodeModulesDirectory, "hono"),
@@ -75,6 +76,18 @@ describe("vite plugin lifecycle", () => {
 
     expect(scaffoldExitCode).toBe(0);
     const apiRoot = path.join(sampleRoot, "packages", "api");
+    const clientRoot = path.join(sampleRoot, "packages", "client");
+
+    await fs.symlink(
+      path.join(sampleRoot, "packages", "api"),
+      path.join(nodeModulesDirectory, "@myapp", "api"),
+      "dir",
+    );
+    await fs.symlink(
+      path.join(sampleRoot, "packages", "client"),
+      path.join(nodeModulesDirectory, "@myapp", "client"),
+      "dir",
+    );
 
     const fakeRivetBinaryPath = path.join(sampleRoot, "fake-rivet.mjs");
     await fs.writeFile(
@@ -92,10 +105,12 @@ describe("vite plugin lifecycle", () => {
         "const outDir = args[outputIndex + 1];",
         'const clientDir = path.join(outDir, "client");',
         'const typesDir = path.join(outDir, "types");',
-        'await fs.mkdir(clientDir, { recursive: true });',
-        'await fs.mkdir(typesDir, { recursive: true });',
+        "await fs.mkdir(clientDir, { recursive: true });",
+        "await fs.mkdir(typesDir, { recursive: true });",
         'await fs.writeFile(path.join(typesDir, "common.ts"), `export type MemberDto = { id: string; email: string };\\nexport type CreateMemberRequest = { email: string };\\n`);',
         'await fs.writeFile(path.join(typesDir, "index.ts"), `export * from "./common.js";\\n`);',
+        'await fs.writeFile(path.join(outDir, "schemas.ts"), `export const createMemberRequestSchema = { type: "object" };\\n`);',
+        'await fs.writeFile(path.join(outDir, "validators.ts"), `export const validateCreateMemberRequest = () => true;\\n`);',
         'await fs.writeFile(path.join(outDir, "rivet.ts"), [',
         '  "let currentConfig = { baseUrl: \\"\\", fetch: globalThis.fetch };",',
         '  "export const configureRivet = (config) => { currentConfig = { ...currentConfig, ...config }; };",',
@@ -127,9 +142,10 @@ describe("vite plugin lifecycle", () => {
         logLevel: "silent",
         plugins: [
           rivetTs({
-            contract: "./packages/api/contracts.ts",
+            entry: "./packages/api/src/app/contracts.ts",
             apiRoot: "./packages/api",
-            app: "./packages/api/src/api.ts",
+            runtimeContractOut: "./packages/api/generated/api.contract.json",
+            clientOutDir: "./packages/client/generated",
             rivet: {
               binaryPath: fakeRivetBinaryPath,
             },
@@ -144,16 +160,30 @@ describe("vite plugin lifecycle", () => {
       process.chdir(previousWorkingDirectory);
     }
 
-    await expect(fs.stat(path.join(apiRoot, "generated", "api.contract.json"))).resolves.toBeTruthy();
-    await expect(fs.stat(path.join(apiRoot, "generated", "rivet", "client", "index.ts"))).resolves.toBeTruthy();
+    await expect(
+      fs.stat(path.join(apiRoot, "generated", "api.contract.json")),
+    ).resolves.toBeTruthy();
+    await expect(
+      fs.stat(path.join(clientRoot, "generated", "rivet", "client", "index.ts")),
+    ).resolves.toBeTruthy();
+    await expect(fs.stat(path.join(clientRoot, "generated", "index.ts"))).resolves.toBeTruthy();
     await expect(fs.stat(path.join(sampleRoot, "dist", "index.html"))).resolves.toBeTruthy();
 
     const uiMainSource = await fs.readFile(path.join(sampleRoot, "ui", "src", "main.ts"), "utf8");
-    const localRivetSource = await fs.readFile(path.join(apiRoot, "generated", "local-rivet.ts"), "utf8");
-    const publicApiSource = await fs.readFile(path.join(apiRoot, "generated", "index.ts"), "utf8");
-    expect(uiMainSource).toContain('import { members, configureLocalRivet } from "@api";');
+    const uiLocalRivetSource = await fs.readFile(
+      path.join(sampleRoot, "ui", "rivet-local.ts"),
+      "utf8",
+    );
+    const clientEntrySource = await fs.readFile(
+      path.join(clientRoot, "generated", "index.ts"),
+      "utf8",
+    );
+    expect(uiMainSource).toContain('import { members } from "@myapp/client";');
     expect(uiMainSource).toContain("members.list()");
-    expect(localRivetSource).toContain("app.request");
-    expect(publicApiSource).toContain('export { configureLocalRivet }');
-  });
+    expect(uiLocalRivetSource).toContain('import { app } from "@myapp/api/local";');
+    expect(uiLocalRivetSource).toContain("app.request");
+    expect(clientEntrySource).toContain("export { RivetError, configureRivet, rivetFetch }");
+    expect(clientEntrySource).toContain('export * as schemas from "./rivet/schemas.js";');
+    expect(clientEntrySource).toContain('export * as validators from "./rivet/validators.js";');
+  }, 20_000);
 });

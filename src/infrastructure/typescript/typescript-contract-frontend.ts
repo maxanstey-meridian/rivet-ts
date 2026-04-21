@@ -1,4 +1,3 @@
-import path from "node:path";
 import ts from "typescript";
 import { TsContractFrontend } from "../../application/ports/ts-contract-frontend.js";
 import { ContractBundle } from "../../domain/contract-bundle.js";
@@ -14,10 +13,7 @@ import {
 } from "../../domain/contract.js";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import { TypeExpression } from "../../domain/type-expression.js";
-import {
-  mapTypeScriptDiagnostics,
-  resolveTypeScriptProject,
-} from "./typescript-project.js";
+import { mapTypeScriptDiagnostics, resolveTypeScriptProject } from "./typescript-project.js";
 
 const HTTP_METHODS = new Set<HttpMethod>(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 const AUTHORING_HELPER_TYPE_NAMES = new Set([

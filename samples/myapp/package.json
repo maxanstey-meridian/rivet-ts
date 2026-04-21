@@ -3,14 +3,20 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "generate": "pnpm --dir packages/api run generate",
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "check": "tsc --noEmit",
+    "check:architecture": "depcruise --config .dependency-cruiser.cjs --ts-config tsconfig.json packages/api/src",
+    "test": "pnpm run check && pnpm run check:architecture"
   },
   "dependencies": {
-    "hono": "^4.0.0",
-    "rivet-ts": "file:../.."
+    "@myapp/api": "workspace:*",
+    "@myapp/client": "workspace:*",
+    "rivet-ts": "github:maxanstey-meridian/rivet-ts#v0.9"
   },
   "devDependencies": {
+    "dependency-cruiser": "^17.3.10",
     "typescript": "^6.0.2",
     "vite": "^6.4.2"
   }

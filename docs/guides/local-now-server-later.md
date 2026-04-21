@@ -4,21 +4,21 @@ Local mode uses the generated Rivet client against a Hono app in-process.
 
 Server mode uses the same generated client against a deployed HTTP endpoint.
 
-The key boundary is that the UI depends on `@api`, not on API internals. `@api` is the bundled API seam, and the hosting model behind it can change later without changing the client calls.
+The key boundary is that the UI depends on `@myapp/client`, not on API internals. Local browser transport is wired once in `ui/rivet-local.ts`, and the hosting model behind it can change later without changing the client calls.
 
 ## Local mode
 
 The scaffold starts here:
 
 ```ts
-import { configureLocalRivet } from "@api";
+import { configureLocalRivet } from "../rivet-local";
 
 configureLocalRivet();
 ```
 
 That makes the generated Rivet client call the local Hono app in-process via `app.request(...)`.
 
-From the UI's perspective, that detail is hidden behind `@api`.
+From the UI's perspective, that detail is hidden behind the generated client plus `ui/rivet-local.ts`.
 
 This mode does not provide server-side infrastructure concerns such as persistent storage, secrets, background jobs, or external integrations.
 
@@ -31,12 +31,12 @@ Keep:
 - the contract
 - the generated client
 - the handler signatures
-- `packages/api/src/api.ts`
+- `packages/api/src/app.ts`
 
 Add a real server entry:
 
 ```ts
-import { app } from "./packages/api/src/api.js";
+import { app } from "./packages/api/src/app.js";
 
 // Expose the same Hono app over HTTP so it can use real server-side concerns
 // like databases, secrets, queues, and file storage without changing the
@@ -49,7 +49,7 @@ Bun.serve({
 Then switch the client config:
 
 ```ts
-import { configureRivet } from "@api";
+import { configureRivet } from "@myapp/client";
 
 configureRivet({ baseUrl: "https://api.example.com" });
 ```

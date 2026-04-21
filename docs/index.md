@@ -3,7 +3,7 @@ layout: home
 hero:
   name: rivet-ts
   text: TypeScript contracts to working APIs
-  tagline: Write a contract, scaffold an API package, point the UI at @api, and let Vite keep local artifacts up to date.
+  tagline: Write a contract, scaffold an app, point the UI at the generated client, and let Vite keep local artifacts up to date.
   actions:
     - theme: brand
       text: Get Started
@@ -20,7 +20,7 @@ features:
     details: Generate a runnable root app with `ui/`, `packages/api`, plain async handlers, and local transport wiring already in place.
   - icon: "📦"
     title: Plugin-managed local artifacts
-    details: Use the Vite plugin to keep the reflected contract, generated client, and local-rivet glue updated under the API package as contracts change during dev and build.
+    details: Use the Vite plugin to keep the reflected contract JSON plus generated client/runtime artifacts updated as contracts change during dev and build.
   - icon: "🚀"
     title: Promote later
     details: Keep the contract and client shape stable while moving from browser-local Hono to Bun, then to .NET.
@@ -73,15 +73,16 @@ pnpm --dir packages/api run generate
 Then use the generated client from `ui/src/main.ts`:
 
 ```ts
-import { users, configureLocalRivet } from "@api";
+import { users } from "@myapp/client";
+import { configureLocalRivet } from "../rivet-local";
 
 configureLocalRivet();
 
-const user = await users.getUser("usr_123");
+const user = await users.getUser({ params: { id: "usr_123" } });
 console.log(user.name);
 ```
 
-`scaffold-mock` creates the project shape. `pnpm --dir packages/api run generate` creates the initial generated contract/client artifacts and the public `@api` surface under `packages/api/generated`. After that, the scaffolded Vite plugin keeps them current during `vite dev`.
+`scaffold-mock` creates the project shape. `pnpm --dir packages/api run generate` creates the initial generated contract/client artifacts, including `packages/client/generated/index.ts` via `rivet-ts`. After that, the scaffolded Vite plugin keeps them current during `vite dev`.
 
 ## Pages
 

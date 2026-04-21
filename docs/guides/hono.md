@@ -1,6 +1,6 @@
 # Hono
 
-Use `rivet-ts/hono` when you want to mount contract-typed handlers onto a Hono app yourself instead of relying on the scaffolded `packages/api/src/api.ts`.
+Use `rivet-ts/hono` when you want to mount contract-typed handlers onto a Hono app yourself instead of relying on the scaffolded `packages/api/src/app.ts`.
 
 ## What it does
 
@@ -12,24 +12,37 @@ You provide:
 - a reflected/lowered Rivet contract JSON document
 - a handler map
 
-It registers Hono routes from the contract and dispatches requests into your handlers.
+It registers Hono routes from the contract onto your app and dispatches requests into your handlers.
 
 ## Example
 
 ```ts
 import { Hono } from "hono";
-import { mount } from "rivet-ts/hono";
+import { contextStorage } from "hono/context-storage";
+import { registerRivetHonoRoutes } from "rivet-ts/hono";
 import contract from "../generated/api.contract.json";
-import { createMember } from "./handlers/create-member.js";
-import { listMembers } from "./handlers/list-members.js";
+import { composeApi } from "./composition.js";
+import { CreateMemberHandler } from "./handlers/create-member.js";
+import { ListMembersHandler } from "./handlers/list-members.js";
 
+const container = composeApi();
 export const app = new Hono();
+app.use("/api/*", contextStorage());
 
-mount(app, contract, {
-  createMember,
-  listMembers,
+registerRivetHonoRoutes(app, contract, {
+  handlers: {
+    Create: CreateMemberHandler,
+    List: ListMembersHandler,
+  },
+  resolveHandler: (Handler) => container.resolve(Handler),
 });
 ```
+
+## Request-aware services
+
+If your application services need ambient access to the current Hono request, install `contextStorage()` in the app and keep that concern in an app-owned abstraction such as `RequestContext`.
+
+`rivet-ts/hono` does not provide request-scoped DI or its own request lifecycle.
 
 ## Handler typing
 
@@ -49,7 +62,7 @@ export const listMembers: RivetHandler<MembersContract, "List"> = async () => {
 Use `rivet-ts/hono` when:
 
 - you already have your own app structure
-- you want to own `app.ts` or `api.ts` yourself
+- you want to own `app.ts` yourself
 - you want the lower-level integration under the scaffold
 
 Do not use it when:
@@ -57,4 +70,4 @@ Do not use it when:
 - `scaffold-mock` already gives you the shape you want
 - you do not need custom app wiring
 
-In the scaffolded flow, `packages/api/src/api.ts` already uses this integration for you.
+In the scaffolded flow, `packages/api/src/app.ts` already uses this integration for you.

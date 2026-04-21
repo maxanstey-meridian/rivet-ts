@@ -7,15 +7,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "lib": [
-      "ESNext",
-      "DOM"
-    ]
+    "lib": ["ESNext", "DOM"]
   },
-  "include": [
-    "./**/*.ts",
-    "./**/*.tsx",
-    "./**/*.mts",
-    "./**/*.cts"
-  ]
+  "include": ["./src/**/*.ts"]
 }

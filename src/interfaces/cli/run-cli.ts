@@ -4,9 +4,10 @@ import { LowerContractBundleToRivetContract } from "../../application/use-cases/
 import { ScaffoldMockProject } from "../../application/use-cases/scaffold-mock-project.js";
 import type { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import { ScaffoldMockConfig } from "../../domain/scaffold-mock-config.js";
+import { emitClientPackage } from "../../infrastructure/codegen/client-package-emitter.js";
+import { FileSystemMockProjectEmitter } from "../../infrastructure/scaffold/mock-project-emitter.js";
 import { TypeScriptContractFrontend } from "../../infrastructure/typescript/typescript-contract-frontend.js";
 import { TypeScriptRivetContractLowerer } from "../../infrastructure/typescript/typescript-rivet-contract-lowerer.js";
-import { FileSystemMockProjectEmitter } from "../../infrastructure/scaffold/mock-project-emitter.js";
 
 type CliIO = {
   stdout: (text: string) => void;
@@ -30,6 +31,10 @@ const reportDiagnostics = (diagnostics: readonly ExtractionDiagnostic[], io: Cli
 export const runCli = async (args: readonly string[], io: CliIO = DEFAULT_IO): Promise<number> => {
   if (args[0] === "scaffold-mock") {
     return runScaffoldMock(args.slice(1), io);
+  }
+
+  if (args[0] === "generate") {
+    return runGenerate(args.slice(1), io);
   }
 
   const parsed = parseReflectArgs(args);
@@ -86,6 +91,24 @@ const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<numb
   reportDiagnostics(result.diagnostics, io);
 
   return result.hasErrors ? 1 : 0;
+};
+
+const runGenerate = async (args: readonly string[], io: CliIO): Promise<number> => {
+  const parsed = parseGenerateArgs(args);
+
+  if (!parsed.generatedRoot) {
+    io.stderr("Usage: rivet-ts generate --generated-root <dir>\n");
+    return 1;
+  }
+
+  try {
+    await emitClientPackage(parsed.generatedRoot);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    io.stderr(`${message}\n`);
+    return 1;
+  }
 };
 
 const parseReflectArgs = (args: readonly string[]): { entryPath?: string; outputPath?: string } => {
@@ -151,4 +174,23 @@ const parseScaffoldMockArgs = (
   }
 
   return { entryPath, outDir, projectName, tsconfigPath };
+};
+
+const parseGenerateArgs = (
+  args: readonly string[],
+): {
+  generatedRoot?: string;
+} => {
+  let generatedRoot: string | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (arg === "--generated-root" && index + 1 < args.length) {
+      generatedRoot = args[index + 1];
+      index += 1;
+    }
+  }
+
+  return { generatedRoot };
 };

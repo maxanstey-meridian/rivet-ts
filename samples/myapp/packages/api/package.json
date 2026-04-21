@@ -1,19 +1,18 @@
 {
-  "name": "api",
+  "name": "@myapp/api",
   "private": true,
   "type": "module",
+  "imports": {
+    "#contract": "./src/app/contract.ts"
+  },
   "exports": {
-    ".": "./generated/index.ts"
+    "./local": "./src/app/local.ts"
   },
   "scripts": {
-    "generate": "pnpm exec rivet-reflect-ts --entry contracts.ts --out generated/api.contract.json && rivet --from generated/api.contract.json --output generated/rivet"
+    "generate": "pnpm exec rivet-reflect-ts --entry src/app/contracts.ts --out generated/api.contract.json && rivet --from generated/api.contract.json --output ../client/generated/rivet && pnpm exec rivet-ts generate --generated-root ../client/generated"
   },
   "dependencies": {
     "hono": "^4.0.0",
-    "rivet-ts": "file:../../.."
-  },
-  "devDependencies": {
-    "typescript": "^6.0.2",
-    "vite": "^6.0.5"
+    "rivet-ts": "github:maxanstey-meridian/rivet-ts#v0.9"
   }
 }

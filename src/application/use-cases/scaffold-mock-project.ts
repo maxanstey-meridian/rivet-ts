@@ -1,11 +1,11 @@
 import path from "node:path";
-import { MockProjectEmitter } from "../ports/mock-project-emitter.js";
-import { RivetContractLowerer } from "../ports/rivet-contract-lowerer.js";
-import { TsContractFrontend } from "../ports/ts-contract-frontend.js";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import { RivetContractDocument } from "../../domain/rivet-contract.js";
 import { ScaffoldMockConfig } from "../../domain/scaffold-mock-config.js";
 import { ScaffoldMockResult } from "../../domain/scaffold-mock-result.js";
+import { MockProjectEmitter } from "../ports/mock-project-emitter.js";
+import { RivetContractLowerer } from "../ports/rivet-contract-lowerer.js";
+import { TsContractFrontend } from "../ports/ts-contract-frontend.js";
 
 const EMPTY_DOCUMENT = new RivetContractDocument({});
 

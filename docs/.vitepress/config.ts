@@ -2,7 +2,8 @@ import { defineConfig } from "vitepress";
 
 export default defineConfig({
   title: "rivet-ts",
-  description: "Write a TypeScript contract, scaffold a Hono app, generate a client, and promote later.",
+  description:
+    "Write a TypeScript contract, scaffold a Hono app, generate a client, and promote later.",
   base: "/rivet-ts/",
 
   themeConfig: {
@@ -43,15 +44,11 @@ export default defineConfig({
       },
       {
         text: "Misc",
-        items: [
-          { text: "How It Works", link: "/misc/how-it-works" },
-        ],
+        items: [{ text: "How It Works", link: "/misc/how-it-works" }],
       },
     ],
 
-    socialLinks: [
-      { icon: "github", link: "https://github.com/maxanstey-meridian/rivet-ts" },
-    ],
+    socialLinks: [{ icon: "github", link: "https://github.com/maxanstey-meridian/rivet-ts" }],
 
     search: {
       provider: "local",

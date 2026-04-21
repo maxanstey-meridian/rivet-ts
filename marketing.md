@@ -48,7 +48,7 @@ The client surface is the same the whole way through.
 
 ```ts
 import type { RivetHandler } from "rivet-ts";
-import type { UserContract } from "../contract.js";
+import type { UserContract } from "#contract";
 
 export const getUser: RivetHandler<UserContract, "GetUser"> = async ({ params }) => {
   return {
@@ -79,7 +79,7 @@ rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp
 
 ```ts
 import type { RivetHandler } from "rivet-ts";
-import type { UserContract } from "../contract.js";
+import type { UserContract } from "#contract";
 
 export const getUser: RivetHandler<UserContract, "GetUser"> = async ({ params }) => {
   return await db.users.findById(params.id);

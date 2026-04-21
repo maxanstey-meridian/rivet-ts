@@ -13,47 +13,50 @@ It was produced by:
 ```text
 samples/myapp/
 ├── package.json
+├── pnpm-workspace.yaml
 ├── vite.config.ts
 ├── packages/
-│   └── api/
-│       ├── contracts.ts
+│   ├── api/
+│   │   ├── generated/
+│   │   ├── package.json
+│   │   └── src/
+│   └── client/
 │       ├── generated/
-│       ├── package.json
-│       └── src/
-│           ├── api.ts
-│           ├── contract.ts
-│           └── handlers/
+│       └── package.json
 └── ui/
     ├── index.html
+    ├── rivet-local.ts
     └── src/main.ts
 ```
 
 ## What is scaffolded once
 
 - root `package.json`
+- root `pnpm-workspace.yaml`
 - root `vite.config.ts`
 - `ui/index.html`
+- `ui/rivet-local.ts`
 - `ui/src/main.ts`
-- `packages/api/src/api.ts`
-- `packages/api/src/handlers/*`
-- `packages/api/src/contract.ts`
+- `packages/api/src/app.ts`
+- `packages/api/src/app/composition.ts`
+- `packages/api/src/app/contract.ts`
 - `packages/api/package.json`
-- copied contract source under `packages/api`
+- copied contract source under `packages/api/src/app`
 
 ## What the Vite plugin keeps generated
 
 - `packages/api/generated/*.contract.json`
-- `packages/api/generated/rivet/*`
-- `packages/api/generated/local-rivet.ts`
+- `packages/client/generated/rivet/*`
+- `packages/client/generated/index.ts`
 
 During `vite dev`, contract changes regenerate those artifacts and Vite reloads the UI with the updated client surface.
 
 ## What stays authored
 
-- `packages/api/contracts.ts`
-- any copied sibling contract source files under `packages/api`
-- `packages/api/src/handlers/*`
-- route registration in `packages/api/src/api.ts`
+- `packages/api/src/app/contracts.ts`
+- any copied sibling contract source files under `packages/api/src/app`
+- `packages/api/src/modules/*`
+- route registration in `packages/api/src/app.ts`
 - `ui/src/main.ts`
 - any other UI code
 

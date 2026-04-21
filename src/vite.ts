@@ -3,11 +3,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { Plugin, ResolvedConfig } from "vite";
-import { TypeScriptContractFrontend } from "./infrastructure/typescript/typescript-contract-frontend.js";
-import { TypeScriptRivetContractLowerer } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
-import { emitLocalRivetSource, emitPublicApiSource } from "./infrastructure/codegen/local-rivet-emitter.js";
+import { emitClientPackage } from "./infrastructure/codegen/client-package-emitter.js";
 import { toKebabCase } from "./infrastructure/codegen/kebab-case.js";
 import { collectLocalDependencies } from "./infrastructure/typescript/local-source-dependencies.js";
+import { TypeScriptContractFrontend } from "./infrastructure/typescript/typescript-contract-frontend.js";
+import { TypeScriptRivetContractLowerer } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { ensureRivetBinary, type RivetBinaryConfig } from "./infrastructure/vite/rivet-binary.js";
 
 const execFileAsync = promisify(execFile);
@@ -32,62 +32,59 @@ const formatDiagnostics = (
     })
     .join("\n");
 
-const writeIfChanged = async (filePath: string, content: string): Promise<void> => {
-  try {
-    const current = await fs.readFile(filePath, "utf8");
-    if (current === content) {
-      return;
-    }
-  } catch {
-    // noop
-  }
-
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, content, "utf8");
-};
-
 const resolveConfigPath = (value: string): string => path.resolve(process.cwd(), value);
 
 export type RivetTsVitePluginOptions = {
-  readonly contract: string;
+  readonly entry?: string;
+  readonly contract?: string;
   readonly apiRoot: string;
-  readonly app: string;
+  readonly runtimeContractOut?: string;
+  readonly clientOutDir?: string;
   readonly tsconfig?: string;
   readonly rivet?: RivetBinaryConfig;
 };
 
 type NormalizedPluginOptions = {
-  readonly contractPath: string;
+  readonly entryPath: string;
   readonly apiRoot: string;
-  readonly appPath: string;
   readonly tsconfigPath?: string;
-  readonly contractJsonPath: string;
+  readonly runtimeContractPath: string;
+  readonly clientOutDir: string;
   readonly generatedRivetDir: string;
-  readonly generatedRivetClientIndexPath: string;
-  readonly generatedRivetRuntimePath: string;
-  readonly generatedLocalRivetPath: string;
-  readonly publicApiPath: string;
   readonly binaryConfig?: RivetBinaryConfig;
+};
+
+const resolveEntryPath = (options: RivetTsVitePluginOptions): string => {
+  if (options.entry) {
+    return resolveConfigPath(options.entry);
+  }
+
+  if (options.contract) {
+    return resolveConfigPath(options.contract);
+  }
+
+  throw new Error('rivet-ts/vite requires either an "entry" or "contract" option.');
 };
 
 const normalizeOptions = (options: RivetTsVitePluginOptions): NormalizedPluginOptions => {
   const apiRoot = resolveConfigPath(options.apiRoot);
-  const contractPath = resolveConfigPath(options.contract);
-  const appPath = resolveConfigPath(options.app);
+  const entryPath = resolveEntryPath(options);
   const projectName = path.basename(apiRoot);
-  const contractJsonFileName = `${toKebabCase(projectName) || "contract"}.contract.json`;
+  const defaultContractJsonFileName = `${toKebabCase(projectName) || "contract"}.contract.json`;
+  const runtimeContractPath = options.runtimeContractOut
+    ? resolveConfigPath(options.runtimeContractOut)
+    : path.join(apiRoot, "generated", defaultContractJsonFileName);
+  const clientOutDir = options.clientOutDir
+    ? resolveConfigPath(options.clientOutDir)
+    : path.join(apiRoot, "generated");
 
   return {
-    contractPath,
+    entryPath,
     apiRoot,
-    appPath,
     tsconfigPath: options.tsconfig ? resolveConfigPath(options.tsconfig) : undefined,
-    contractJsonPath: path.join(apiRoot, "generated", contractJsonFileName),
-    generatedRivetDir: path.join(apiRoot, "generated", "rivet"),
-    generatedRivetClientIndexPath: path.join(apiRoot, "generated", "rivet", "client", "index.ts"),
-    generatedRivetRuntimePath: path.join(apiRoot, "generated", "rivet", "rivet.ts"),
-    generatedLocalRivetPath: path.join(apiRoot, "generated", "local-rivet.ts"),
-    publicApiPath: path.join(apiRoot, "generated", "index.ts"),
+    runtimeContractPath,
+    clientOutDir,
+    generatedRivetDir: path.join(clientOutDir, "rivet"),
     binaryConfig: options.rivet,
   };
 };
@@ -98,7 +95,7 @@ const generateArtifacts = async (
 ): Promise<readonly string[]> => {
   const frontend = new TypeScriptContractFrontend(options.tsconfigPath);
   const lowerer = new TypeScriptRivetContractLowerer(options.tsconfigPath);
-  const bundle = await frontend.extract(options.contractPath);
+  const bundle = await frontend.extract(options.entryPath);
   const lowered = await lowerer.lower(bundle);
   const diagnostics = [...bundle.diagnostics, ...lowered.diagnostics];
 
@@ -118,39 +115,24 @@ const generateArtifacts = async (
     config.logger.warn(formatted);
   }
 
-  await fs.mkdir(path.dirname(options.contractJsonPath), { recursive: true });
-  await fs.writeFile(options.contractJsonPath, `${JSON.stringify(lowered.document, null, 2)}\n`, "utf8");
+  await fs.mkdir(path.dirname(options.runtimeContractPath), { recursive: true });
+  await fs.writeFile(
+    options.runtimeContractPath,
+    `${JSON.stringify(lowered.document, null, 2)}\n`,
+    "utf8",
+  );
 
   const binary = await ensureRivetBinary(options.binaryConfig);
-  await execFileAsync(binary.executablePath, [
-    "--from",
-    options.contractJsonPath,
-    "--output",
-    options.generatedRivetDir,
-  ], {
-    cwd: options.apiRoot,
-  });
-
-  await writeIfChanged(
-    options.generatedLocalRivetPath,
-    emitLocalRivetSource({
-      filePath: options.generatedLocalRivetPath,
-      appFilePath: options.appPath,
-      generatedRivetFilePath: options.generatedRivetRuntimePath,
-    }),
+  await execFileAsync(
+    binary.executablePath,
+    ["--from", options.runtimeContractPath, "--output", options.generatedRivetDir],
+    {
+      cwd: options.apiRoot,
+    },
   );
+  await emitClientPackage(options.clientOutDir);
 
-  await writeIfChanged(
-    options.publicApiPath,
-    emitPublicApiSource({
-      filePath: options.publicApiPath,
-      generatedLocalRivetFilePath: options.generatedLocalRivetPath,
-      generatedRivetClientIndexFilePath: options.generatedRivetClientIndexPath,
-      generatedRivetRuntimeFilePath: options.generatedRivetRuntimePath,
-    }),
-  );
-
-  const dependencies = await collectLocalDependencies(options.contractPath);
+  const dependencies = await collectLocalDependencies(options.entryPath);
   return dependencies.map((dependency) => dependency.absolutePath);
 };
 
@@ -166,14 +148,16 @@ export const rivetTs = (options: RivetTsVitePluginOptions): Plugin => {
       return;
     }
 
-    queue = queue.catch(() => undefined).then(async () => {
-      currentConfig.logger.info(`[rivet-ts] Generating API artifacts (${reason})...`);
-      const dependencies = await generateArtifacts(normalized, currentConfig);
-      watchedFiles.clear();
-      for (const dependency of dependencies) {
-        watchedFiles.add(path.resolve(dependency));
-      }
-    });
+    queue = queue
+      .catch(() => undefined)
+      .then(async () => {
+        currentConfig.logger.info(`[rivet-ts] Generating API artifacts (${reason})...`);
+        const dependencies = await generateArtifacts(normalized, currentConfig);
+        watchedFiles.clear();
+        for (const dependency of dependencies) {
+          watchedFiles.add(path.resolve(dependency));
+        }
+      });
 
     return queue;
   };
@@ -181,20 +165,6 @@ export const rivetTs = (options: RivetTsVitePluginOptions): Plugin => {
   return {
     name: "rivet-ts",
     enforce: "pre",
-    config: () => ({
-      resolve: {
-        alias: [
-          {
-            find: /^@api$/u,
-            replacement: path.join(normalized.apiRoot, "generated", "index.ts"),
-          },
-          {
-            find: /^@api\//u,
-            replacement: `${normalized.apiRoot}/`,
-          },
-        ],
-      },
-    }),
     configResolved(config) {
       resolvedConfig = config;
     },

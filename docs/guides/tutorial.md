@@ -78,23 +78,23 @@ myapp/
 ├── package.json
 ├── vite.config.ts
 ├── packages/
-│   └── api/
-│       ├── contracts.ts
+│   ├── api/
+│   │   ├── generated/
+│   │   ├── package.json
+│   │   └── src/
+│   │       ├── app.ts
+│   │       ├── app/
+│   │       └── modules/
+│   └── client/
 │       ├── generated/
-│       ├── package.json
-│       └── src/
-│           ├── api.ts
-│           ├── contract.ts
-│           ├── handlers/
-│           │   ├── create-todo.ts
-│           │   ├── get-todo.ts
-│           │   └── list-todos.ts
+│       └── package.json
 └── ui/
     ├── index.html
+    ├── rivet-local.ts
     └── src/main.ts
 ```
 
-The important boundary is that the UI consumes `@api`. It does not reach into API source files and it does not import generated implementation paths directly. The bundled API seam can move from in-process local mode to HTTP later without changing the frontend call sites.
+The important boundary is that the UI consumes `@myapp/client`. Local browser transport is wired once in `ui/rivet-local.ts` through `@myapp/api/local`, and the UI does not reach into API source files or generated implementation paths directly.
 
 ## 3. Inspect the generated handler shape
 
@@ -103,13 +103,14 @@ The important boundary is that the UI consumes `@api`. It does not reach into AP
 `pnpm --dir packages/api run generate` creates:
 
 - `packages/api/generated/api.contract.json`
-- `packages/api/generated/rivet/*`
+- `packages/client/generated/rivet/*`
+- `packages/client/generated/index.ts`
 
 Example generated handler:
 
 ```ts
 import type { RivetHandler } from "rivet-ts";
-import type { TodoContract } from "../contract.js";
+import type { TodoContract } from "#contract";
 
 export const getTodo: RivetHandler<TodoContract, "GetTodo"> = async ({ params }) => {
   return {
@@ -127,26 +128,30 @@ Example frontend consumption:
 The scaffolded app starts in local mode. In `ui/src/main.ts`:
 
 ```ts
-import { members, configureLocalRivet } from "@api";
+import { members } from "@myapp/client";
+import { configureLocalRivet } from "../rivet-local";
 
 configureLocalRivet();
 
 // Fully type-safe; runtime-safe when generated with --compile.
 const created = await members.create({
-  email: "ada@example.com",
+  body: {
+    email: "ada@example.com",
+  },
 });
 
 console.log(created.id);
 ```
 
-That is the intended decoupling: write the UI against `@api`, and let the API package decide whether that surface is currently backed by local `app.request(...)` transport or a remote server.
+That is the intended decoupling: write the UI against `@myapp/client`, and let `ui/rivet-local.ts` decide whether that surface is currently backed by local `app.request(...)` transport or a remote server.
 
 ## 4. Open the generated UI entrypoint
 
 Generated `ui/src/main.ts`:
 
 ```ts
-import { todo, configureLocalRivet } from "@api";
+import { todo } from "@myapp/client";
+import { configureLocalRivet } from "../rivet-local";
 
 const render = async (): Promise<void> => {
   configureLocalRivet();
@@ -162,7 +167,7 @@ const render = async (): Promise<void> => {
     "todo.listTodos()",
     JSON.stringify(result, null, 2),
     "",
-    "Open ui/src/main.ts and keep consuming @api.",
+    "Open ui/src/main.ts and keep consuming @myapp/client.",
   ].join("\n");
 };
 
@@ -173,21 +178,22 @@ This is the place to start consuming the API from the frontend.
 
 ## 5. See how local transport is wired
 
-Generated `packages/api/generated/local-rivet.ts`:
+Generated `ui/rivet-local.ts`:
 
 ```ts
-import { app } from "../src/api.js";
-import { configureRivet as configureGeneratedRivet, type RivetConfig } from "./rivet/rivet.js";
+import { configureRivet, type RivetConfig } from "@myapp/client";
+import { app } from "@myapp/api/local";
+import { configureLocalRivet as configureRivetLocalRuntime } from "rivet-ts/local";
 
 type LocalRivetConfig = Omit<RivetConfig, "fetch" | "baseUrl"> & {
   readonly baseUrl?: string;
 };
 
 export const configureLocalRivet = (config: LocalRivetConfig = {}): void => {
-  configureGeneratedRivet({
+  configureRivetLocalRuntime({
     ...config,
-    baseUrl: config.baseUrl ?? "http://local",
-    fetch: (input, init) => Promise.resolve(app.request(input as string, init)),
+    configureRivet,
+    dispatch: (input, init) => app.request(input as string, init),
   });
 };
 ```
