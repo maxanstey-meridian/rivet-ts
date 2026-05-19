@@ -67,11 +67,13 @@ describe("Expressive contract lifecycle", () => {
         expect.objectContaining({
           name: "teamId",
           source: "route",
+          optional: false,
           type: { kind: "primitive", type: "string", format: "uuid" },
         }),
         expect.objectContaining({
           name: "search",
           source: "query",
+          optional: true,
           type: {
             kind: "nullable",
             inner: { kind: "primitive", type: "string" },
@@ -80,6 +82,7 @@ describe("Expressive contract lifecycle", () => {
         expect.objectContaining({
           name: "status",
           source: "query",
+          optional: true,
           type: {
             kind: "nullable",
             inner: { kind: "ref", name: "MemberStatus" },

@@ -199,11 +199,18 @@ export class RivetEndpointParam {
   public readonly name: string;
   public readonly type: RivetType;
   public readonly source: RivetEndpointParamSource;
+  public readonly optional: boolean;
 
-  public constructor(input: { name: string; type: RivetType; source: RivetEndpointParamSource }) {
+  public constructor(input: {
+    name: string;
+    type: RivetType;
+    source: RivetEndpointParamSource;
+    optional?: boolean;
+  }) {
     this.name = input.name;
     this.type = input.type;
     this.source = input.source;
+    this.optional = input.optional ?? false;
   }
 }
 

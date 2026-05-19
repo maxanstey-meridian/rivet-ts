@@ -80,7 +80,8 @@
             "kind": "ref",
             "name": "CreateMemberRequest"
           },
-          "source": "body"
+          "source": "body",
+          "optional": false
         }
       ],
       "returnType": {
@@ -139,7 +140,8 @@
             "kind": "ref",
             "name": "CreateMemberRequest"
           },
-          "source": "body"
+          "source": "body",
+          "optional": false
         }
       ],
       "returnType": {

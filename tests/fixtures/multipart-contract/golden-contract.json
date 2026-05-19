@@ -13,7 +13,8 @@
             "kind": "primitive",
             "type": "string"
           },
-          "source": "route"
+          "source": "route",
+          "optional": false
         },
         {
           "name": "file",
@@ -21,7 +22,8 @@
             "kind": "primitive",
             "type": "File"
           },
-          "source": "file"
+          "source": "file",
+          "optional": false
         },
         {
           "name": "title",
@@ -29,7 +31,8 @@
             "kind": "primitive",
             "type": "string"
           },
-          "source": "formField"
+          "source": "formField",
+          "optional": false
         },
         {
           "name": "description",
@@ -37,7 +40,8 @@
             "kind": "primitive",
             "type": "string"
           },
-          "source": "formField"
+          "source": "formField",
+          "optional": false
         }
       ],
       "controllerName": "multipart",

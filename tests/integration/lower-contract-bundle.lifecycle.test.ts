@@ -1213,14 +1213,15 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     const upload = payload.endpoints.find((endpoint) => endpoint.name === "uploadDocument");
     expect(upload?.inputTypeName).toBe("UploadDocumentRequest");
     expect(upload?.params).toEqual([
-      expect.objectContaining({ name: "documentId", source: "route" }),
+      expect.objectContaining({ name: "documentId", source: "route", optional: false }),
       expect.objectContaining({
         name: "file",
         source: "file",
+        optional: false,
         type: { kind: "primitive", type: "File" },
       }),
-      expect.objectContaining({ name: "title", source: "formField" }),
-      expect.objectContaining({ name: "description", source: "formField" }),
+      expect.objectContaining({ name: "title", source: "formField", optional: false }),
+      expect.objectContaining({ name: "description", source: "formField", optional: false }),
     ]);
   });
 

@@ -210,7 +210,8 @@
             "kind": "ref",
             "name": "InviteMemberRequest"
           },
-          "source": "body"
+          "source": "body",
+          "optional": false
         }
       ],
       "returnType": {
@@ -251,7 +252,8 @@
             "kind": "primitive",
             "type": "string"
           },
-          "source": "route"
+          "source": "route",
+          "optional": false
         }
       ],
       "controllerName": "members",
@@ -284,7 +286,8 @@
             "kind": "primitive",
             "type": "string"
           },
-          "source": "route"
+          "source": "route",
+          "optional": false
         },
         {
           "name": "body",
@@ -292,7 +295,8 @@
             "kind": "ref",
             "name": "UpdateRoleRequest"
           },
-          "source": "body"
+          "source": "body",
+          "optional": false
         }
       ],
       "controllerName": "members",

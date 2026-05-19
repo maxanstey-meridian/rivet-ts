@@ -44,7 +44,8 @@
             "kind": "ref",
             "name": "SubmitFormRequest"
           },
-          "source": "body"
+          "source": "body",
+          "optional": false
         }
       ],
       "controllerName": "formEncoded",

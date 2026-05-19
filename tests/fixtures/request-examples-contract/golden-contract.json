@@ -36,7 +36,8 @@
             "kind": "ref",
             "name": "CreateMemberRequest"
           },
-          "source": "body"
+          "source": "body",
+          "optional": false
         }
       ],
       "controllerName": "requestExamples",
@@ -67,7 +68,8 @@
             "kind": "ref",
             "name": "CreateMemberRequest"
           },
-          "source": "body"
+          "source": "body",
+          "optional": false
         }
       ],
       "controllerName": "requestExamples",

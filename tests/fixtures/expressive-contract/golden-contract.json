@@ -335,7 +335,8 @@
             "type": "string",
             "format": "uuid"
           },
-          "source": "route"
+          "source": "route",
+          "optional": false
         },
         {
           "name": "search",
@@ -346,7 +347,8 @@
               "type": "string"
             }
           },
-          "source": "query"
+          "source": "query",
+          "optional": true
         },
         {
           "name": "status",
@@ -357,7 +359,8 @@
               "name": "MemberStatus"
             }
           },
-          "source": "query"
+          "source": "query",
+          "optional": true
         },
         {
           "name": "priority",
@@ -365,7 +368,8 @@
             "kind": "ref",
             "name": "MemberPriority"
           },
-          "source": "query"
+          "source": "query",
+          "optional": true
         },
         {
           "name": "includeInactive",
@@ -373,7 +377,8 @@
             "kind": "primitive",
             "type": "boolean"
           },
-          "source": "query"
+          "source": "query",
+          "optional": true
         },
         {
           "name": "sort",
@@ -381,7 +386,8 @@
             "kind": "ref",
             "name": "SortDirection"
           },
-          "source": "query"
+          "source": "query",
+          "optional": true
         }
       ],
       "returnType": {
@@ -425,7 +431,8 @@
             "type": "string",
             "format": "uuid"
           },
-          "source": "route"
+          "source": "route",
+          "optional": false
         },
         {
           "name": "body",
@@ -433,7 +440,8 @@
             "kind": "ref",
             "name": "CreateMemberRequest"
           },
-          "source": "body"
+          "source": "body",
+          "optional": false
         }
       ],
       "returnType": {
@@ -499,7 +507,8 @@
             "type": "string",
             "format": "uuid"
           },
-          "source": "route"
+          "source": "route",
+          "optional": false
         },
         {
           "name": "body",
@@ -507,7 +516,8 @@
             "kind": "ref",
             "name": "UpdateMemberRequest"
           },
-          "source": "body"
+          "source": "body",
+          "optional": false
         }
       ],
       "returnType": {
@@ -544,7 +554,8 @@
             "kind": "primitive",
             "type": "string"
           },
-          "source": "route"
+          "source": "route",
+          "optional": false
         }
       ],
       "controllerName": "members",

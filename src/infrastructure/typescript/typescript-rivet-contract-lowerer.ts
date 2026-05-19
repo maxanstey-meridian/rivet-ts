@@ -895,6 +895,7 @@ class TypeEmissionContext {
                 name: property.name,
                 type: propertyType,
                 source: "route",
+                optional: property.optional,
               }),
             );
           }
@@ -916,6 +917,7 @@ class TypeEmissionContext {
                 name: property.name,
                 type: propertyType,
                 source: "query",
+                optional: property.optional,
               }),
             );
           }
@@ -929,6 +931,7 @@ class TypeEmissionContext {
           name: "body",
           type: inputType,
           source: "body",
+          optional: false,
         }),
       );
     }
@@ -963,6 +966,7 @@ class TypeEmissionContext {
               type: "string",
             },
             source: "route",
+            optional: false,
           }),
         );
       }
@@ -973,6 +977,7 @@ class TypeEmissionContext {
             name: "body",
             type: inputType,
             source: "body",
+            optional: false,
           }),
         );
       }
@@ -990,6 +995,7 @@ class TypeEmissionContext {
               type: "string",
             },
             source: "route",
+            optional: false,
           }),
         );
       }
@@ -1029,6 +1035,7 @@ class TypeEmissionContext {
           name: property.name,
           type: propertyType,
           source,
+          optional: property.optional,
         }),
       );
     }
@@ -1067,6 +1074,7 @@ class TypeEmissionContext {
             name: property.name,
             type: propertyType ?? { kind: "primitive", type: "string" },
             source: "route",
+            optional: property.optional,
           }),
         );
         continue;
@@ -1105,6 +1113,7 @@ class TypeEmissionContext {
         name: fileProperty.name,
         type: { kind: "primitive", type: "File" },
         source: "file",
+        optional: fileProperty.optional,
       }),
     );
 
@@ -1119,6 +1128,7 @@ class TypeEmissionContext {
           name: property.name,
           type: propertyType,
           source: "formField",
+          optional: property.optional,
         }),
       );
     }
