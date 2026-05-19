@@ -36,6 +36,7 @@ export interface MembersContract extends Contract<"MembersContract"> {
     input: CreateMemberRequest;
     response: MemberDto;
     successStatus: 201;
+    errors: [{ status: 422; response: ValidationErrorDto; description: "Validation failed" }];
     requestExamples: [typeof createMemberRequest];
     responseExamples: [
       { status: 201; examples: [typeof memberResponse] },
@@ -77,6 +78,23 @@ responseExamples: [
   { status: 422; examples: [typeof validationError] },
 ]
 ```
+
+Each response example status must match a declared success or error response. For a `422` example, declare a `422` entry in `errors`.
+
+Legacy singular keys still exist:
+
+- `requestExample`
+- `successResponseExample`
+
+They are normalized into the plural output shape. Do not declare both the singular and plural form on the same endpoint.
+
+Default media types are derived from the endpoint shape:
+
+- normal request examples use `application/json`
+- `formEncoded: true` request examples use `application/x-www-form-urlencoded`
+- `acceptsFile: true` request examples use `multipart/form-data`
+- success examples on file-response endpoints default to `fileContentType`
+- error response examples default to `application/json`
 
 ## Scaffold behavior
 

@@ -12,7 +12,7 @@
 pnpm add -D github:maxanstey-meridian/rivet-ts#v0.9.1
 ```
 
-The browser-local flow does not require a separate `dotnet` install. The scaffolded Vite plugin downloads a pinned Rivet binary automatically when it needs one.
+The scaffolded Vite plugin can download a pinned Rivet binary automatically when it runs. The manual API package `generate` script shells out to `rivet`, so that command expects the Rivet CLI to be available on `PATH`.
 
 ## 2. Write a contract
 
@@ -74,16 +74,19 @@ myapp/
 ├── pnpm-workspace.yaml
 ├── vite.config.ts
 ├── tsconfig.json
+├── .dependency-cruiser.cjs
 ├── packages/
 │   ├── api/
 │   │   ├── generated/
 │   │   ├── package.json
+│   │   ├── tsconfig.json
 │   │   └── src/
 │   │       ├── app.ts
 │   │       ├── app/
 │   │       └── modules/
 │   └── client/
 │       ├── generated/
+│       ├── tsconfig.json
 │       └── package.json
 └── ui/
     ├── index.html
@@ -101,10 +104,10 @@ The scaffold already includes:
 Important:
 
 - `scaffold-mock` creates the project shape and authored handlers
-- `pnpm --dir packages/api run generate` produces `packages/api/generated/api.contract.json`, `packages/client/generated/rivet/*`, and `packages/client/generated/index.ts`
+- `pnpm --dir packages/api run generate` produces `packages/api/generated/api.contract.json`, `packages/client/generated/rivet/*`, and `packages/client/generated/index.ts`; it uses the `rivet` command from `PATH`
 - once those initial artifacts exist, `vite dev` keeps them current
 
-The important boundary is that the UI consumes `@myapp/client`, and local browser transport is wired once in `ui/rivet-local.ts` via `@myapp/api/local`. The UI does not import `packages/api/src/*` or generated internals directly.
+The important boundary is that normal UI call sites consume `@myapp/client`, and local browser transport is wired once in `ui/rivet-local.ts` via `@myapp/api/local`. Feature UI code does not import `packages/api/src/*` or generated internals directly.
 
 ## 4. Start consuming from the UI
 

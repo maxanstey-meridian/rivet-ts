@@ -4,7 +4,7 @@ Local mode uses the generated Rivet client against a Hono app in-process.
 
 Server mode uses the same generated client against a deployed HTTP endpoint.
 
-The key boundary is that the UI depends on `@myapp/client`, not on API internals. Local browser transport is wired once in `ui/rivet-local.ts`, and the hosting model behind it can change later without changing the client calls.
+The key boundary is that normal UI call sites depend on `@myapp/client`, not on API internals. Local browser transport is wired once in `ui/rivet-local.ts`; only that local adapter imports `@myapp/api/local` and dispatches to `app.request(...)`.
 
 ## Local mode
 
@@ -16,9 +16,9 @@ import { configureLocalRivet } from "../rivet-local";
 configureLocalRivet();
 ```
 
-That makes the generated Rivet client call the local Hono app in-process via `app.request(...)`.
+That makes the generated Rivet client call the local Hono app in-process via the adapter's `app.request(...)` dispatch.
 
-From the UI's perspective, that detail is hidden behind the generated client plus `ui/rivet-local.ts`.
+From feature UI code, that detail is hidden behind the generated client plus `ui/rivet-local.ts`.
 
 This mode does not provide server-side infrastructure concerns such as persistent storage, secrets, background jobs, or external integrations.
 

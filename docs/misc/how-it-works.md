@@ -53,7 +53,7 @@ Main Rivet consumes the reflected contract JSON and emits:
 - validators
 - JSON Schema
 
-Artifact generation remains in downstream Rivet.
+Downstream Rivet owns the `rivet/*` artifact generation. After that, `rivet-ts generate` emits the app-facing client package entrypoint, such as `packages/client/generated/index.ts`, that re-exports the generated modules and runtime helpers.
 
 ## 5. Promote transport later
 

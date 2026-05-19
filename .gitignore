@@ -12,3 +12,5 @@ docs/.vitepress/dist
 .orch
 .orchrc.json
 poc
+.claude
+CLAUDE.md

@@ -1,12 +1,23 @@
 # CLI
 
-`rivet-ts` currently exposes two CLI entrypoints.
+`rivet-ts` currently exposes two package binaries:
+
+- `rivet-reflect-ts`
+- `rivet-ts`
 
 The browser-local Vite workflow also exposes a plugin entry:
 
 ```ts
 import { rivetTs } from "rivet-ts/vite";
 ```
+
+The public package subpaths are:
+
+- `rivet-ts`
+- `rivet-ts/vite`
+- `rivet-ts/hono`
+- `rivet-ts/local`
+- `rivet-ts/package.json`
 
 ## `rivet-reflect-ts`
 
@@ -49,6 +60,22 @@ Options:
 - `--out`: output directory for the scaffolded app
 - `--name`: optional package name for the scaffold
 - `--tsconfig`: optional explicit TypeScript project file
+
+## `rivet-ts generate`
+
+Emit the app-facing generated client package entrypoint after downstream Rivet has generated `rivet/*`.
+
+```bash
+rivet-ts generate --generated-root <dir>
+```
+
+Example:
+
+```bash
+pnpm exec rivet-ts generate --generated-root ./packages/client/generated
+```
+
+This writes `<generated-root>/index.ts`. The entrypoint imports each generated client module from `rivet/client/*.ts`, exports those modules as camel-cased namespaces, re-exports `RivetError`, `configureRivet`, `rivetFetch`, their public runtime types, and conditionally re-exports generated schemas, validators, and common types when the corresponding downstream files exist.
 
 ## Diagnostics
 

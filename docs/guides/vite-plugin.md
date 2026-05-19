@@ -12,7 +12,6 @@ Given:
 
 - a contract entrypoint
 - a scaffolded API package
-- a Hono app entry
 
 the plugin:
 
@@ -72,15 +71,22 @@ export default defineConfig({
 
 ## Options
 
-| Option              | Description                                          |
-| ------------------- | ---------------------------------------------------- |
-| `entry`             | Contract entrypoint path                             |
-| `contract`          | Legacy alias for `entry`                             |
-| `apiRoot`           | Root of the scaffolded API package                   |
-| `tsconfig`          | Optional TypeScript project file                     |
-| `rivet.version`     | Pinned downstream Rivet version                      |
-| `rivet.autoInstall` | Auto-download the Rivet binary when missing          |
-| `rivet.binaryPath`  | Use an explicit Rivet binary instead of auto-install |
+| Option               | Description                                              |
+| -------------------- | -------------------------------------------------------- |
+| `entry`              | Contract entrypoint path                                 |
+| `contract`           | Legacy alias for `entry`                                 |
+| `apiRoot`            | Root of the scaffolded API package                       |
+| `runtimeContractOut` | Optional reflected contract JSON output path             |
+| `clientOutDir`       | Optional generated client package output directory       |
+| `tsconfig`           | Optional TypeScript project file                         |
+| `rivet.version`      | Pinned downstream Rivet version                          |
+| `rivet.autoInstall`  | Auto-download the Rivet binary when missing              |
+| `rivet.binaryPath`   | Use an explicit Rivet binary instead of auto-install     |
+| `rivet.cacheDir`     | Override the auto-installed Rivet binary cache directory |
+
+`entry` is preferred. `contract` exists as a legacy alias. If `runtimeContractOut` is omitted, the plugin writes `<apiRoot>/generated/<api-root-name>.contract.json`. If `clientOutDir` is omitted, it writes under `<apiRoot>/generated`.
+
+The plugin runs downstream Rivet with the reflected contract as `--from` and `<clientOutDir>/rivet` as `--output`, then emits the same client package entrypoint as `rivet-ts generate`.
 
 ## UI imports
 
@@ -101,4 +107,4 @@ When a contract file changes, the plugin regenerates:
 - `packages/client/generated/rivet/*`
 - `packages/client/generated/index.ts`
 
-The plugin does not add handlers or route registrations for new endpoints. If a new endpoint is added to the contract, the generated client updates immediately, but local calls will still fail until the handler is implemented and mounted.
+The plugin does not add handlers or route registrations for new endpoints. If a new endpoint is added to a selected contract group, the generated client updates immediately, but the scaffolded API can fail during route registration/import until that group has exactly one handler for each endpoint and no unused handlers.

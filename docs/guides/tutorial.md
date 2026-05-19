@@ -96,7 +96,7 @@ myapp/
 
 The important boundary is that the UI consumes `@myapp/client`. Local browser transport is wired once in `ui/rivet-local.ts` through `@myapp/api/local`, and the UI does not reach into API source files or generated implementation paths directly.
 
-## 3. Inspect the generated handler shape
+## 3. Inspect the scaffolded handler shape
 
 `scaffold-mock` creates the authored source layer under `packages/api/src`.
 
@@ -106,7 +106,7 @@ The important boundary is that the UI consumes `@myapp/client`. Local browser tr
 - `packages/client/generated/rivet/*`
 - `packages/client/generated/index.ts`
 
-Example generated handler:
+Example scaffolded handler:
 
 ```ts
 import type { RivetHandler } from "rivet-ts";
@@ -128,26 +128,25 @@ Example frontend consumption:
 The scaffolded app starts in local mode. In `ui/src/main.ts`:
 
 ```ts
-import { members } from "@myapp/client";
+import { todo } from "@myapp/client";
 import { configureLocalRivet } from "../rivet-local";
 
 configureLocalRivet();
 
-// Fully type-safe; runtime-safe when generated with --compile.
-const created = await members.create({
+const created = await todo.createTodo({
   body: {
-    email: "ada@example.com",
+    title: "Ship docs",
   },
 });
 
-console.log(created.id);
+console.log(created.title);
 ```
 
 That is the intended decoupling: write the UI against `@myapp/client`, and let `ui/rivet-local.ts` decide whether that surface is currently backed by local `app.request(...)` transport or a remote server.
 
 ## 4. Open the generated UI entrypoint
 
-Generated `ui/src/main.ts`:
+Scaffolded `ui/src/main.ts`:
 
 ```ts
 import { todo } from "@myapp/client";
@@ -178,7 +177,7 @@ This is the place to start consuming the API from the frontend.
 
 ## 5. See how local transport is wired
 
-Generated `ui/rivet-local.ts`:
+Scaffolded `ui/rivet-local.ts`:
 
 ```ts
 import { configureRivet, type RivetConfig } from "@myapp/client";
@@ -189,7 +188,9 @@ type LocalRivetConfig = Omit<RivetConfig, "fetch" | "baseUrl"> & {
   readonly baseUrl?: string;
 };
 
-export const configureLocalRivet = (config: LocalRivetConfig = {}): void => {
+// Local browser mode. Replace this file with normal configureRivet({ baseUrl })
+// wiring when the API is hosted remotely.
+export const configureLocalRivet = (config: LocalRivetConfig = {}) => {
   configureRivetLocalRuntime({
     ...config,
     configureRivet,

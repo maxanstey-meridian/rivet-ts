@@ -1,6 +1,6 @@
 {
   "name": "rivet-ts",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "private": true,
   "description": "TypeScript contract extractor for Rivet",
   "keywords": [
@@ -48,6 +48,7 @@
     "lint:fix": "oxlint --fix src/ tests/",
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
+    "analyze": "gitnexus analyze",
     "test": "pnpm build && vitest run",
     "test:watch": "vitest",
     "check": "tsc --noEmit"
@@ -59,6 +60,7 @@
   "devDependencies": {
     "@types/node": "^25.5.2",
     "dependency-cruiser": "^17.3.10",
+    "gitnexus": "1.6.5",
     "hono": "^4.12.14",
     "oxfmt": "^0.43.0",
     "oxlint": "^1.58.0",
@@ -76,6 +78,31 @@
     "vite": {
       "optional": true
     }
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@ladybugdb/core",
+      "gitnexus",
+      "onnxruntime-node",
+      "protobufjs",
+      "sharp",
+      "tree-sitter",
+      "tree-sitter-c",
+      "tree-sitter-c-sharp",
+      "tree-sitter-cpp",
+      "tree-sitter-go",
+      "tree-sitter-java",
+      "tree-sitter-javascript",
+      "tree-sitter-kotlin",
+      "tree-sitter-php",
+      "tree-sitter-python",
+      "tree-sitter-ruby",
+      "tree-sitter-rust",
+      "tree-sitter-typescript"
+    ],
+    "ignoredBuiltDependencies": [
+      "@scarf/scarf"
+    ]
   },
   "packageManager": "pnpm@10.24.0"
 }

@@ -6,7 +6,10 @@ It was produced by:
 
 1. writing a TypeScript contract
 2. running `rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp`
-3. opening `ui/src/main.ts` and continuing from there
+3. generating the local contract/client artifacts with the API `generate` script or the Vite plugin
+4. opening `ui/src/main.ts` and continuing from there
+
+The committed sample keeps the scaffolded authored shape. Generated artifacts under `packages/api/generated` and `packages/client/generated` are produced locally by `pnpm --dir packages/api run generate` or during Vite dev/build.
 
 ## Structure
 
@@ -14,14 +17,18 @@ It was produced by:
 samples/myapp/
 ├── package.json
 ├── pnpm-workspace.yaml
+├── tsconfig.json
+├── .dependency-cruiser.cjs
 ├── vite.config.ts
 ├── packages/
 │   ├── api/
 │   │   ├── generated/
 │   │   ├── package.json
+│   │   ├── tsconfig.json
 │   │   └── src/
 │   └── client/
 │       ├── generated/
+│       ├── tsconfig.json
 │       └── package.json
 └── ui/
     ├── index.html
@@ -33,6 +40,8 @@ samples/myapp/
 
 - root `package.json`
 - root `pnpm-workspace.yaml`
+- root `tsconfig.json`
+- root `.dependency-cruiser.cjs`
 - root `vite.config.ts`
 - `ui/index.html`
 - `ui/rivet-local.ts`
@@ -40,7 +49,15 @@ samples/myapp/
 - `packages/api/src/app.ts`
 - `packages/api/src/app/composition.ts`
 - `packages/api/src/app/contract.ts`
+- `packages/api/src/app/local.ts`
+- `packages/api/src/app/map-contract-error.ts`
 - `packages/api/package.json`
+- `packages/api/tsconfig.json`
+- `packages/client/package.json`
+- `packages/client/tsconfig.json`
+- module skeletons under `packages/api/src/modules/*`
+- scaffolded handler and use-case source files under each module
+- common module placeholders
 - copied contract source under `packages/api/src/app`
 
 ## What the Vite plugin keeps generated
@@ -60,4 +77,4 @@ During `vite dev`, contract changes regenerate those artifacts and Vite reloads 
 - `ui/src/main.ts`
 - any other UI code
 
-If a new endpoint is added to the contract, the generated client updates immediately. Local calls still fail until the handler is implemented and mounted.
+If a new endpoint is added to the contract, the generated client updates immediately. The scaffolded API can then fail during route registration/import until the selected contract group has exactly one handler for each endpoint and no unused handlers.

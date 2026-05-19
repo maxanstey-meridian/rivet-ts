@@ -97,22 +97,28 @@ For the `MembersContract` above, the current scaffold emits:
 myapp/
 ├── package.json
 ├── pnpm-workspace.yaml
+├── tsconfig.json
+├── .dependency-cruiser.cjs
 ├── vite.config.ts
 ├── packages/
 │   ├── api/
 │   │   ├── generated/
+│   │   ├── tsconfig.json
 │   │   ├── package.json
 │   │   └── src/
 │   │       ├── app.ts
-│   │       ├── composition.ts
-│   │       ├── contract.ts
-│   │       ├── contracts.ts
-│   │       ├── interface/http/
+│   │       ├── app/
+│   │       │   ├── composition.ts
+│   │       │   ├── contract.ts
+│   │       │   ├── contracts.ts
+│   │       │   ├── local.ts
+│   │       │   └── map-contract-error.ts
 │   │       └── modules/
 │   │           ├── common/
 │   │           └── members/
 │   └── client/
 │       ├── generated/
+│       ├── tsconfig.json
 │       └── package.json
 └── ui/
     ├── index.html
@@ -150,9 +156,10 @@ import { configureLocalRivet } from "../rivet-local";
 
 configureLocalRivet();
 
-// Fully type-safe; runtime-safe when generated with --compile.
 const created = await members.create({
-  email: "ada@example.com",
+  body: {
+    email: "ada@example.com",
+  },
 });
 
 console.log(created.id);
@@ -234,9 +241,10 @@ import { configureLocalRivet } from "../rivet-local";
 
 configureLocalRivet();
 
-// Fully type-safe; runtime-safe when generated with --compile.
 const created = await members.create({
-  email: "ada@example.com",
+  body: {
+    email: "ada@example.com",
+  },
 });
 
 console.log(created.id);
@@ -381,30 +389,40 @@ To mount handlers onto Hono manually, use [`rivet-ts/hono`](./docs/guides/hono.m
 
 ## Endpoint options
 
-Every endpoint is an `Endpoint<{ ... }>` type literal. These are the supported keys:
+Every endpoint is an `Endpoint<...>` whose spec is a type literal or a type alias that resolves to one. These are the supported keys:
 
 | Key                      | Type                                              | Required | Description                                                               |
 | ------------------------ | ------------------------------------------------- | -------- | ------------------------------------------------------------------------- |
 | `method`                 | `"GET" \| "POST" \| "PUT" \| "PATCH" \| "DELETE"` | Yes      | HTTP method                                                               |
-| `route`                  | `string`                                          | Yes      | Route template, e.g. `"/api/members/{id}"`                                |
-| `input`                  | type reference                                    |          | Request body (POST/PUT/PATCH) or query params (GET/DELETE)                |
+| `route`                  | string literal                                    | Yes      | Route template, e.g. `"/api/members/{id}"`                                |
+| `input`                  | type reference                                    |          | Request body in body-method implicit mode; otherwise see the notes below  |
 | `params`                 | type reference                                    |          | Explicit route params shape                                               |
 | `query`                  | type reference                                    |          | Explicit query shape                                                      |
 | `response`               | type reference                                    |          | Success response body type. Omit or use `void` for no-content             |
-| `successStatus`          | `number`                                          |          | Override default success status (200 GET/PUT/PATCH, 201 POST, 204 DELETE) |
-| `errors`                 | tuple of error specs                              |          | Error responses with status codes and optional types                      |
-| `summary`                | `string`                                          |          | Short endpoint summary                                                    |
-| `description`            | `string`                                          |          | Long-form endpoint description                                            |
-| `security`               | `{ scheme: string }`                              |          | Security scheme reference                                                 |
-| `anonymous`              | `boolean`                                         |          | Mark endpoint as public (mutually exclusive with `security`)              |
-| `fileResponse`           | `boolean`                                         |          | Response is a file download                                               |
-| `fileContentType`        | `string`                                          |          | MIME type for file response (e.g. `"text/csv"`)                           |
-| `formEncoded`            | `boolean`                                         |          | Request body is `application/x-www-form-urlencoded`                       |
-| `acceptsFile`            | `boolean`                                         |          | Multipart file upload. Input must have exactly one `Blob`/`File` property |
-| `requestExamples`        | tuple of example refs                             |          | Request body examples                                                     |
-| `responseExamples`       | tuple of status-scoped specs                      |          | Response examples grouped by status code                                  |
+| `successStatus`          | numeric literal                                   |          | Override default success status (200 GET/PUT/PATCH, 201 POST, 204 DELETE) |
+| `errors`                 | error spec array or tuple                         |          | Error responses with status codes and optional types                      |
+| `summary`                | string literal                                    |          | Short endpoint summary                                                    |
+| `description`            | string literal                                    |          | Long-form endpoint description                                            |
+| `security`               | `{ scheme: "..." }`                               |          | Security scheme reference                                                 |
+| `anonymous`              | boolean literal                                   |          | Mark endpoint as public (mutually exclusive with `security`)              |
+| `fileResponse`           | boolean literal                                   |          | Response is a file download                                               |
+| `fileContentType`        | string literal                                    |          | MIME type for file response (e.g. `"text/csv"`)                           |
+| `queryAuth`              | string literal or `true`                          |          | Query-string auth metadata                                                |
+| `formEncoded`            | boolean literal                                   |          | Request body is `application/x-www-form-urlencoded`                       |
+| `acceptsFile`            | boolean literal                                   |          | Multipart file upload. Input must have exactly one `Blob`/`File` property |
+| `requestExamples`        | example array or tuple                            |          | Request body examples                                                     |
+| `responseExamples`       | status-scoped array or tuple                      |          | Response examples grouped by status code                                  |
 | `requestExample`         | `typeof someConst`                                |          | Legacy singular sugar. Use `requestExamples`                              |
 | `successResponseExample` | `typeof someConst`                                |          | Legacy singular sugar. Use `responseExamples`                             |
+
+Endpoint metadata is a type-level literal DSL. Use literal property types such as `route: "/api/members"` and `successStatus: 201`, not broad `string`, `number`, or `boolean` helper types.
+
+Endpoint members may be normal interface property names or string-literal property names. Computed endpoint names are not supported.
+
+Parameter lowering has two modes:
+
+- without explicit `params` or `query`, body methods (`POST`, `PUT`, `PATCH`) treat `input` as the body, while non-body methods split object-like `input` properties into route and query params
+- with explicit `params` or `query`, those shapes define route/query params and `input` is still emitted as a body param if present
 
 ## Supported types
 
@@ -412,26 +430,29 @@ rivet-ts reflects TypeScript types into Rivet's intermediate contract format. Th
 
 ### Type support matrix
 
-| TypeScript construct                    | Rivet kind            | OpenAPI                | Notes                                                         |
-| --------------------------------------- | --------------------- | ---------------------- | ------------------------------------------------------------- |
-| `string`                                | `primitive`           | `string`               |                                                               |
-| `number`                                | `primitive`           | `number`               |                                                               |
-| `boolean`                               | `primitive`           | `boolean`              |                                                               |
-| `unknown`                               | `primitive`           | `{}`                   | Escape hatch for truly dynamic data                           |
-| `T[]` / `Array<T>` / `ReadonlyArray<T>` | `array`               | `array`                |                                                               |
-| `Record<string, T>`                     | `dictionary`          | `additionalProperties` | String keys only                                              |
-| `T \| null`                             | nullable wrapper      | `nullable: true`       |                                                               |
-| `"a" \| "b" \| "c"`                     | `stringLiteralUnion`  | `enum`                 | Preferred form for string enums                               |
-| `1 \| 2 \| 3`                           | `numericLiteralUnion` | `enum`                 | Numeric literal union types                                   |
-| `enum E { A = "a" }`                    | `enum`                | `enum`                 | Also supported — produces identical output to string unions   |
-| `interface Foo { ... }`                 | `ref` (+ type def)    | `$ref`                 | Exported interfaces become named schemas                      |
-| `type Foo = { ... }`                    | `ref` (+ type def)    | `$ref`                 | Exported type aliases with object shapes                      |
-| `Brand<string, "Email">`                | branded primitive     | `string`               | Nominal typing — emits `string & { __brand: "Email" }`        |
-| `Format<string, "uuid">`                | primitive + format    | `string` + `format`    | Attaches format metadata (`uuid`, `date-time`, `email`, etc.) |
-| Generic types                           | parameterised ref     | Resolved inline        | `Paginated<T>` → concrete `Paginated<MemberDto>`              |
-| Optional properties (`?`)               | `optional: true`      | not in `required`      |                                                               |
-| Readonly properties                     | preserved             | no effect              | Informational only                                            |
-| Inline object types                     | `inlineObject`        | `object`               | Anonymous nested objects                                      |
+| TypeScript construct                    | Rivet kind            | OpenAPI                | Notes                                                          |
+| --------------------------------------- | --------------------- | ---------------------- | -------------------------------------------------------------- |
+| `string`                                | `primitive`           | `string`               |                                                                |
+| `number`                                | `primitive`           | `number`               |                                                                |
+| `boolean`                               | `primitive`           | `boolean`              |                                                                |
+| `unknown`                               | `primitive`           | `{}`                   | Escape hatch for truly dynamic data                            |
+| `T[]` / `Array<T>` / `ReadonlyArray<T>` | `array`               | `array`                |                                                                |
+| `Record<string, T>`                     | `dictionary`          | `additionalProperties` | String-like keys only; non-string-like keys are rejected       |
+| `T \| null`                             | nullable wrapper      | `nullable: true`       |                                                                |
+| `"a" \| "b" \| "c"`                     | `stringLiteralUnion`  | `enum`                 | Preferred form for string enums                                |
+| `1 \| 2 \| 3`                           | `numericLiteralUnion` | `enum`                 | Numeric literal union types                                    |
+| Discriminated object unions             | `taggedUnion`         | `oneOf`/discriminator  | Variants need one shared required string-literal discriminator |
+| `enum E { A = "a" }`                    | `enum`                | `enum`                 | Members need explicit string or numeric literal initializers   |
+| `interface Foo { ... }`                 | `ref` (+ type def)    | `$ref`                 | Exported interfaces become named schemas                       |
+| `type Foo = { ... }`                    | `ref` (+ type def)    | `$ref`                 | Exported type aliases with object shapes                       |
+| `Brand<string, "Email">`                | branded primitive     | `string`               | Nominal typing — emits `string & { __brand: "Email" }`         |
+| `Format<string, "uuid">`                | primitive + format    | `string` + `format`    | Attaches format metadata (`uuid`, `date-time`, `email`, etc.)  |
+| Generic types                           | parameterised ref     | downstream             | Contract JSON preserves generic refs and type arguments        |
+| Optional properties (`?`)               | `optional: true`      | not in `required`      |                                                                |
+| Readonly properties                     | preserved             | no effect              | Informational only                                             |
+| Inline object types                     | `inlineObject`        | `object`               | Anonymous nested objects                                       |
+
+Optional properties are supported on named object shapes. Optional properties inside inline object literals and tagged-union variants are rejected.
 
 ### Not supported
 
@@ -441,11 +462,15 @@ These TypeScript constructs are explicitly out of scope. Using them in contract 
 - Mapped types (`{ [K in keyof T]: ... }`)
 - Indexed access types (`T["key"]`)
 - Intersection types (`A & B`) — except `Brand` and `Format` utilities
-- Tuple types
+- Tuple DTO types. Tuple, readonly tuple, array, `Array<T>`, `ReadonlyArray<T>`, and alias forms are supported for metadata arrays such as `errors`, `requestExamples`, and `responseExamples`
 - Function types
 - `any`, `never`, `void` as property types
+- Standalone `null`; use `T | null`
+- Mixed string and numeric literal unions
 - Namespace or class-based contracts
 - Decorator-based endpoint authoring
+- Enum declarations without explicit string or numeric literal initializers
+- Enums that mix string and numeric members
 
 ## Example authoring
 
@@ -501,6 +526,8 @@ responseExamples: [
 ]
 ```
 
+Each response example status must match a declared success or error response. For a `422` example, declare a `422` entry in `errors`.
+
 ### Media type defaults
 
 | Endpoint type        | Default request media type          | Default response media type  |
@@ -515,6 +542,7 @@ responseExamples: [
 ```bash
 rivet-reflect-ts --entry <path> [--out <file>]
 rivet-ts scaffold-mock --entry <file> --out <dir> [--name <project-name>] [--tsconfig <file>]
+rivet-ts generate --generated-root <dir>
 ```
 
 Diagnostics are written to stderr. Unsupported constructs produce explicit error or warning diagnostics rather than silent fallbacks.
@@ -526,7 +554,7 @@ pnpm test          # run tests
 pnpm build         # compile
 pnpm run lint      # lint with oxlint
 pnpm run fmt:check # format check with oxfmt
-pnpm run check     # all of the above
+pnpm run check     # TypeScript no-emit check
 ```
 
 ## Related repos
