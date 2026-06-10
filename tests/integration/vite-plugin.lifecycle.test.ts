@@ -4,7 +4,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
 import { runCli } from "../../src/interfaces/cli/run-cli.js";
-import { rivetTs } from "../../src/vite.js";
 
 const getProjectRoot = (): string => {
   const currentFilePath = fileURLToPath(import.meta.url);
@@ -14,7 +13,11 @@ const getProjectRoot = (): string => {
 describe("vite plugin lifecycle", () => {
   it("generates contract artifacts and local transport for a scaffolded api package", async () => {
     const projectRoot = getProjectRoot();
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-vite-plugin-"));
+    // realpath: macOS tmpdir lives behind the /var -> /private/var symlink,
+    // which breaks Vite's root-relative asset names when paths mix.
+    const tempDirectory = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-vite-plugin-")),
+    );
     const sampleRoot = path.join(tempDirectory, "myapp");
     const nodeModulesDirectory = path.join(sampleRoot, "node_modules");
     const sourceDirectory = path.join(tempDirectory, "source");
@@ -25,6 +28,11 @@ describe("vite plugin lifecycle", () => {
     await fs.mkdir(sourceNodeModulesDirectory, { recursive: true });
     await fs.symlink(projectRoot, path.join(nodeModulesDirectory, "rivet-ts"), "dir");
     await fs.symlink(projectRoot, path.join(sourceNodeModulesDirectory, "rivet-ts"), "dir");
+    await fs.symlink(
+      path.join(projectRoot, "node_modules", "vite"),
+      path.join(nodeModulesDirectory, "vite"),
+      "dir",
+    );
     await fs.mkdir(path.join(nodeModulesDirectory, "@myapp"), { recursive: true });
     await fs.symlink(
       path.join(projectRoot, "node_modules", "hono"),
@@ -132,33 +140,47 @@ describe("vite plugin lifecycle", () => {
     );
     await fs.chmod(fakeRivetBinaryPath, 0o755);
 
-    const previousWorkingDirectory = process.cwd();
-    process.chdir(sampleRoot);
+    // V1 pin: the build runs from THIS process's cwd (the repo, not the
+    // sample). The plugin must resolve the relative paths below against the
+    // directory the Vite config file lives in, never process.cwd().
+    await fs.writeFile(
+      path.join(sampleRoot, "vite.config.ts"),
+      [
+        'import { defineConfig } from "vite";',
+        'import { rivetTs } from "rivet-ts/vite";',
+        "",
+        "export default defineConfig({",
+        // Vite resolves its own `root` against process.cwd(); use an absolute
+        // path for it. The rivetTs() options stay relative on purpose — they
+        // must resolve against the config file directory (V1).
+        `  root: ${JSON.stringify(path.join(sampleRoot, "ui"))},`,
+        '  logLevel: "silent",',
+        "  plugins: [",
+        "    rivetTs({",
+        '      entry: "./packages/api/src/app/contracts.ts",',
+        '      apiRoot: "./packages/api",',
+        '      runtimeContractOut: "./packages/api/generated/api.contract.json",',
+        '      clientOutDir: "./packages/client/generated",',
+        "      rivet: {",
+        `        binaryPath: ${JSON.stringify(fakeRivetBinaryPath)},`,
+        "      },",
+        "    }),",
+        "  ],",
+        "  build: {",
+        '    outDir: "../dist",',
+        "    emptyOutDir: true,",
+        "  },",
+        "});",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
 
-    try {
-      await build({
-        configFile: false,
-        root: "ui",
-        logLevel: "silent",
-        plugins: [
-          rivetTs({
-            entry: "./packages/api/src/app/contracts.ts",
-            apiRoot: "./packages/api",
-            runtimeContractOut: "./packages/api/generated/api.contract.json",
-            clientOutDir: "./packages/client/generated",
-            rivet: {
-              binaryPath: fakeRivetBinaryPath,
-            },
-          }),
-        ],
-        build: {
-          outDir: "../dist",
-          emptyOutDir: true,
-        },
-      });
-    } finally {
-      process.chdir(previousWorkingDirectory);
-    }
+    expect(process.cwd()).not.toBe(sampleRoot);
+    await build({
+      configFile: path.join(sampleRoot, "vite.config.ts"),
+      logLevel: "silent",
+    });
 
     await expect(
       fs.stat(path.join(apiRoot, "generated", "api.contract.json")),
@@ -185,5 +207,51 @@ describe("vite plugin lifecycle", () => {
     expect(clientEntrySource).toContain("export { RivetError, configureRivet, rivetFetch }");
     expect(clientEntrySource).toContain('export * as schemas from "./rivet/schemas.js";');
     expect(clientEntrySource).toContain('export * as validators from "./rivet/validators.js";');
+  }, 20_000);
+
+  // V3: the plugin used to concatenate frontend diagnostics with the lowerer
+  // result (which already includes them), reporting everything twice.
+  it("reports each contract diagnostic exactly once when generation fails", async () => {
+    const tempDirectory = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-vite-plugin-broken-")),
+    );
+    const uiRoot = path.join(tempDirectory, "ui");
+    await fs.mkdir(uiRoot, { recursive: true });
+    await fs.writeFile(
+      path.join(uiRoot, "index.html"),
+      '<!DOCTYPE html><html><body><script type="module"></script></body></html>\n',
+    );
+
+    const logged: string[] = [];
+    const logger = {
+      info: (message: string) => logged.push(message),
+      warn: (message: string) => logged.push(message),
+      warnOnce: (message: string) => logged.push(message),
+      error: (message: string) => logged.push(message),
+      clearScreen: () => undefined,
+      hasErrorLogged: () => false,
+      hasWarned: false,
+    };
+
+    const { rivetTs } = await import("../../src/vite.js");
+
+    await expect(
+      build({
+        configFile: false,
+        root: uiRoot,
+        logLevel: "silent",
+        customLogger: logger,
+        plugins: [
+          rivetTs({
+            entry: path.join(tempDirectory, "does-not-exist.ts"),
+            apiRoot: tempDirectory,
+          }),
+        ],
+      }),
+    ).rejects.toThrow("rivet-ts/vite failed to reflect the contract.");
+
+    const combinedLog = logged.join("\n");
+    const occurrences = combinedLog.match(/\[ENTRY_NOT_FOUND\]/g) ?? [];
+    expect(occurrences).toHaveLength(1);
   }, 20_000);
 });

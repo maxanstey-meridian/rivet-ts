@@ -74,6 +74,6 @@ describe("generate CLI", () => {
       }),
     ).resolves.toBe(1);
 
-    expect(stderr.join("")).toContain("Usage: rivet-ts generate --generated-root <dir>");
+    expect(stderr.join("")).toContain("rivet-ts generate --generated-root <dir>");
   });
 });

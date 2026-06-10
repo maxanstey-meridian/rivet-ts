@@ -26,6 +26,7 @@ type HandlerDescriptor = {
   readonly moduleDirectoryName: string;
   readonly fileBaseName: string;
   readonly handlerExportName: string;
+  readonly appHandlerAlias: string;
   readonly useCaseExportName: string;
   readonly pattern: string;
   readonly body: string;
@@ -33,6 +34,7 @@ type HandlerDescriptor = {
 };
 
 type PackageManifest = {
+  readonly version?: string;
   readonly dependencies?: Record<string, string>;
   readonly peerDependencies?: Record<string, string>;
   readonly devDependencies?: Record<string, string>;
@@ -47,7 +49,7 @@ type DemoClientCall = {
 const DEFAULT_TYPESCRIPT_VERSION = "^6.0.2";
 const DEFAULT_VITE_VERSION = "^6.4.2";
 const DEFAULT_DEPENDENCY_CRUISER_VERSION = "^17.3.10";
-const DEFAULT_RIVET_TS_DEPENDENCY = "github:maxanstey-meridian/rivet-ts#v0.9.1";
+const RIVET_TS_DEPENDENCY_REPOSITORY = "github:maxanstey-meridian/rivet-ts";
 const DEFAULT_RIVET_VERSION = "0.34.0";
 const DEFAULT_ZOD_VERSION = "^4.1.12";
 
@@ -105,6 +107,14 @@ const readPackageManifest = async (): Promise<PackageManifest> => {
   return JSON.parse(manifestText) as PackageManifest;
 };
 
+const toRivetTsDependency = (manifest: PackageManifest): string => {
+  if (!manifest.version) {
+    throw new Error("rivet-ts package.json is missing a version; cannot pin scaffold dependency.");
+  }
+
+  return `${RIVET_TS_DEPENDENCY_REPOSITORY}#v${manifest.version}`;
+};
+
 const buildContractGroups = (config: MockProjectEmitterConfig): readonly ContractGroup[] =>
   config.bundle.contracts.map((contract) => {
     const contractBaseName = deriveContractBaseName(contract.name);
@@ -131,6 +141,14 @@ const buildHandlerDescriptors = (
   );
   const descriptors: HandlerDescriptor[] = [];
 
+  const specByName = new Map(
+    config.bundle.contracts.flatMap((contract) =>
+      contract.endpoints.map(
+        (endpoint) => [`${contract.name}:${endpoint.name}`, endpoint] as const,
+      ),
+    ),
+  );
+
   for (const group of groups) {
     for (const endpointName of group.endpointNames) {
       const runtimeEndpointName = toRuntimeEndpointName(endpointName);
@@ -139,16 +157,20 @@ const buildHandlerDescriptors = (
         continue;
       }
 
+      const spec = specByName.get(`${group.contractName}:${endpointName}`);
       const supportedSources = endpoint.params.filter(
         (param) => param.source === "body" || param.source === "route" || param.source === "query",
       );
-      const hasBody = supportedSources.some((param) => param.source === "body");
-      const hasRoute = supportedSources.some((param) => param.source === "route");
-      const hasQuery = supportedSources.some((param) => param.source === "query");
+      // The emitted handler signature must mirror the type-level
+      // RivetHandlerInput bag, which is derived from the authored spec's
+      // input/params/query keys — NOT from the lowered document params.
+      // Route-template params lower to source "route" but are absent from the
+      // handler's input type, so keying off the document made handlers with
+      // route params fail to compile.
       const patternParts = [
-        hasBody ? "body" : null,
-        hasRoute ? "params" : null,
-        hasQuery ? "query" : null,
+        spec?.input ? "body" : null,
+        spec?.params ? "params" : null,
+        spec?.query ? "query" : null,
       ].filter((part): part is string => part !== null);
       const pattern = patternParts.length === 0 ? "" : `{ ${patternParts.join(", ")} }`;
 
@@ -191,6 +213,7 @@ const buildHandlerDescriptors = (
         moduleDirectoryName: group.moduleDirectoryName,
         fileBaseName: toKebabCase(endpointName),
         handlerExportName: `${toCamelCase(endpointName)}Handler`,
+        appHandlerAlias: `${toCamelCase(`${group.moduleDirectoryName}-${toKebabCase(endpointName)}`)}Handler`,
         useCaseExportName: `execute${toPascalCase(endpointName)}`,
         pattern,
         body,
@@ -342,8 +365,11 @@ const emitAppSource = (
   }
 
   for (const handler of handlers) {
+    // Handler exports are named after the endpoint alone, so two contracts that
+    // declare the same endpoint name would collide here without a distinct,
+    // module-qualified import alias (S1).
     lines.push(
-      `import { ${handler.handlerExportName} } from "./modules/${handler.moduleDirectoryName}/interface/http/${handler.fileBaseName}.handler.js";`,
+      `import { ${handler.handlerExportName} as ${handler.appHandlerAlias} } from "./modules/${handler.moduleDirectoryName}/interface/http/${handler.fileBaseName}.handler.js";`,
     );
   }
 
@@ -361,7 +387,7 @@ const emitAppSource = (
     lines.push(`registerRivetHonoRoutes<${group.contractName}>(app, contract, {`);
     lines.push("  handlers: {");
     for (const handler of moduleHandlers) {
-      lines.push(`    ${handler.endpointName}: ${handler.handlerExportName},`);
+      lines.push(`    ${handler.endpointName}: ${handler.appHandlerAlias},`);
     }
     lines.push("  },");
     lines.push(`  group: ${JSON.stringify(group.group)},`);
@@ -731,7 +757,7 @@ const emitRootPackageJsonSource = async (
         dependencies: {
           [`${packageScope}/api`]: "workspace:*",
           [`${packageScope}/client`]: "workspace:*",
-          "rivet-ts": DEFAULT_RIVET_TS_DEPENDENCY,
+          "rivet-ts": toRivetTsDependency(manifest),
         },
         devDependencies: {
           "@types/node": nodeTypesVersion,
@@ -768,7 +794,7 @@ const emitApiPackageJsonSource = async (packageScope: string): Promise<string> =
         },
         dependencies: {
           hono: honoVersion,
-          "rivet-ts": DEFAULT_RIVET_TS_DEPENDENCY,
+          "rivet-ts": toRivetTsDependency(manifest),
         },
       },
       null,
@@ -791,7 +817,7 @@ const emitClientPackageJsonSource = async (packageScope: string): Promise<string
           ".": "./generated/index.ts",
         },
         dependencies: {
-          "rivet-ts": DEFAULT_RIVET_TS_DEPENDENCY,
+          "rivet-ts": toRivetTsDependency(manifest),
           zod: zodVersion,
         },
       },
@@ -847,6 +873,12 @@ export class FileSystemMockProjectEmitter extends MockProjectEmitter {
     });
 
     await Promise.all([
+      // The emitted app.ts imports this file; without it a fresh scaffold does
+      // not typecheck until the first generate/vite run (S3).
+      fs.writeFile(
+        path.join(apiGeneratedRoot, config.contractJsonFileName),
+        `${JSON.stringify(config.document, null, 2)}\n`,
+      ),
       fs.writeFile(
         path.join(config.outDir, "package.json"),
         await emitRootPackageJsonSource(config.projectName, packageScope),

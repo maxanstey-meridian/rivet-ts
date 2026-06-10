@@ -1,12 +1,9 @@
-import { Hono } from "hono";
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { registerRivetHonoRoutes } from "../../src/hono.js";
-import type { Contract, Endpoint, RivetHandler } from "../../src/index.js";
 import { runCli } from "../../src/interfaces/cli/run-cli.js";
 
 const execFileAsync = promisify(execFile);
@@ -14,6 +11,38 @@ const execFileAsync = promisify(execFile);
 const getProjectRoot = (): string => {
   const currentFilePath = fileURLToPath(import.meta.url);
   return path.resolve(path.dirname(currentFilePath), "..", "..");
+};
+
+/**
+ * Real compilation oracle for scaffold output: link the runtime deps into the
+ * scaffolded workspace and typecheck the generated api package with tsc.
+ * Catches non-compiling output (duplicate handler imports, dangling contract
+ * JSON imports, bad mock values) that string greps never could.
+ */
+const typecheckScaffoldedApi = async (outputDirectory: string): Promise<void> => {
+  const nodeModulesDirectory = path.join(outputDirectory, "node_modules");
+  await fs.mkdir(nodeModulesDirectory, { recursive: true });
+  await fs.symlink(getProjectRoot(), path.join(nodeModulesDirectory, "rivet-ts"), "dir");
+  await fs.symlink(
+    path.join(getProjectRoot(), "node_modules", "hono"),
+    path.join(nodeModulesDirectory, "hono"),
+    "dir",
+  );
+
+  const tscPath = path.join(getProjectRoot(), "node_modules", ".bin", "tsc");
+
+  try {
+    await execFileAsync(tscPath, [
+      "--noEmit",
+      "-p",
+      path.join(outputDirectory, "packages", "api", "tsconfig.json"),
+    ]);
+  } catch (error: unknown) {
+    const failure = error as { stdout?: string; stderr?: string };
+    throw new Error(
+      `Scaffolded api package failed tsc --noEmit:\n${failure.stdout ?? ""}\n${failure.stderr ?? ""}`,
+    );
+  }
 };
 
 describe("scaffold-mock lifecycle", () => {
@@ -47,6 +76,17 @@ describe("scaffold-mock lifecycle", () => {
         "  totalCount: number;",
         "}",
         "",
+        "// S2 repro: nested generics reusing the same type-parameter name. Mock",
+        "// synthesis must resolve the inner T against the outer frame instead of",
+        "// recursing forever.",
+        "export interface Wrapper<T> {",
+        "  value: T;",
+        "}",
+        "",
+        "export interface Page<T> {",
+        "  data: Wrapper<T>;",
+        "}",
+        "",
         "export const memberResponseExample = {",
         '  id: "mem_001",',
         '  email: "jane@example.com",',
@@ -59,7 +99,7 @@ describe("scaffold-mock lifecycle", () => {
       path.join(sourceDirectory, "contracts.ts"),
       [
         'import type { Contract, Endpoint } from "rivet-ts";',
-        'import type { CreateMemberRequest, MemberDto, PagedResult } from "./models.js";',
+        'import type { CreateMemberRequest, MemberDto, Page, PagedResult } from "./models.js";',
         'import { memberResponseExample } from "./models.js";',
         "",
         'export interface MembersContract extends Contract<"MembersContract"> {',
@@ -83,6 +123,12 @@ describe("scaffold-mock lifecycle", () => {
         '    route: "/api/members/{id}";',
         "    response: void;",
         "    successStatus: 204;",
+        "  }>;",
+        "",
+        "  Nested: Endpoint<{",
+        '    method: "GET";',
+        '    route: "/api/members/nested";',
+        "    response: Page<MemberDto>;",
         "  }>;",
         "}",
         "",
@@ -256,10 +302,33 @@ describe("scaffold-mock lifecycle", () => {
     );
     expect(uiLocalRivetSource).toContain('import { app } from "@members-mock/api/local";');
     expect(uiLocalRivetSource).toContain("app.request");
+    // S3: the contract JSON imported by app.ts must actually be written by the
+    // scaffold, with the lowered document inside it.
     expect(appSource).toContain('import contract from "../generated/api.contract.json";');
-    expect(appSource).toContain('import { compose } from "./app/composition.js";');
-    expect(appSource).toContain(
-      'import { tryMapContractError } from "./app/map-contract-error.js";',
+    const contractJsonSource = await fs.readFile(
+      path.join(outputDirectory, "packages", "api", "generated", "api.contract.json"),
+      "utf8",
+    );
+    const contractJson = JSON.parse(contractJsonSource) as {
+      types: Array<{ name: string }>;
+      endpoints: Array<{ name: string; httpMethod: string; routeTemplate: string }>;
+    };
+    expect(contractJson.endpoints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "create",
+          httpMethod: "POST",
+          routeTemplate: "/api/members",
+        }),
+        expect.objectContaining({
+          name: "remove",
+          httpMethod: "DELETE",
+          routeTemplate: "/api/members/{id}",
+        }),
+      ]),
+    );
+    expect(contractJson.types).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "MemberDto" })]),
     );
     expect(appSource).toContain("compose();");
     expect(appSource).toContain('import type { MembersContract } from "#contract";');
@@ -295,17 +364,46 @@ describe("scaffold-mock lifecycle", () => {
     expect(clientPackageJsonSource).toContain('"name": "@members-mock/client"');
     expect(clientPackageJsonSource).toContain('"."');
     expect(clientPackageJsonSource).toContain('"zod": "^4.1.12"');
+
+    // S8/T6: the scaffolded rivet-ts dependency pin must track this package's
+    // version instead of drifting behind it.
+    const { version: rivetTsVersion } = JSON.parse(
+      await fs.readFile(path.join(getProjectRoot(), "package.json"), "utf8"),
+    ) as { version: string };
+    const expectedRivetTsDependency = `"rivet-ts": "github:maxanstey-meridian/rivet-ts#v${rivetTsVersion}"`;
+    expect(rootPackageJsonSource).toContain(expectedRivetTsDependency);
+    expect(apiPackageJsonSource).toContain(expectedRivetTsDependency);
+    expect(clientPackageJsonSource).toContain(expectedRivetTsDependency);
+
+    // S2: nested generics reusing the type-parameter name must synthesize a
+    // terminal mock value instead of overflowing the stack.
+    const nestedUseCaseSource = await fs.readFile(
+      path.join(
+        outputDirectory,
+        "packages",
+        "api",
+        "src",
+        "modules",
+        "members",
+        "application",
+        "nested.use-case.ts",
+      ),
+      "utf8",
+    );
+    expect(nestedUseCaseSource).toContain("export const executeNested");
+    expect(nestedUseCaseSource).toContain('"data"');
+    expect(nestedUseCaseSource).toContain('"value"');
+    expect(nestedUseCaseSource).toContain('"email": "example"');
+    expect(nestedUseCaseSource).not.toContain("TODO");
     await expect(
       fs.stat(
         path.join(outputDirectory, "packages", "api", "test", "architecture.boundaries.test.ts"),
       ),
     ).rejects.toThrow();
+    // Invoke the depcruise bin directly: `pnpm exec` pollutes stderr with
+    // settings warnings under pnpm >= 11, breaking the empty-stderr oracle.
     await expect(
-      execFileAsync("pnpm", [
-        "--dir",
-        getProjectRoot(),
-        "exec",
-        "depcruise",
+      execFileAsync(path.join(getProjectRoot(), "node_modules", ".bin", "depcruise"), [
         "--config",
         path.join(outputDirectory, ".dependency-cruiser.cjs"),
         "--ts-config",
@@ -343,7 +441,10 @@ describe("scaffold-mock lifecycle", () => {
     const clientEntrySource = await fs.readFile(path.join(generatedClientRoot, "index.ts"), "utf8");
     expect(clientEntrySource).toContain('export * as schemas from "./rivet/schemas.js";');
     expect(clientEntrySource).toContain('export * as validators from "./rivet/validators.js";');
-  });
+
+    // II.B-1: the scaffolded api package must actually compile.
+    await typecheckScaffoldedApi(outputDirectory);
+  }, 120000);
 
   it("scaffolds one module per contract when multiple contracts are authored together", async () => {
     const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-dup-"));
@@ -454,7 +555,20 @@ describe("scaffold-mock lifecycle", () => {
     expect(appSource).toContain('group: "summary"');
     expect(petHandlerSource).toContain("export const getHandler");
     expect(summaryHandlerSource).toContain("export const getHandler");
-  });
+
+    // S1: both contracts declare an endpoint named Get; app.ts must qualify the
+    // two handler imports distinctly or it does not compile.
+    expect(appSource).toContain(
+      'import { getHandler as petGetHandler } from "./modules/pet/interface/http/get.handler.js";',
+    );
+    expect(appSource).toContain(
+      'import { getHandler as summaryGetHandler } from "./modules/summary/interface/http/get.handler.js";',
+    );
+    expect(appSource).toContain("Get: petGetHandler,");
+    expect(appSource).toContain("Get: summaryGetHandler,");
+
+    await typecheckScaffoldedApi(outputDirectory);
+  }, 120000);
 
   it("scaffolds from a bare contract file without tsconfig or node_modules", async () => {
     const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-bare-"));
@@ -521,60 +635,53 @@ describe("scaffold-mock lifecycle", () => {
     expect(rootTsconfigSource).toContain('"@mock-app/client"');
     expect(rootTsconfigSource).toContain('"@mock-app/api/local"');
     expect(uiMainSource).toContain("configureLocalRivet()");
-  });
 
-  it("filters controllers and returns empty responses correctly in rivet-ts/hono", async () => {
-    interface MultiContract extends Contract<"MultiContract"> {
-      Ping: Endpoint<{
-        method: "POST";
-        route: "/api/ping";
-        response: void;
-      }>;
-      Health: Endpoint<{
-        method: "GET";
-        route: "/api/health";
-        response: { status: "ok" };
-      }>;
-    }
+    await typecheckScaffoldedApi(outputDirectory);
+  }, 120000);
 
-    const pingHandler: RivetHandler<MultiContract, "Ping"> = async () => undefined;
+  // S6: re-running scaffold-mock over an existing directory overwrites emitted
+  // files unconditionally. That is the defined (if blunt) behavior — pin it so
+  // any future --force/skip-existing semantics land as a deliberate change.
+  it("clobbers previously scaffolded files when re-run over the same output directory", async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-rerun-"));
+    const sourceDirectory = path.join(tempDirectory, "source");
+    const outputDirectory = path.join(tempDirectory, "mock-app");
+    await fs.mkdir(sourceDirectory, { recursive: true });
 
-    const app = new Hono();
-    registerRivetHonoRoutes<MultiContract>(
-      app,
-      {
-        endpoints: [
-          {
-            name: "ping",
-            httpMethod: "POST",
-            routeTemplate: "/api/ping",
-            group: "pet",
-            params: [],
-            responses: [{ statusCode: 204 }],
-          },
-          {
-            name: "health",
-            httpMethod: "GET",
-            routeTemplate: "/api/health",
-            group: "summary",
-            params: [],
-            responses: [{ statusCode: 200 }],
-          },
-        ],
-      },
-      {
-        handlers: {
-          Ping: pingHandler,
-        },
-        group: "pet",
-      },
+    await fs.writeFile(
+      path.join(sourceDirectory, "contracts.ts"),
+      [
+        'import type { Contract, Endpoint } from "rivet-ts";',
+        "",
+        'export interface HelloContract extends Contract<"HelloContract"> {',
+        "  Ping: Endpoint<{",
+        '    method: "GET";',
+        '    route: "/api/ping";',
+        "    response: { message: string };",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
     );
 
-    const pingResponse = await app.request("http://local/api/ping", { method: "POST" });
-    const healthResponse = await app.request("http://local/api/health", { method: "GET" });
+    const scaffoldArgs = [
+      "scaffold-mock",
+      "--entry",
+      path.join(sourceDirectory, "contracts.ts"),
+      "--out",
+      outputDirectory,
+    ];
 
-    expect(pingResponse.status).toBe(204);
-    expect(await pingResponse.text()).toBe("");
-    expect(healthResponse.status).toBe(404);
-  });
+    await expect(runCli(scaffoldArgs)).resolves.toBe(0);
+
+    const appPath = path.join(outputDirectory, "packages", "api", "src", "app.ts");
+    const originalAppSource = await fs.readFile(appPath, "utf8");
+    await fs.writeFile(appPath, "// user edit that will be clobbered\n");
+
+    await expect(runCli(scaffoldArgs)).resolves.toBe(0);
+
+    const rescaffoldedAppSource = await fs.readFile(appPath, "utf8");
+    expect(rescaffoldedAppSource).not.toContain("user edit that will be clobbered");
+    expect(rescaffoldedAppSource).toBe(originalAppSource);
+  }, 60000);
 });

@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -11,7 +12,18 @@ import { TypeScriptRivetContractLowerer } from "../../src/infrastructure/typescr
 
 const execFileAsync = promisify(execFile);
 
-const RIVET_TOOL_PROJECT = "/Users/max/Sites/medway/rivet/Rivet.Tool";
+const RIVET_TOOL_PROJECT =
+  process.env["RIVET_DOTNET_TOOL_PATH"] ?? "/Users/max/Sites/medway/rivet/Rivet.Tool";
+
+const rivetToolAvailable = existsSync(RIVET_TOOL_PROJECT);
+
+if (!rivetToolAvailable) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[rivet-tool-from] Skipping .NET interop smoke test: Rivet.Tool project not found at "${RIVET_TOOL_PROJECT}". ` +
+      "Set RIVET_DOTNET_TOOL_PATH to the Rivet.Tool project directory to enable it.",
+  );
+}
 
 const getFixturePath = (relativePath: string): string => {
   const currentFilePath = fileURLToPath(import.meta.url);
@@ -58,7 +70,7 @@ type OpenApiDoc = {
   };
 };
 
-describe("Rivet.Tool --from OpenAPI smoke", () => {
+describe.skipIf(!rivetToolAvailable)("Rivet.Tool --from OpenAPI smoke", () => {
   it("generates valid OpenAPI from TS-authored Rivet contract JSON", async () => {
     const frontend = new TypeScriptContractFrontend();
     const lowerer = new TypeScriptRivetContractLowerer();
@@ -78,6 +90,28 @@ describe("Rivet.Tool --from OpenAPI smoke", () => {
     const openApiFileName = "openapi.json";
 
     await fs.writeFile(contractPath, `${lowered.toJson()}\n`, "utf8");
+
+    // The wire-format facts the .NET tool consumes: optional query params and
+    // queryAuth must be present in the contract JSON handed to --from. The
+    // fixture previously had neither — exactly how N1/N3 escaped this test.
+    const wireContract = JSON.parse(await fs.readFile(contractPath, "utf8")) as {
+      endpoints: Array<{
+        name: string;
+        params?: Array<{ name: string; source: string; isOptional: boolean }>;
+        queryAuth?: { parameterName: string };
+      }>;
+    };
+    const searchEndpoint = wireContract.endpoints.find(
+      (endpoint) => endpoint.name === "searchItems",
+    );
+    expect(searchEndpoint).toBeDefined();
+    expect(searchEndpoint!.params).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "search", source: "query", isOptional: true }),
+        expect.objectContaining({ name: "limit", source: "query", isOptional: false }),
+      ]),
+    );
+    expect(searchEndpoint!.queryAuth).toEqual({ parameterName: "api_key" });
 
     const { stderr } = await execFileAsync(
       "dotnet",
@@ -153,5 +187,30 @@ describe("Rivet.Tool --from OpenAPI smoke", () => {
 
     const export422 = exportOp!.responses["422"];
     expect(export422?.content?.["application/json"]).toBeDefined();
+
+    // --- GET with optional query param + queryAuth ---
+    const searchOp = openApi.paths["/api/items/search"]?.get as
+      | {
+          parameters?: Array<{ name: string; in: string; required?: boolean }>;
+          security?: unknown;
+        }
+      | undefined;
+    expect(searchOp).toBeDefined();
+    expect(searchOp!.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "search", in: "query" }),
+        expect.objectContaining({ name: "limit", in: "query", required: true }),
+      ]),
+    );
+    // TODO(N1, .NET side): the .NET JsonContractReader does not read
+    // "isOptional" yet, so "search" is emitted as required: true. Once the
+    // reader is fixed, tighten the assertion above to
+    // objectContaining({ name: "search", in: "query", required: false }).
+    //
+    // TODO(N3, .NET side): the .NET JsonContractReader DROPS "queryAuth"
+    // entirely on the --from path, so the emitted OpenAPI has no security
+    // scheme for it. The contract JSON assertion earlier in this test pins the
+    // rivet-ts side; once N3 is fixed, assert the queryAuth security/x-rivet
+    // representation here.
   }, 120000);
 });

@@ -340,14 +340,17 @@ export class TypeScriptRivetContractLowerer extends RivetContractLowerer {
     const sourceFile = program.getSourceFile(path.resolve(bundle.entryPath));
 
     if (!sourceFile) {
-      diagnostics.push(
-        new ExtractionDiagnostic({
-          severity: "error",
-          code: "ENTRY_NOT_FOUND",
-          message: `Could not load entry file: ${path.resolve(bundle.entryPath)}`,
-          filePath: path.resolve(bundle.entryPath),
-        }),
-      );
+      // The frontend usually reported this already; don't report it twice (C4/V3).
+      if (!diagnostics.some((diagnostic) => diagnostic.code === "ENTRY_NOT_FOUND")) {
+        diagnostics.push(
+          new ExtractionDiagnostic({
+            severity: "error",
+            code: "ENTRY_NOT_FOUND",
+            message: `Could not load entry file: ${path.resolve(bundle.entryPath)}`,
+            filePath: path.resolve(bundle.entryPath),
+          }),
+        );
+      }
 
       return new RivetContractLoweringResult({
         document: EMPTY_DOCUMENT,

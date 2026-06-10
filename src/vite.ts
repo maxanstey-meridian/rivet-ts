@@ -32,7 +32,7 @@ const formatDiagnostics = (
     })
     .join("\n");
 
-const resolveConfigPath = (value: string): string => path.resolve(process.cwd(), value);
+const resolveConfigPath = (baseDir: string, value: string): string => path.resolve(baseDir, value);
 
 export type RivetTsVitePluginOptions = {
   readonly entry?: string;
@@ -54,34 +54,43 @@ type NormalizedPluginOptions = {
   readonly binaryConfig?: RivetBinaryConfig;
 };
 
-const resolveEntryPath = (options: RivetTsVitePluginOptions): string => {
+const resolveEntryPath = (options: RivetTsVitePluginOptions, baseDir: string): string => {
   if (options.entry) {
-    return resolveConfigPath(options.entry);
+    return resolveConfigPath(baseDir, options.entry);
   }
 
   if (options.contract) {
-    return resolveConfigPath(options.contract);
+    return resolveConfigPath(baseDir, options.contract);
   }
 
   throw new Error('rivet-ts/vite requires either an "entry" or "contract" option.');
 };
 
-const normalizeOptions = (options: RivetTsVitePluginOptions): NormalizedPluginOptions => {
-  const apiRoot = resolveConfigPath(options.apiRoot);
-  const entryPath = resolveEntryPath(options);
+/**
+ * Configured paths are resolved against the directory the Vite config file
+ * lives in (falling back to the resolved root), never `process.cwd()` —
+ * `vite -c myapp/vite.config.ts` from a parent directory must not resolve
+ * entry/apiRoot/clientOutDir relative to the parent (V1).
+ */
+const normalizeOptions = (
+  options: RivetTsVitePluginOptions,
+  baseDir: string,
+): NormalizedPluginOptions => {
+  const apiRoot = resolveConfigPath(baseDir, options.apiRoot);
+  const entryPath = resolveEntryPath(options, baseDir);
   const projectName = path.basename(apiRoot);
   const defaultContractJsonFileName = `${toKebabCase(projectName) || "contract"}.contract.json`;
   const runtimeContractPath = options.runtimeContractOut
-    ? resolveConfigPath(options.runtimeContractOut)
+    ? resolveConfigPath(baseDir, options.runtimeContractOut)
     : path.join(apiRoot, "generated", defaultContractJsonFileName);
   const clientOutDir = options.clientOutDir
-    ? resolveConfigPath(options.clientOutDir)
+    ? resolveConfigPath(baseDir, options.clientOutDir)
     : path.join(apiRoot, "generated");
 
   return {
     entryPath,
     apiRoot,
-    tsconfigPath: options.tsconfig ? resolveConfigPath(options.tsconfig) : undefined,
+    tsconfigPath: options.tsconfig ? resolveConfigPath(baseDir, options.tsconfig) : undefined,
     runtimeContractPath,
     clientOutDir,
     generatedRivetDir: path.join(clientOutDir, "rivet"),
@@ -97,7 +106,9 @@ const generateArtifacts = async (
   const lowerer = new TypeScriptRivetContractLowerer(options.tsconfigPath);
   const bundle = await frontend.extract(options.entryPath);
   const lowered = await lowerer.lower(bundle);
-  const diagnostics = [...bundle.diagnostics, ...lowered.diagnostics];
+  // The lowerer already seeds its result with the bundle diagnostics;
+  // concatenating both reported every frontend diagnostic twice (V3).
+  const diagnostics = lowered.diagnostics;
 
   if (diagnostics.length > 0) {
     const formatted = formatDiagnostics(diagnostics);
@@ -137,14 +148,19 @@ const generateArtifacts = async (
 };
 
 export const rivetTs = (options: RivetTsVitePluginOptions): Plugin => {
-  const normalized = normalizeOptions(options);
+  if (!options.entry && !options.contract) {
+    throw new Error('rivet-ts/vite requires either an "entry" or "contract" option.');
+  }
+
   const watchedFiles = new Set<string>();
+  let normalized: NormalizedPluginOptions | undefined;
   let resolvedConfig: ResolvedConfig | undefined;
   let queue = Promise.resolve();
 
   const regenerate = async (reason: string): Promise<void> => {
     const currentConfig = resolvedConfig;
-    if (!currentConfig) {
+    const currentOptions = normalized;
+    if (!currentConfig || !currentOptions) {
       return;
     }
 
@@ -152,11 +168,14 @@ export const rivetTs = (options: RivetTsVitePluginOptions): Plugin => {
       .catch(() => undefined)
       .then(async () => {
         currentConfig.logger.info(`[rivet-ts] Generating API artifacts (${reason})...`);
-        const dependencies = await generateArtifacts(normalized, currentConfig);
+        const dependencies = await generateArtifacts(currentOptions, currentConfig);
         watchedFiles.clear();
         for (const dependency of dependencies) {
           watchedFiles.add(path.resolve(dependency));
         }
+        // The entry stays watched even if a later regeneration narrows the
+        // dependency set.
+        watchedFiles.add(currentOptions.entryPath);
       });
 
     return queue;
@@ -167,9 +186,22 @@ export const rivetTs = (options: RivetTsVitePluginOptions): Plugin => {
     enforce: "pre",
     configResolved(config) {
       resolvedConfig = config;
+      const baseDir = config.configFile ? path.dirname(config.configFile) : config.root;
+      normalized = normalizeOptions(options, baseDir);
+      // V2: watch the entry regardless of extraction success so a dev server
+      // started against a broken contract can recover once the file is fixed.
+      watchedFiles.add(normalized.entryPath);
     },
     async buildStart() {
-      await regenerate("startup");
+      try {
+        await regenerate("startup");
+      } catch (error) {
+        if (resolvedConfig?.command !== "serve") {
+          throw error;
+        }
+        // Dev server: stay up and keep watching the entry; the failure has
+        // already been logged as a diagnostic.
+      }
       for (const filePath of watchedFiles) {
         this.addWatchFile(filePath);
       }

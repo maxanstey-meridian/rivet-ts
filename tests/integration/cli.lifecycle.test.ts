@@ -838,11 +838,6 @@ describe("CLI lifecycle", () => {
           dependencies: {
             "rivet-ts": tarballPath,
           },
-          pnpm: {
-            overrides: {
-              typescript: `file:${path.join(getProjectRoot(), "node_modules", "typescript")}`,
-            },
-          },
         },
         null,
         2,
@@ -850,9 +845,37 @@ describe("CLI lifecycle", () => {
       "utf8",
     );
 
-    await execFileAsync("pnpm", ["install", "--offline"], {
+    // pnpm >= 11 reads overrides from pnpm-workspace.yaml, not the package.json
+    // "pnpm" field. Link the heavyweight deps from this repo's node_modules so
+    // the install stays fast and works without registry metadata for them.
+    await fs.writeFile(
+      path.join(consumerDirectory, "pnpm-workspace.yaml"),
+      [
+        "overrides:",
+        `  typescript: "file:${path.join(getProjectRoot(), "node_modules", "typescript")}"`,
+        `  tar: "file:${path.join(getProjectRoot(), "node_modules", "tar")}"`,
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    await execFileAsync("pnpm", ["install", "--prefer-offline"], {
       cwd: consumerDirectory,
     });
+
+    // P1 pin: the consumer install has no hono (optional peer dep). A bare runtime
+    // import of the root entry must not crash by dragging dist/hono.js in.
+    const { stdout: bareImportStdout } = await execFileAsync(
+      "node",
+      [
+        "-e",
+        'import("rivet-ts").then((mod) => { if (typeof mod.runCli !== "function") { throw new Error("runCli missing from root entry"); } console.log("bare-import-ok"); })',
+      ],
+      {
+        cwd: consumerDirectory,
+      },
+    );
+    expect(bareImportStdout).toContain("bare-import-ok");
 
     await fs.writeFile(
       path.join(consumerDirectory, "contracts.ts"),
@@ -1053,5 +1076,140 @@ describe("CLI lifecycle", () => {
       kind: "primitive",
       type: "File",
     });
+  });
+});
+
+describe("CLI argument handling and diagnostics", () => {
+  const runCapture = async (
+    args: readonly string[],
+  ): Promise<{ exitCode: number; stdout: string[]; stderr: string[] }> => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const exitCode = await runCli(args, {
+      stdout: (text) => stdout.push(text),
+      stderr: (text) => stderr.push(text),
+    });
+    return { exitCode, stdout, stderr };
+  };
+
+  // C2: --help and --version exit 0 with output on stdout.
+  it("prints usage for --help with exit code 0, covering every subcommand", async () => {
+    const { exitCode, stdout, stderr } = await runCapture(["--help"]);
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toHaveLength(0);
+    const usage = stdout.join("");
+    expect(usage).toContain("Usage");
+    expect(usage).toContain("rivet-ts --entry");
+    expect(usage).toContain("scaffold-mock");
+    expect(usage).toContain("generate --generated-root");
+  });
+
+  it("prints the package version for --version with exit code 0", async () => {
+    const { version } = JSON.parse(
+      await fs.readFile(path.join(getProjectRoot(), "package.json"), "utf8"),
+    ) as { version: string };
+
+    const { exitCode, stdout, stderr } = await runCapture(["--version"]);
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toHaveLength(0);
+    expect(stdout.join("")).toContain(version);
+  });
+
+  // C3: unknown flags are loud errors, not silent no-ops.
+  it("fails loudly on an unknown flag instead of silently ignoring it", async () => {
+    const { exitCode, stdout, stderr } = await runCapture([
+      "--entry",
+      getFixturePath(path.join("members-contract", "contracts.ts")),
+      "--tsconfg",
+      "tsconfig.json",
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toHaveLength(0);
+    expect(stderr.join("")).toContain("Unknown argument");
+    expect(stderr.join("")).toContain("--tsconfg");
+  });
+
+  it("fails loudly on an unknown scaffold-mock flag", async () => {
+    const { exitCode, stderr } = await runCapture([
+      "scaffold-mock",
+      "--entry",
+      "x.ts",
+      "--out",
+      "out",
+      "--nme",
+      "demo",
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join("")).toContain("Unknown argument");
+    expect(stderr.join("")).toContain("--nme");
+  });
+
+  // C3: a flag missing its value is a loud error, not a silent redirect.
+  it("fails loudly when --out is missing its value", async () => {
+    const { exitCode, stdout, stderr } = await runCapture([
+      "--entry",
+      getFixturePath(path.join("members-contract", "contracts.ts")),
+      "--out",
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toHaveLength(0);
+    expect(stderr.join("")).toContain("--out");
+    expect(stderr.join("")).toContain("missing a value");
+  });
+
+  // C1: --out into a directory that does not exist yet creates it.
+  it("creates missing parent directories for --out", async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-out-create-"));
+    const outputPath = path.join(tempDirectory, "deeply", "nested", "contract.json");
+
+    const { exitCode, stderr } = await runCapture([
+      "--entry",
+      getFixturePath(path.join("members-contract", "contracts.ts")),
+      "--out",
+      outputPath,
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toHaveLength(0);
+
+    const payload = JSON.parse(await fs.readFile(outputPath, "utf8")) as {
+      endpoints: unknown[];
+    };
+    expect(payload.endpoints.length).toBeGreaterThan(0);
+  });
+
+  // C4: an entry that defines no contracts produces a loud warning diagnostic,
+  // not silent empty output.
+  it("warns on stderr when the entry contains no contracts", async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-no-contracts-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    await fs.writeFile(entryPath, "export interface NotAContract { id: string }\n", "utf8");
+
+    const { exitCode, stderr } = await runCapture(["--entry", entryPath]);
+
+    expect(exitCode).toBe(0);
+    const warningLines = stderr.filter((line) => line.includes("[ENTRY_NO_CONTRACTS]"));
+    expect(warningLines).toHaveLength(1);
+    expect(warningLines[0]).toContain("warning");
+    expect(warningLines[0]).toContain(entryPath);
+    expect(warningLines[0]).toContain("contains no contracts");
+  });
+
+  // C4/V3 root cause: a missing entry must be reported exactly once, not by
+  // both the frontend and the lowerer.
+  it("reports a missing entry exactly once", async () => {
+    const { exitCode, stderr } = await runCapture([
+      "--entry",
+      "/definitely/does/not/exist/contracts.ts",
+    ]);
+
+    expect(exitCode).toBe(1);
+    const entryNotFoundLines = stderr.filter((line) => line.includes("[ENTRY_NOT_FOUND]"));
+    expect(entryNotFoundLines).toHaveLength(1);
   });
 });

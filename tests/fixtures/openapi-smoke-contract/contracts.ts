@@ -57,6 +57,14 @@ export interface OpenApiSmokeContract extends Contract<"OpenApiSmokeContract"> {
     acceptsFile: true;
   }>;
 
+  SearchItems: Endpoint<{
+    method: "GET";
+    route: "/api/items/search";
+    query: { search?: string; limit: number };
+    response: ItemDto[];
+    queryAuth: "api_key";
+  }>;
+
   DeleteItem: Endpoint<{
     method: "DELETE";
     route: "/api/items/{id}";

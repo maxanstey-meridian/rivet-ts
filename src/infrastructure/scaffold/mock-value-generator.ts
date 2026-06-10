@@ -23,7 +23,11 @@ type TypeContext = {
   readonly enumValues: ReadonlyMap<string, readonly (string | number)[]>;
   readonly substitutions: ReadonlyMap<string, RivetType>;
   readonly visiting: ReadonlySet<string>;
+  readonly depth: number;
 };
+
+/** Backstop against unbounded recursion in mock synthesis; deep real-world DTOs stay far below this. */
+const MAX_SYNTHESIS_DEPTH = 64;
 
 const createTypeDefinitions = (
   document: RivetContractDocument,
@@ -50,6 +54,53 @@ const parseExample = (example: RivetResponseExample): RivetEndpointExampleValue 
   return JSON.parse(rawJson) as RivetEndpointExampleValue;
 };
 
+/**
+ * Rewrites every type parameter reference inside `type` using `substitutions`.
+ * Type arguments must be resolved against the *outer* frame before being stored
+ * for the inner frame; otherwise `Wrapper<T>` inside `Page<T>` maps `T` to the
+ * unresolved `typeParam("T")` and mock synthesis recurses forever (S2).
+ */
+const substituteTypeParams = (
+  type: RivetType,
+  substitutions: ReadonlyMap<string, RivetType>,
+): RivetType => {
+  switch (type.kind) {
+    case "typeParam":
+      return substitutions.get(type.name) ?? type;
+    case "nullable":
+      return { ...type, inner: substituteTypeParams(type.inner, substitutions) };
+    case "array":
+      return { ...type, element: substituteTypeParams(type.element, substitutions) };
+    case "dictionary":
+      return { ...type, value: substituteTypeParams(type.value, substitutions) };
+    case "generic":
+      return {
+        ...type,
+        typeArgs: type.typeArgs.map((typeArg) => substituteTypeParams(typeArg, substitutions)),
+      };
+    case "brand":
+      return { ...type, underlying: substituteTypeParams(type.underlying, substitutions) };
+    case "inlineObject":
+      return {
+        ...type,
+        properties: type.properties.map((property) => ({
+          ...property,
+          type: substituteTypeParams(property.type, substitutions),
+        })),
+      };
+    case "taggedUnion":
+      return {
+        ...type,
+        variants: type.variants.map((variant) => ({
+          ...variant,
+          type: substituteTypeParams(variant.type, substitutions),
+        })),
+      };
+    default:
+      return type;
+  }
+};
+
 const withSubstitutions = (
   context: TypeContext,
   typeDef: RivetTypeDefinition,
@@ -60,7 +111,7 @@ const withSubstitutions = (
   for (const [index, typeParameter] of typeDef.typeParameters.entries()) {
     const typeArg = typeArgs[index];
     if (typeArg) {
-      substitutions.set(typeParameter, typeArg);
+      substitutions.set(typeParameter, substituteTypeParams(typeArg, context.substitutions));
     }
   }
 
@@ -126,7 +177,16 @@ const synthesizeTaggedUnion = (
   };
 };
 
-const synthesizeType = (type: RivetType, context: TypeContext): MockGenerationResult => {
+const synthesizeType = (type: RivetType, outerContext: TypeContext): MockGenerationResult => {
+  if (outerContext.depth >= MAX_SYNTHESIS_DEPTH) {
+    return {
+      kind: "todo",
+      message: `Endpoint "${outerContext.endpointName}" has a response type nested too deeply for scaffold-mock to synthesize.`,
+    };
+  }
+
+  const context: TypeContext = { ...outerContext, depth: outerContext.depth + 1 };
+
   switch (type.kind) {
     case "primitive":
       switch (type.type) {
@@ -346,6 +406,7 @@ export const generateEndpointMock = (
     enumValues: createEnumValues(document),
     substitutions: new Map(),
     visiting: new Set(),
+    depth: 0,
   });
 
   if (result.kind === "todo") {

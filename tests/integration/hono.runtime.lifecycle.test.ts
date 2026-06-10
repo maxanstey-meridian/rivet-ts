@@ -605,3 +605,60 @@ test("registerRivetHonoRoutes falls back to the method default status when respo
   expect(deleteResponse.status).toBe(204);
   await expect(deleteResponse.text()).resolves.toBe("");
 });
+
+// Relocated from scaffold-mock.lifecycle.test.ts: this is a Hono runtime
+// behavior test (group filtering + empty-body responses), not a scaffold test.
+test("filters endpoints by group and returns empty responses correctly", async () => {
+  interface MultiContract extends Contract<"MultiContract"> {
+    Ping: Endpoint<{
+      method: "POST";
+      route: "/api/ping";
+      response: void;
+    }>;
+    Health: Endpoint<{
+      method: "GET";
+      route: "/api/health";
+      response: { status: "ok" };
+    }>;
+  }
+
+  const pingHandler: RivetHandler<MultiContract, "Ping"> = async () => undefined;
+
+  const app = new Hono();
+  registerRivetHonoRoutes<MultiContract>(
+    app,
+    {
+      endpoints: [
+        {
+          name: "ping",
+          httpMethod: "POST",
+          routeTemplate: "/api/ping",
+          group: "pet",
+          params: [],
+          responses: [{ statusCode: 204 }],
+        },
+        {
+          name: "health",
+          httpMethod: "GET",
+          routeTemplate: "/api/health",
+          group: "summary",
+          params: [],
+          responses: [{ statusCode: 200 }],
+        },
+      ],
+    },
+    {
+      handlers: {
+        Ping: pingHandler,
+      },
+      group: "pet",
+    },
+  );
+
+  const pingResponse = await app.request("http://local/api/ping", { method: "POST" });
+  const healthResponse = await app.request("http://local/api/health", { method: "GET" });
+
+  expect(pingResponse.status).toBe(204);
+  await expect(pingResponse.text()).resolves.toBe("");
+  expect(healthResponse.status).toBe(404);
+});
