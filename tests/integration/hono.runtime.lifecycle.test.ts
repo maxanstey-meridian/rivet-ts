@@ -216,8 +216,14 @@ test("registerRivetHonoRoutes uses plain function handlers directly", async () =
   });
 });
 
-test("registerRivetHonoRoutes instantiates zero-arg class handlers once by default", async () => {
+test("registerRivetHonoRoutes instantiates zero-arg class handlers once per request", async () => {
+  let constructorCalls = 0;
+
   class HealthHandler implements RivetInvokable<DirectoryContract, "Health"> {
+    public constructor() {
+      constructorCalls += 1;
+    }
+
     public async handle(): Promise<DirectoryStatusResponse> {
       return { status: "ok" };
     }
@@ -235,10 +241,15 @@ test("registerRivetHonoRoutes instantiates zero-arg class handlers once by defau
     },
   });
 
-  const response = await app.request("/api/directory/health");
+  const firstResponse = await app.request("/api/directory/health");
+  expect(firstResponse.status).toBe(200);
+  await expect(firstResponse.json()).resolves.toEqual({ status: "ok" });
 
-  expect(response.status).toBe(200);
-  await expect(response.json()).resolves.toEqual({ status: "ok" });
+  const secondResponse = await app.request("/api/directory/health");
+  expect(secondResponse.status).toBe(200);
+  await expect(secondResponse.json()).resolves.toEqual({ status: "ok" });
+
+  expect(constructorCalls).toBe(2);
 });
 
 test("registerRivetHonoRoutes resolves class handlers through resolveHandler at bootstrap", async () => {
@@ -511,4 +522,86 @@ test("registerRivetHonoRoutes fails fast on unused handlers", () => {
       } as never,
     }),
   ).toThrow("Unused handlers were provided: Unknown.");
+});
+
+// -- Default success-status fallback table (N4): POST -> 201; DELETE void -> 204; else 200 --
+
+interface StatusTableContract extends Contract<"StatusTableContract"> {
+  CreateItem: Endpoint<{
+    method: "POST";
+    route: "/api/items";
+    input: { readonly name: string };
+    response: { readonly id: string };
+  }>;
+
+  GetItem: Endpoint<{
+    method: "GET";
+    route: "/api/items";
+    response: { readonly id: string };
+  }>;
+
+  RemoveItem: Endpoint<{
+    method: "DELETE";
+    route: "/api/items";
+    response: void;
+  }>;
+}
+
+test("registerRivetHonoRoutes falls back to the method default status when responses carry no 2xx entry", async () => {
+  // Endpoints deliberately omit success responses so the adapter's
+  // method-default table (shared with the lowerer and SuccessStatus) is hit.
+  const statusTableContract = {
+    endpoints: [
+      {
+        name: "createItem",
+        httpMethod: "POST",
+        routeTemplate: "/api/items",
+        group: "items",
+        params: [{ name: "body", source: "body" }],
+        responses: [],
+      },
+      {
+        name: "getItem",
+        httpMethod: "GET",
+        routeTemplate: "/api/items",
+        group: "items",
+        params: [],
+        responses: [],
+      },
+      {
+        name: "removeItem",
+        httpMethod: "DELETE",
+        routeTemplate: "/api/items",
+        group: "items",
+        params: [],
+        responses: [],
+      },
+    ],
+  } as const;
+
+  const app = new Hono();
+  registerRivetHonoRoutes<StatusTableContract>(app, statusTableContract, {
+    group: "items",
+    handlers: {
+      CreateItem: async () => ({ id: "item_1" }),
+      GetItem: async () => ({ id: "item_1" }),
+      RemoveItem: async () => undefined,
+    },
+  });
+
+  const postResponse = await app.request("/api/items", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Ada" }),
+  });
+  expect(postResponse.status).toBe(201);
+  await expect(postResponse.json()).resolves.toEqual({ id: "item_1" });
+
+  const getResponse = await app.request("/api/items");
+  expect(getResponse.status).toBe(200);
+  await expect(getResponse.json()).resolves.toEqual({ id: "item_1" });
+
+  const deleteResponse = await app.request("/api/items", { method: "DELETE" });
+  expect(deleteResponse.status).toBe(204);
+  await expect(deleteResponse.text()).resolves.toBe("");
 });

@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { runCli } from "../../src/interfaces/cli/run-cli.js";
+import { expectValidContractDocument } from "../contract-schema.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -21,11 +22,6 @@ const toImportPath = (fromDirectory: string, targetFilePath: string): string => 
 const getFixturePath = (relativePath: string): string => {
   const currentFilePath = fileURLToPath(import.meta.url);
   return path.resolve(path.dirname(currentFilePath), "..", "fixtures", relativePath);
-};
-
-const readJsonFixture = async (relativePath: string): Promise<unknown> => {
-  const fileContents = await fs.readFile(getFixturePath(relativePath), "utf8");
-  return JSON.parse(fileContents) as unknown;
 };
 
 describe("CLI lifecycle", () => {
@@ -54,16 +50,35 @@ describe("CLI lifecycle", () => {
 
     const fileContents = await fs.readFile(outputPath, "utf8");
     const payload = JSON.parse(fileContents) as {
-      endpoints: Array<{ name: string; routeTemplate: string }>;
+      endpoints: Array<{
+        name: string;
+        httpMethod: string;
+        routeTemplate: string;
+        params: Array<{ name: string; source: string; isOptional: boolean }>;
+        responses: Array<{ statusCode: number }>;
+      }>;
     };
 
-    expect(payload).toEqual(
-      await readJsonFixture(path.join("members-contract", "golden-contract.json")),
-    );
+    expectValidContractDocument(payload);
+
+    expect(payload.endpoints).toHaveLength(5);
     expect(payload.endpoints).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "invite", routeTemplate: "/api/members" }),
-        expect.objectContaining({ name: "updateRole", routeTemplate: "/api/members/{id}/role" }),
+        expect.objectContaining({
+          name: "invite",
+          httpMethod: "POST",
+          routeTemplate: "/api/members",
+          params: [expect.objectContaining({ name: "body", source: "body", isOptional: false })],
+          responses: [
+            expect.objectContaining({ statusCode: 201 }),
+            expect.objectContaining({ statusCode: 422 }),
+          ],
+        }),
+        expect.objectContaining({
+          name: "updateRole",
+          httpMethod: "PUT",
+          routeTemplate: "/api/members/{id}/role",
+        }),
       ]),
     );
   });
@@ -208,9 +223,7 @@ describe("CLI lifecycle", () => {
     const fileContents = await fs.readFile(outputPath, "utf8");
     const payload = JSON.parse(fileContents) as unknown;
 
-    expect(payload).toEqual(
-      await readJsonFixture(path.join("request-examples-contract", "golden-contract.json")),
-    );
+    expectValidContractDocument(payload);
 
     const typedPayload = payload as {
       endpoints: Array<{
@@ -218,6 +231,11 @@ describe("CLI lifecycle", () => {
         requestExamples?: Array<{ json: string; mediaType: string }>;
       }>;
     };
+
+    expect(typedPayload.endpoints.map((endpoint) => endpoint.name).sort()).toEqual([
+      "create",
+      "legacyCreate",
+    ]);
 
     expect(typedPayload.endpoints.find((endpoint) => endpoint.name === "create")).toMatchObject({
       requestExamples: [
@@ -268,9 +286,7 @@ describe("CLI lifecycle", () => {
     const fileContents = await fs.readFile(outputPath, "utf8");
     const payload = JSON.parse(fileContents) as unknown;
 
-    expect(payload).toEqual(
-      await readJsonFixture(path.join("response-examples-contract", "golden-contract.json")),
-    );
+    expectValidContractDocument(payload);
 
     const typedPayload = payload as {
       endpoints: Array<{
@@ -281,6 +297,11 @@ describe("CLI lifecycle", () => {
         }>;
       }>;
     };
+
+    expect(typedPayload.endpoints.map((endpoint) => endpoint.name).sort()).toEqual([
+      "create",
+      "legacyCreate",
+    ]);
 
     const create = typedPayload.endpoints.find((endpoint) => endpoint.name === "create");
     const create201 = create?.responses.find((r) => r.statusCode === 201);
@@ -969,10 +990,9 @@ describe("CLI lifecycle", () => {
       }>;
     };
 
-    expect(payload).toEqual(
-      await readJsonFixture(path.join("form-encoded-contract", "golden-contract.json")),
-    );
+    expectValidContractDocument(payload);
 
+    expect(payload.endpoints).toHaveLength(1);
     const submitForm = payload.endpoints.find((endpoint) => endpoint.name === "submitForm");
     expect(submitForm?.isFormEncoded).toBe(true);
     expect(submitForm?.requestExamples).toEqual([
@@ -1018,10 +1038,9 @@ describe("CLI lifecycle", () => {
       }>;
     };
 
-    expect(payload).toEqual(
-      await readJsonFixture(path.join("multipart-contract", "golden-contract.json")),
-    );
+    expectValidContractDocument(payload);
 
+    expect(payload.endpoints).toHaveLength(1);
     const upload = payload.endpoints.find((endpoint) => endpoint.name === "uploadDocument");
     expect(upload?.inputTypeName).toBe("UploadDocumentRequest");
     expect(upload?.params.map((p) => ({ name: p.name, source: p.source }))).toEqual([

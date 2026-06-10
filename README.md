@@ -550,12 +550,17 @@ Diagnostics are written to stderr. Unsupported constructs produce explicit error
 ## Development
 
 ```bash
-pnpm test          # run tests
+pnpm test          # build then run tests
 pnpm build         # compile
 pnpm run lint      # lint with oxlint
 pnpm run fmt:check # format check with oxfmt
 pnpm run check     # TypeScript no-emit check
 ```
+
+Tests and fixtures import from `dist/`, so the test scripts build first.
+`pnpm run test:watch` only builds once at startup — after editing `src/`,
+re-run `pnpm build` (or restart the watcher) or the watcher keeps testing
+stale compiled output.
 
 ## Related repos
 

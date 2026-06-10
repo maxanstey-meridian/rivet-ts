@@ -94,28 +94,28 @@ interface CreatedContract extends Contract<"CreatedContract"> {
 
 // -- Type tests --
 
-test("RivetSuccessResult extracts status 200 and response type", () => {
+test("RivetSuccessResult defaults POST to status 201 and extracts response type", () => {
   expectTypeOf<RivetSuccessResult<MathContract, "Add">>().toEqualTypeOf<{
-    readonly status: 200;
+    readonly status: 201;
     readonly data: AddResponse;
   }>();
 });
 
-test("RivetEndpointResult for success-only endpoint equals success result", () => {
+test("RivetEndpointResult for success-only POST endpoint equals success result with status 201", () => {
   expectTypeOf<RivetEndpointResult<MathContract, "Add">>().toEqualTypeOf<{
-    readonly status: 200;
+    readonly status: 201;
     readonly data: AddResponse;
   }>();
 });
 
-test("RivetEndpointResult for error-bearing endpoint is a discriminated union", () => {
+test("RivetEndpointResult for error-bearing POST endpoint is a 201|400 discriminated union", () => {
   expectTypeOf<RivetEndpointResult<DivideContract, "Divide">>().toEqualTypeOf<
-    | { readonly status: 200; readonly data: DivideResponse }
+    | { readonly status: 201; readonly data: DivideResponse }
     | { readonly status: 400; readonly data: { message: string } }
   >();
 });
 
-test("RivetSuccessResult for inputless endpoint resolves correctly", () => {
+test("RivetSuccessResult defaults GET to status 200", () => {
   expectTypeOf<RivetSuccessResult<HealthContract, "Health">>().toEqualTypeOf<{
     readonly status: 200;
     readonly data: HealthResponse;
@@ -136,8 +136,59 @@ test("RivetSuccessResult with fileResponse resolves data to Blob", () => {
   }>();
 });
 
-test("RivetSuccessResult with void response resolves data to void", () => {
+test("RivetSuccessResult with POST void response defaults to status 201 and data void", () => {
   expectTypeOf<RivetSuccessResult<VoidContract, "Ping">>().toEqualTypeOf<{
+    readonly status: 201;
+    readonly data: void;
+  }>();
+});
+
+// -- Default success-status table (POST -> 201; DELETE void -> 204; else 200) --
+
+interface DeleteVoidContract extends Contract<"DeleteVoidContract"> {
+  Remove: Endpoint<{
+    method: "DELETE";
+    route: "/api/items/{id}";
+    params: { readonly id: string };
+    response: void;
+  }>;
+}
+
+interface DeleteWithResponseContract extends Contract<"DeleteWithResponseContract"> {
+  Remove: Endpoint<{
+    method: "DELETE";
+    route: "/api/items/{id}";
+    params: { readonly id: string };
+    response: { readonly removed: boolean };
+  }>;
+}
+
+interface PutVoidContract extends Contract<"PutVoidContract"> {
+  Replace: Endpoint<{
+    method: "PUT";
+    route: "/api/items/{id}";
+    params: { readonly id: string };
+    input: { readonly name: string };
+    response: void;
+  }>;
+}
+
+test("RivetSuccessResult defaults DELETE with void response to status 204", () => {
+  expectTypeOf<RivetSuccessResult<DeleteVoidContract, "Remove">>().toEqualTypeOf<{
+    readonly status: 204;
+    readonly data: void;
+  }>();
+});
+
+test("RivetSuccessResult defaults DELETE with a response body to status 200", () => {
+  expectTypeOf<RivetSuccessResult<DeleteWithResponseContract, "Remove">>().toEqualTypeOf<{
+    readonly status: 200;
+    readonly data: { readonly removed: boolean };
+  }>();
+});
+
+test("RivetSuccessResult defaults PUT with void response to status 200", () => {
+  expectTypeOf<RivetSuccessResult<PutVoidContract, "Replace">>().toEqualTypeOf<{
     readonly status: 200;
     readonly data: void;
   }>();

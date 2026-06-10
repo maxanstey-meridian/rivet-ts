@@ -25,33 +25,57 @@ describe("Unsupported contract lifecycle", () => {
     expect(bundle.hasErrors).toBe(false);
     expect(lowered.hasErrors).toBe(true);
 
-    const diagnosticCodes = lowered.diagnostics.map((diagnostic) => diagnostic.code);
-    expect(diagnosticCodes).toEqual(
-      expect.arrayContaining([
-        "UNSUPPORTED_INLINE_OPTIONAL_PROPERTY",
-        "UNSUPPORTED_TYPE_EXPRESSION",
-      ]),
-    );
+    const modelsPath = getFixturePath(path.join("unsupported-contract", "models.ts"));
+    expect(lowered.diagnostics).toEqual([
+      expect.objectContaining({
+        severity: "error",
+        code: "UNSUPPORTED_TYPE_EXPRESSION",
+        message: 'Unsupported type expression "TValue extends string ? { value: TValue } : never".',
+        filePath: modelsPath,
+        line: 1,
+      }),
+      expect.objectContaining({
+        severity: "error",
+        code: "UNSUPPORTED_INLINE_OPTIONAL_PROPERTY",
+        message: 'Inline object property "optional" cannot be optional.',
+        filePath: modelsPath,
+        line: 10,
+      }),
+      expect.objectContaining({
+        severity: "error",
+        code: "UNSUPPORTED_TYPE_EXPRESSION",
+        message: 'Unsupported type expression "string & { readonly __tag: "Value" }".',
+        filePath: modelsPath,
+        line: 15,
+      }),
+      expect.objectContaining({
+        severity: "error",
+        code: "UNSUPPORTED_TYPE_EXPRESSION",
+        message: 'Unsupported type expression "{\n  [TKey in keyof TValue]: string;\n}".',
+        filePath: modelsPath,
+        line: 3,
+      }),
+    ]);
 
-    expect(lowered.diagnostics).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "UNSUPPORTED_TYPE_EXPRESSION",
-          message: expect.stringContaining("TValue extends string"),
-        }),
-        expect.objectContaining({
-          code: "UNSUPPORTED_TYPE_EXPRESSION",
-          message: expect.stringContaining("[TKey in keyof TValue]"),
-        }),
-        expect.objectContaining({
-          code: "UNSUPPORTED_INLINE_OPTIONAL_PROPERTY",
-          message: expect.stringContaining('Inline object property "optional"'),
-        }),
-        expect.objectContaining({
-          code: "UNSUPPORTED_TYPE_EXPRESSION",
-          message: expect.stringContaining("string &"),
-        }),
-      ]),
-    );
+    // The unsupported constructs are dropped from the lowered document: the
+    // endpoints survive with type references, but no type definitions are
+    // emitted for them.
+    const payload = JSON.parse(lowered.toJson()) as {
+      endpoints: Array<{ name: string; responses: Array<{ dataType: unknown }> }>;
+      types: unknown[];
+      enums: unknown[];
+    };
+    expect(payload.endpoints.map((endpoint) => endpoint.name)).toEqual([
+      "search",
+      "details",
+      "intersect",
+    ]);
+    expect(payload.endpoints[0]?.responses[0]?.dataType).toEqual({
+      kind: "generic",
+      name: "ConditionalDto",
+      typeArgs: [{ kind: "primitive", type: "string" }],
+    });
+    expect(payload.types).toEqual([]);
+    expect(payload.enums).toEqual([]);
   });
 });

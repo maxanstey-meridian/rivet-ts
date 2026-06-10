@@ -11,9 +11,20 @@ type SuccessResponseType<TSpec> = TSpec extends { readonly fileResponse: true }
     ? TResponse
     : void;
 
+// Default success-status table, shared with the lowerer, the Hono adapter,
+// and the .NET extractor: POST -> 201; DELETE with a void response -> 204;
+// everything else -> 200.
+type DefaultSuccessStatus<TSpec> = TSpec extends { readonly method: "POST" }
+  ? 201
+  : TSpec extends { readonly method: "DELETE" }
+    ? [SuccessResponseType<TSpec>] extends [void]
+      ? 204
+      : 200
+    : 200;
+
 type SuccessStatus<TSpec> = TSpec extends { readonly successStatus: infer S extends number }
   ? S
-  : 200;
+  : DefaultSuccessStatus<TSpec>;
 
 export type RivetSuccessResult<TContract, TKey extends ContractEndpointKey<TContract>> = {
   readonly status: SuccessStatus<EndpointSpecOf<TContract, TKey>>;

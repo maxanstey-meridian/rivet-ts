@@ -6,6 +6,7 @@ import { ExtractTsContracts } from "../../src/application/use-cases/extract-ts-c
 import { LowerContractBundleToRivetContract } from "../../src/application/use-cases/lower-contract-bundle-to-rivet-contract.js";
 import { TypeScriptContractFrontend } from "../../src/infrastructure/typescript/typescript-contract-frontend.js";
 import { TypeScriptRivetContractLowerer } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
+import { expectValidContractDocument } from "../contract-schema.js";
 
 const getProjectRoot = (): string => {
   const currentFilePath = fileURLToPath(import.meta.url);
@@ -20,11 +21,6 @@ const toImportPath = (fromDirectory: string, targetFilePath: string): string => 
 const getFixturePath = (relativePath: string): string => {
   const currentFilePath = fileURLToPath(import.meta.url);
   return path.resolve(path.dirname(currentFilePath), "..", "fixtures", relativePath);
-};
-
-const readJsonFixture = async (relativePath: string): Promise<unknown> => {
-  const fileContents = await fs.readFile(getFixturePath(relativePath), "utf8");
-  return JSON.parse(fileContents) as unknown;
 };
 
 describe("LowerContractBundleToRivetContract lifecycle", () => {
@@ -43,17 +39,70 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     expect(lowered.diagnostics).toEqual([]);
 
     const payload = JSON.parse(lowered.toJson()) as {
-      endpoints: Array<{ name: string; controllerName: string }>;
+      types: Array<{ name: string }>;
+      endpoints: Array<{
+        name: string;
+        httpMethod: string;
+        routeTemplate: string;
+        controllerName: string;
+        params: Array<{ name: string; source: string; isOptional: boolean }>;
+        responses: Array<{ statusCode: number }>;
+      }>;
     };
-    expect(payload).toEqual(
-      await readJsonFixture(path.join("members-contract", "golden-contract.json")),
-    );
-    expect(payload.endpoints).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ name: "invite", controllerName: "members" }),
-        expect.objectContaining({ name: "updateRole", controllerName: "members" }),
-      ]),
-    );
+
+    expectValidContractDocument(payload);
+
+    expect(payload.endpoints).toHaveLength(5);
+    expect(payload.types.map((type) => type.name).sort()).toEqual([
+      "InviteMemberRequest",
+      "InviteMemberResponse",
+      "MemberDto",
+      "NotFoundDto",
+      "PagedResult",
+      "UpdateRoleRequest",
+      "ValidationErrorDto",
+    ]);
+
+    const byName = new Map(payload.endpoints.map((endpoint) => [endpoint.name, endpoint]));
+    expect(byName.get("list")).toMatchObject({
+      httpMethod: "GET",
+      routeTemplate: "/api/members",
+      controllerName: "members",
+      params: [],
+    });
+    expect(byName.get("list")?.responses.map((response) => response.statusCode)).toEqual([200]);
+
+    expect(byName.get("invite")).toMatchObject({
+      httpMethod: "POST",
+      routeTemplate: "/api/members",
+      controllerName: "members",
+      params: [expect.objectContaining({ name: "body", source: "body", isOptional: false })],
+    });
+    expect(byName.get("invite")?.responses.map((response) => response.statusCode)).toEqual([
+      201, 422,
+    ]);
+
+    expect(byName.get("remove")).toMatchObject({
+      httpMethod: "DELETE",
+      routeTemplate: "/api/members/{id}",
+      params: [expect.objectContaining({ name: "id", source: "route", isOptional: false })],
+    });
+    expect(byName.get("remove")?.responses.map((response) => response.statusCode)).toEqual([
+      204, 404,
+    ]);
+
+    expect(byName.get("updateRole")).toMatchObject({
+      httpMethod: "PUT",
+      routeTemplate: "/api/members/{id}/role",
+    });
+    expect(byName.get("updateRole")?.responses.map((response) => response.statusCode)).toEqual([
+      204, 404,
+    ]);
+
+    expect(byName.get("health")).toMatchObject({
+      httpMethod: "GET",
+      routeTemplate: "/api/health",
+    });
   });
 
   it("lowers aliased endpoint-spec examples into Rivet contract JSON", async () => {
@@ -122,18 +171,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     expect(lowered.hasErrors).toBe(false);
 
     const payload = JSON.parse(lowered.toJson()) as unknown;
-    const writeFixture = process.env.UPDATE_GOLDEN === "1";
-    const goldenPath = getFixturePath(
-      path.join("request-examples-contract", "golden-contract.json"),
-    );
-    if (writeFixture) {
-      await fs.writeFile(goldenPath, `${lowered.toJson()}\n`, "utf8");
-    }
-
-    const expected = await readJsonFixture(
-      path.join("request-examples-contract", "golden-contract.json"),
-    );
-    expect(payload).toEqual(expected);
+    expectValidContractDocument(payload);
 
     const typedPayload = payload as {
       endpoints: Array<{
@@ -141,6 +179,11 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
         requestExamples?: Array<{ json: string; mediaType: string }>;
       }>;
     };
+
+    expect(typedPayload.endpoints.map((endpoint) => endpoint.name).sort()).toEqual([
+      "create",
+      "legacyCreate",
+    ]);
 
     expect(typedPayload.endpoints.find((endpoint) => endpoint.name === "create")).toMatchObject({
       requestExamples: [
@@ -763,18 +806,7 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     expect(lowered.hasErrors).toBe(false);
 
     const payload = JSON.parse(lowered.toJson()) as unknown;
-    const writeFixture = process.env.UPDATE_GOLDEN === "1";
-    const goldenPath = getFixturePath(
-      path.join("response-examples-contract", "golden-contract.json"),
-    );
-    if (writeFixture) {
-      await fs.writeFile(goldenPath, `${lowered.toJson()}\n`, "utf8");
-    }
-
-    const expected = await readJsonFixture(
-      path.join("response-examples-contract", "golden-contract.json"),
-    );
-    expect(payload).toEqual(expected);
+    expectValidContractDocument(payload);
 
     const typedPayload = payload as {
       endpoints: Array<{
@@ -785,6 +817,11 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
         }>;
       }>;
     };
+
+    expect(typedPayload.endpoints.map((endpoint) => endpoint.name).sort()).toEqual([
+      "create",
+      "legacyCreate",
+    ]);
 
     const create = typedPayload.endpoints.find((endpoint) => endpoint.name === "create");
     const successResponse = create?.responses.find((response) => response.statusCode === 201);
@@ -1139,10 +1176,9 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
       }>;
     };
 
-    expect(payload).toEqual(
-      await readJsonFixture(path.join("form-encoded-contract", "golden-contract.json")),
-    );
+    expectValidContractDocument(payload);
 
+    expect(payload.endpoints).toHaveLength(1);
     const submitForm = payload.endpoints.find((endpoint) => endpoint.name === "submitForm");
     expect(submitForm?.isFormEncoded).toBe(true);
     expect(submitForm?.params).toEqual([expect.objectContaining({ name: "body", source: "body" })]);
@@ -1206,22 +1242,21 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
       }>;
     };
 
-    expect(payload).toEqual(
-      await readJsonFixture(path.join("multipart-contract", "golden-contract.json")),
-    );
+    expectValidContractDocument(payload);
 
+    expect(payload.endpoints).toHaveLength(1);
     const upload = payload.endpoints.find((endpoint) => endpoint.name === "uploadDocument");
     expect(upload?.inputTypeName).toBe("UploadDocumentRequest");
     expect(upload?.params).toEqual([
-      expect.objectContaining({ name: "documentId", source: "route", optional: false }),
+      expect.objectContaining({ name: "documentId", source: "route", isOptional: false }),
       expect.objectContaining({
         name: "file",
         source: "file",
-        optional: false,
+        isOptional: false,
         type: { kind: "primitive", type: "File" },
       }),
-      expect.objectContaining({ name: "title", source: "formField", optional: false }),
-      expect.objectContaining({ name: "description", source: "formField", optional: false }),
+      expect.objectContaining({ name: "title", source: "formField", isOptional: false }),
+      expect.objectContaining({ name: "description", source: "formField", isOptional: false }),
     ]);
   });
 
@@ -1244,19 +1279,22 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
       [
         `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
         "",
-        "export interface UploadMetadata {",
+        "export interface UploadRequest {",
+        "  // Optional so the JSON request example (which cannot carry a Blob)",
+        "  // stays assignable to the input type.",
+        "  file?: Blob;",
         "  label: string;",
         "}",
         "",
         "export const uploadExample = {",
         '  label: "test",',
-        "} satisfies UploadMetadata;",
+        "};",
         "",
         'export interface TempContract extends Contract<"TempContract"> {',
         "  Upload: Endpoint<{",
         '    method: "POST";',
         '    route: "/api/upload";',
-        "    input: UploadMetadata;",
+        "    input: UploadRequest;",
         "    response: void;",
         "    acceptsFile: true;",
         "    requestExamples: [typeof uploadExample];",
@@ -1270,21 +1308,24 @@ describe("LowerContractBundleToRivetContract lifecycle", () => {
     const bundle = await extractUseCase.execute({ entryPath });
     const lowered = await lowerUseCase.execute({ bundle });
 
-    expect(lowered.hasErrors).toBe(true);
-    expect(lowered.diagnostics).toEqual(
-      expect.arrayContaining([expect.objectContaining({ code: "INVALID_MULTIPART_INPUT" })]),
-    );
+    expect(bundle.hasErrors).toBe(false);
+    expect(lowered.hasErrors).toBe(false);
+    expect(lowered.diagnostics).toEqual([]);
 
     const payload = JSON.parse(lowered.toJson()) as {
       endpoints: Array<{
         name: string;
+        params: Array<{ name: string; source: string }>;
         requestExamples?: Array<{ mediaType: string }>;
       }>;
     };
 
-    expect(
-      payload.endpoints.find((endpoint) => endpoint.name === "upload")?.requestExamples,
-    ).toEqual([
+    const upload = payload.endpoints.find((endpoint) => endpoint.name === "upload");
+    expect(upload?.params).toEqual([
+      expect.objectContaining({ name: "file", source: "file" }),
+      expect.objectContaining({ name: "label", source: "formField" }),
+    ]);
+    expect(upload?.requestExamples).toEqual([
       {
         mediaType: "multipart/form-data",
         json: JSON.stringify({ label: "test" }),

@@ -208,12 +208,27 @@ const buildHandlerInput = async (
   return input;
 };
 
-const getSuccessStatus = (responses: readonly { readonly statusCode: number }[]): number => {
-  const successResponse = responses.find(
+// Fallback table for contracts whose responses carry no 2xx entry, shared with
+// the lowerer, the type-level SuccessStatus, and the .NET extractor:
+// POST -> 201; DELETE (void by construction when no 2xx exists) -> 204;
+// everything else -> 200.
+const getDefaultSuccessStatus = (httpMethod: string): number => {
+  switch (httpMethod.toUpperCase()) {
+    case "DELETE":
+      return 204;
+    case "POST":
+      return 201;
+    default:
+      return 200;
+  }
+};
+
+const getSuccessStatus = (endpoint: ContractEndpointJson): number => {
+  const successResponse = endpoint.responses.find(
     (response) => response.statusCode >= 200 && response.statusCode < 300,
   );
 
-  return successResponse?.statusCode ?? 200;
+  return successResponse?.statusCode ?? getDefaultSuccessStatus(endpoint.httpMethod);
 };
 
 const withHeaders = (
@@ -358,7 +373,7 @@ export const registerRivetHonoRoutes = <
     }
 
     const method = endpoint.httpMethod.toLowerCase() as HttpMethod;
-    const status = getSuccessStatus(endpoint.responses);
+    const status = getSuccessStatus(endpoint);
     const honoRoute = toHonoRoute(endpoint.routeTemplate);
     const routeHandlers: MiddlewareHandler[] = [
       ...middleware,

@@ -181,6 +181,28 @@ export class RivetTypeDefinition {
     this.type = input.type;
     this.description = input.description;
   }
+
+  // The contract JSON schema requires exactly one of "properties" (object
+  // definitions) or "type" (alias definitions); emitting both violates its
+  // oneOf, so alias definitions omit the empty properties array on the wire.
+  public toJSON(): Record<string, unknown> {
+    const serialized: Record<string, unknown> = {
+      name: this.name,
+      typeParameters: this.typeParameters,
+    };
+
+    if (this.type !== undefined) {
+      serialized.type = this.type;
+    } else {
+      serialized.properties = this.properties;
+    }
+
+    if (this.description !== undefined) {
+      serialized.description = this.description;
+    }
+
+    return serialized;
+  }
 }
 
 export type RivetContractEnum =
@@ -199,18 +221,20 @@ export class RivetEndpointParam {
   public readonly name: string;
   public readonly type: RivetType;
   public readonly source: RivetEndpointParamSource;
-  public readonly optional: boolean;
+  // Serialized as "isOptional" — the key the contract JSON schema and the
+  // .NET reader (TsEndpointDefinition.IsOptional) expect.
+  public readonly isOptional: boolean;
 
   public constructor(input: {
     name: string;
     type: RivetType;
     source: RivetEndpointParamSource;
-    optional?: boolean;
+    isOptional?: boolean;
   }) {
     this.name = input.name;
     this.type = input.type;
     this.source = input.source;
-    this.optional = input.optional ?? false;
+    this.isOptional = input.isOptional ?? false;
   }
 }
 

@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import type {
-  RivetContractEnum,
-  RivetType,
+import {
+  type RivetContractEnum,
+  type RivetType,
   RivetTypeDefinition,
 } from "../../src/domain/rivet-contract.js";
 import {
@@ -278,7 +278,7 @@ describe("emitTypeExpression", () => {
 
 describe("emitTypeDefinition", () => {
   it("emits interface with properties", () => {
-    const typeDef: RivetTypeDefinition = {
+    const typeDef = new RivetTypeDefinition({
       name: "MemberDto",
       typeParameters: [],
       properties: [
@@ -291,7 +291,7 @@ describe("emitTypeDefinition", () => {
         { name: "email", type: { kind: "primitive", type: "string" }, optional: false },
         { name: "nickname", type: { kind: "primitive", type: "string" }, optional: true },
       ],
-    };
+    });
     const result = emitTypeDefinition(typeDef);
     expect(result).toBe(
       "export interface MemberDto {\n" +
@@ -303,7 +303,7 @@ describe("emitTypeDefinition", () => {
   });
 
   it("emits generic interface with type parameters", () => {
-    const typeDef: RivetTypeDefinition = {
+    const typeDef = new RivetTypeDefinition({
       name: "PagedResult",
       typeParameters: ["TItem"],
       properties: [
@@ -314,7 +314,7 @@ describe("emitTypeDefinition", () => {
         },
         { name: "totalCount", type: { kind: "primitive", type: "number" }, optional: false },
       ],
-    };
+    });
     const result = emitTypeDefinition(typeDef);
     expect(result).toContain("export interface PagedResult<TItem>");
     expect(result).toContain("items: TItem[]");
@@ -322,7 +322,7 @@ describe("emitTypeDefinition", () => {
   });
 
   it("emits type alias when type field is set", () => {
-    const typeDef: RivetTypeDefinition = {
+    const typeDef = new RivetTypeDefinition({
       name: "Shape",
       typeParameters: [],
       properties: [],
@@ -342,7 +342,7 @@ describe("emitTypeDefinition", () => {
           },
         ],
       },
-    };
+    });
     const result = emitTypeDefinition(typeDef);
     expect(result).toMatch(/^export type Shape = /);
     expect(result).toContain('readonly kind: "circle"');
@@ -351,21 +351,21 @@ describe("emitTypeDefinition", () => {
   });
 
   it("emits empty interface", () => {
-    const typeDef: RivetTypeDefinition = {
+    const typeDef = new RivetTypeDefinition({
       name: "Empty",
       typeParameters: [],
       properties: [],
-    };
+    });
     expect(emitTypeDefinition(typeDef)).toBe("export interface Empty {}");
   });
 
   it("emits generic type alias with type parameters", () => {
-    const typeDef: RivetTypeDefinition = {
+    const typeDef = new RivetTypeDefinition({
       name: "Wrapped",
       typeParameters: ["T"],
       properties: [],
       type: { kind: "generic", name: "Promise", typeArgs: [{ kind: "typeParam", name: "T" }] },
-    };
+    });
     const result = emitTypeDefinition(typeDef);
     expect(result).toBe("export type Wrapped<T> = Promise<T>;");
   });

@@ -540,7 +540,12 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
         return [];
       }
 
-      const resolvedStatus = successStatus ?? this.getDefaultSuccessStatus(method);
+      const resolvedStatus =
+        successStatus ??
+        this.getDefaultSuccessStatus(
+          method,
+          targetNode !== undefined && targetNode.kind !== ts.SyntaxKind.VoidKeyword,
+        );
       return [new ResponseExamplesSpec({ status: resolvedStatus, examples: [legacyExample] })];
     }
 
@@ -847,10 +852,13 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     return data;
   }
 
-  private getDefaultSuccessStatus(method: HttpMethod): number {
+  // Default success-status table, shared with the lowerer, the .NET extractor,
+  // and the type-level SuccessStatus in src/domain/runtime-types.ts:
+  // POST -> 201; DELETE with a void response -> 204; everything else -> 200.
+  private getDefaultSuccessStatus(method: HttpMethod, hasResponseBody: boolean): number {
     switch (method) {
       case "DELETE":
-        return 204;
+        return hasResponseBody ? 200 : 204;
       case "POST":
         return 201;
       default:

@@ -895,7 +895,7 @@ class TypeEmissionContext {
                 name: property.name,
                 type: propertyType,
                 source: "route",
-                optional: property.optional,
+                isOptional: property.optional,
               }),
             );
           }
@@ -917,7 +917,7 @@ class TypeEmissionContext {
                 name: property.name,
                 type: propertyType,
                 source: "query",
-                optional: property.optional,
+                isOptional: property.optional,
               }),
             );
           }
@@ -931,7 +931,7 @@ class TypeEmissionContext {
           name: "body",
           type: inputType,
           source: "body",
-          optional: false,
+          isOptional: false,
         }),
       );
     }
@@ -966,7 +966,7 @@ class TypeEmissionContext {
               type: "string",
             },
             source: "route",
-            optional: false,
+            isOptional: false,
           }),
         );
       }
@@ -977,7 +977,7 @@ class TypeEmissionContext {
             name: "body",
             type: inputType,
             source: "body",
-            optional: false,
+            isOptional: false,
           }),
         );
       }
@@ -995,7 +995,7 @@ class TypeEmissionContext {
               type: "string",
             },
             source: "route",
-            optional: false,
+            isOptional: false,
           }),
         );
       }
@@ -1035,7 +1035,7 @@ class TypeEmissionContext {
           name: property.name,
           type: propertyType,
           source,
-          optional: property.optional,
+          isOptional: property.optional,
         }),
       );
     }
@@ -1074,7 +1074,7 @@ class TypeEmissionContext {
             name: property.name,
             type: propertyType ?? { kind: "primitive", type: "string" },
             source: "route",
-            optional: property.optional,
+            isOptional: property.optional,
           }),
         );
         continue;
@@ -1113,7 +1113,7 @@ class TypeEmissionContext {
         name: fileProperty.name,
         type: { kind: "primitive", type: "File" },
         source: "file",
-        optional: fileProperty.optional,
+        isOptional: fileProperty.optional,
       }),
     );
 
@@ -1128,7 +1128,7 @@ class TypeEmissionContext {
           name: property.name,
           type: propertyType,
           source: "formField",
-          optional: property.optional,
+          isOptional: property.optional,
         }),
       );
     }
@@ -1213,11 +1213,13 @@ class TypeEmissionContext {
     const responses: RivetResponseType[] = [];
     const errorsNode = this.createPropertyMap(specNode)?.get("errors");
     const errorResponses = errorsNode ? this.readErrorResponses(errorsNode, context) : [];
+    const hasResponseBody = responseType !== null || fileResponse;
+    const defaultSuccessStatus = this.getDefaultSuccessStatus(context.httpMethod, hasResponseBody);
 
     if (responseType) {
       responses.push(
         new RivetResponseType({
-          statusCode: successStatusOverride ?? this.getDefaultSuccessStatus(context.httpMethod),
+          statusCode: successStatusOverride ?? defaultSuccessStatus,
           dataType: responseType,
         }),
       );
@@ -1225,12 +1227,12 @@ class TypeEmissionContext {
       fileResponse ||
       successStatusOverride !== null ||
       errorResponses.length > 0 ||
-      this.getDefaultSuccessStatus(context.httpMethod) !== 200 ||
+      defaultSuccessStatus !== 200 ||
       (responseNode !== undefined && responseNode.kind !== ts.SyntaxKind.VoidKeyword)
     ) {
       responses.push(
         new RivetResponseType({
-          statusCode: successStatusOverride ?? this.getDefaultSuccessStatus(context.httpMethod),
+          statusCode: successStatusOverride ?? defaultSuccessStatus,
         }),
       );
     }
@@ -2170,10 +2172,13 @@ class TypeEmissionContext {
     return this.readStringLiteral(node) !== null;
   }
 
-  private getDefaultSuccessStatus(httpMethod: string): number {
+  // Default success-status table, shared with the .NET extractor and the
+  // type-level SuccessStatus in src/domain/runtime-types.ts:
+  // POST -> 201; DELETE with a void response -> 204; everything else -> 200.
+  private getDefaultSuccessStatus(httpMethod: string, hasResponseBody: boolean): number {
     switch (httpMethod) {
       case "DELETE":
-        return 204;
+        return hasResponseBody ? 200 : 204;
       case "POST":
         return 201;
       default:

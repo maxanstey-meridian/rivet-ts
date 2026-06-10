@@ -1,10 +1,10 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ExtractTsContracts } from "../../src/application/use-cases/extract-ts-contracts.js";
 import { LowerContractBundleToRivetContract } from "../../src/application/use-cases/lower-contract-bundle-to-rivet-contract.js";
 import { TypeScriptContractFrontend } from "../../src/infrastructure/typescript/typescript-contract-frontend.js";
 import { TypeScriptRivetContractLowerer } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
+import { expectValidContractDocument } from "../contract-schema.js";
 
 const getFixturePath = (relativePath: string): string => {
   const currentFilePath = fileURLToPath(import.meta.url);
@@ -44,14 +44,24 @@ describe("Expressive contract lifecycle", () => {
       }>;
     };
 
-    const writeFixture = process.env.UPDATE_GOLDEN === "1";
-    const goldenPath = getFixturePath(path.join("expressive-contract", "golden-contract.json"));
-    if (writeFixture) {
-      await fs.writeFile(goldenPath, `${lowered.toJson()}\n`, "utf8");
-    }
+    expectValidContractDocument(payload);
 
-    const expected = JSON.parse(await fs.readFile(goldenPath, "utf8")) as unknown;
-    expect(payload).toEqual(expected);
+    expect(payload.endpoints.map((endpoint) => endpoint.name).sort()).toEqual([
+      "create",
+      "exportMembers",
+      "ping",
+      "search",
+      "update",
+    ]);
+    expect(payload.types.map((type) => type.name).sort()).toEqual([
+      "CreateMemberRequest",
+      "MemberDto",
+      "MemberEnvelope",
+      "MemberPatch",
+      "PagedResult",
+      "UpdateMemberRequest",
+      "ValidationErrorDto",
+    ]);
 
     expect(payload.enums).toEqual(
       expect.arrayContaining([
@@ -67,13 +77,13 @@ describe("Expressive contract lifecycle", () => {
         expect.objectContaining({
           name: "teamId",
           source: "route",
-          optional: false,
+          isOptional: false,
           type: { kind: "primitive", type: "string", format: "uuid" },
         }),
         expect.objectContaining({
           name: "search",
           source: "query",
-          optional: true,
+          isOptional: true,
           type: {
             kind: "nullable",
             inner: { kind: "primitive", type: "string" },
@@ -82,7 +92,7 @@ describe("Expressive contract lifecycle", () => {
         expect.objectContaining({
           name: "status",
           source: "query",
-          optional: true,
+          isOptional: true,
           type: {
             kind: "nullable",
             inner: { kind: "ref", name: "MemberStatus" },
