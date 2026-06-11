@@ -1,6 +1,6 @@
 # Local Now, Bun Later
 
-Local mode uses the generated Rivet client against a Hono app in-process.
+Local mode uses the generated `openapi-fetch` client against a Hono app in-process.
 
 Server mode uses the same generated client against a deployed HTTP endpoint.
 
@@ -16,7 +16,7 @@ import { configureLocalRivet } from "../rivet-local";
 configureLocalRivet();
 ```
 
-That makes the generated Rivet client call the local Hono app in-process via the adapter's `app.request(...)` dispatch.
+That makes the generated client call the local Hono app in-process: `configureLocalRivet` configures the `openapi-fetch` client with a custom `fetch` that dispatches each built `Request` to `app.request(...)`.
 
 From feature UI code, that detail is hidden behind the generated client plus `ui/rivet-local.ts`.
 

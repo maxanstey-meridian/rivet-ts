@@ -63,7 +63,8 @@ samples/myapp/
 ## What the Vite plugin keeps generated
 
 - `packages/api/generated/*.contract.json`
-- `packages/client/generated/rivet/*`
+- `packages/client/generated/openapi.json`
+- `packages/client/generated/schema.d.ts`
 - `packages/client/generated/index.ts`
 
 During `vite dev`, contract changes regenerate those artifacts and Vite reloads the UI with the updated client surface.

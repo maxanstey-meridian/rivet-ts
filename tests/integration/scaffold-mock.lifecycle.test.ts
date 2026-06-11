@@ -293,10 +293,10 @@ describe("scaffold-mock lifecycle", () => {
     expect(rootTsconfigSource).toContain('"./packages/client/generated/index.ts"');
     expect(rootTsconfigSource).toContain('"@members-mock/api/local"');
     expect(rootTsconfigSource).toContain('"./packages/api/src/app/local.ts"');
-    expect(uiMainSource).toContain('import { members } from "@members-mock/client";');
+    expect(uiMainSource).toContain('import { client } from "@members-mock/client";');
     expect(uiMainSource).toContain('import { configureLocalRivet } from "../rivet-local";');
     expect(uiMainSource).toContain("configureLocalRivet()");
-    expect(uiMainSource).toContain("members.list()");
+    expect(uiMainSource).toContain('client.GET("/api/members")');
     expect(uiLocalRivetSource).toContain(
       'import { configureRivet, type RivetConfig } from "@members-mock/client";',
     );
@@ -353,6 +353,9 @@ describe("scaffold-mock lifecycle", () => {
     expect(apiPackageJsonSource).toContain(
       "src/app/contracts.ts --out generated/api.contract.json",
     );
+    // The binary emits the OpenAPI spec the client types derive from; the path
+    // is resolved against --output, landing in ../client/generated/openapi.json.
+    expect(apiPackageJsonSource).toContain("--openapi ../openapi.json");
     expect(apiPackageJsonSource).toContain(
       "pnpm exec rivet-ts generate --generated-root ../client/generated",
     );
@@ -363,6 +366,7 @@ describe("scaffold-mock lifecycle", () => {
     expect(apiPackageJsonSource).toContain('"./local": "./src/app/local.ts"');
     expect(clientPackageJsonSource).toContain('"name": "@members-mock/client"');
     expect(clientPackageJsonSource).toContain('"."');
+    expect(clientPackageJsonSource).toContain('"openapi-fetch"');
     expect(clientPackageJsonSource).toContain('"zod": "^4.1.12"');
 
     // S8/T6: the scaffolded rivet-ts dependency pin must track this package's
@@ -412,35 +416,38 @@ describe("scaffold-mock lifecycle", () => {
       ]),
     ).resolves.toMatchObject({ stderr: "" });
 
+    // Bootstrap client chain: the scaffold itself writes openapi.json (routes
+    // only) and derives schema.d.ts + index.ts from it so the ui's client
+    // import resolves before the first real generate run.
     const generatedClientRoot = path.join(outputDirectory, "packages", "client", "generated");
-    await fs.mkdir(path.join(generatedClientRoot, "rivet", "client"), { recursive: true });
-    await fs.mkdir(path.join(generatedClientRoot, "rivet", "types"), { recursive: true });
-    await fs.writeFile(
-      path.join(generatedClientRoot, "rivet", "client", "members.ts"),
-      "export const list = () => null;\n",
+    const bootstrapSpec = JSON.parse(
+      await fs.readFile(path.join(generatedClientRoot, "openapi.json"), "utf8"),
+    ) as { openapi: string; paths: Record<string, Record<string, unknown>> };
+    expect(bootstrapSpec.openapi).toBe("3.1.0");
+    expect(Object.keys(bootstrapSpec.paths)).toEqual(
+      expect.arrayContaining(["/api/members", "/api/members/{id}", "/api/members/nested"]),
     );
-    await fs.writeFile(
-      path.join(generatedClientRoot, "rivet", "rivet.ts"),
-      "export const configureRivet = () => undefined;\n",
-    );
-    await fs.writeFile(
-      path.join(generatedClientRoot, "rivet", "types", "common.ts"),
-      "export type MemberDto = { id: string };\n",
-    );
-    await fs.writeFile(
-      path.join(generatedClientRoot, "rivet", "schemas.ts"),
-      "export const memberSchema = {};\n",
-    );
-    await fs.writeFile(
-      path.join(generatedClientRoot, "rivet", "validators.ts"),
-      "export const validateMember = () => true;\n",
-    );
+    expect(bootstrapSpec.paths["/api/members"]).toHaveProperty("get");
+    expect(bootstrapSpec.paths["/api/members"]).toHaveProperty("post");
+    expect(bootstrapSpec.paths["/api/members/{id}"]).toHaveProperty("delete");
 
+    const bootstrapSchemaSource = await fs.readFile(
+      path.join(generatedClientRoot, "schema.d.ts"),
+      "utf8",
+    );
+    expect(bootstrapSchemaSource).toContain("export interface paths");
+    expect(bootstrapSchemaSource).toContain('"/api/members"');
+
+    // `rivet-ts generate` over the same root is the generate-script path; it
+    // must succeed and leave the same facade in place.
     await expect(runCli(["generate", "--generated-root", generatedClientRoot])).resolves.toBe(0);
 
     const clientEntrySource = await fs.readFile(path.join(generatedClientRoot, "index.ts"), "utf8");
-    expect(clientEntrySource).toContain('export * as schemas from "./rivet/schemas.js";');
-    expect(clientEntrySource).toContain('export * as validators from "./rivet/validators.js";');
+    expect(clientEntrySource).toContain(
+      'import createOpenApiClient, { type Client, type ClientOptions } from "openapi-fetch";',
+    );
+    expect(clientEntrySource).toContain("export const configureRivet = (config: RivetConfig)");
+    expect(clientEntrySource).not.toContain("rivetFetch");
 
     // II.B-1: the scaffolded api package must actually compile.
     await typecheckScaffoldedApi(outputDirectory);

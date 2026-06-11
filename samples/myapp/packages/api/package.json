@@ -9,7 +9,7 @@
     "./local": "./src/app/local.ts"
   },
   "scripts": {
-    "generate": "pnpm exec rivet-reflect-ts --entry src/app/contracts.ts --out generated/api.contract.json && rivet --from generated/api.contract.json --output ../client/generated/rivet && pnpm exec rivet-ts generate --generated-root ../client/generated"
+    "generate": "pnpm exec rivet-reflect-ts --entry src/app/contracts.ts --out generated/api.contract.json && rivet --from generated/api.contract.json --output ../client/generated/rivet --openapi ../openapi.json && pnpm exec rivet-ts generate --generated-root ../client/generated"
   },
   "dependencies": {
     "hono": "^4.0.0",

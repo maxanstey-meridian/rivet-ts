@@ -104,7 +104,7 @@ The scaffold already includes:
 Important:
 
 - `scaffold-mock` creates the project shape and authored handlers
-- `pnpm --dir packages/api run generate` produces `packages/api/generated/api.contract.json`, `packages/client/generated/rivet/*`, and `packages/client/generated/index.ts`; it uses the `rivet` command from `PATH`
+- `pnpm --dir packages/api run generate` produces `packages/api/generated/api.contract.json`, `packages/client/generated/openapi.json`, `packages/client/generated/schema.d.ts`, and `packages/client/generated/index.ts`; it uses the `rivet` command from `PATH`
 - once those initial artifacts exist, `vite dev` keeps them current
 
 The important boundary is that normal UI call sites consume `@myapp/client`, and local browser transport is wired once in `ui/rivet-local.ts` via `@myapp/api/local`. Feature UI code does not import `packages/api/src/*` or generated internals directly.
@@ -116,21 +116,24 @@ Open `ui/src/main.ts`.
 Typical usage looks like this:
 
 ```ts
-import { members } from "@myapp/client";
+import { client } from "@myapp/client";
 import { configureLocalRivet } from "../rivet-local";
 
 configureLocalRivet();
 
-const all = await members.list();
-console.log(all);
+const all = await client.GET("/api/members");
+console.log(all.data);
 ```
+
+The client is a typed [`openapi-fetch`](https://openapi-ts.dev/openapi-fetch/) instance: paths, methods, request bodies, and response shapes are all checked against `schema.d.ts`, which is generated from the emitted OpenAPI spec.
 
 That means the client code is written against the generated client surface, not against its hosting mode. Later, you can swap `configureLocalRivet()` for `configureRivet({ baseUrl })` without rewriting the generated client calls.
 
 During `vite dev`, contract changes regenerate:
 
 - `packages/api/generated/*.contract.json`
-- `packages/client/generated/rivet/*`
+- `packages/client/generated/openapi.json`
+- `packages/client/generated/schema.d.ts`
 - `packages/client/generated/index.ts`
 
 Vite then reloads the UI against the updated client surface.

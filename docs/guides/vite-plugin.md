@@ -16,8 +16,9 @@ Given:
 the plugin:
 
 - reflects the contract to `generated/*.contract.json`
-- runs downstream Rivet to generate `packages/client/generated/rivet/*`
-- emits `packages/client/generated/index.ts`
+- runs the downstream Rivet binary to emit `packages/client/generated/openapi.json`
+- runs `openapi-typescript` over that spec to emit `packages/client/generated/schema.d.ts`
+- emits `packages/client/generated/index.ts`, a typed `openapi-fetch` client facade
 - watches contract changes during `vite dev` and regenerates those artifacts
 
 It does not:
@@ -86,15 +87,17 @@ export default defineConfig({
 
 `entry` is preferred. `contract` exists as a legacy alias. If `runtimeContractOut` is omitted, the plugin writes `<apiRoot>/generated/<api-root-name>.contract.json`. If `clientOutDir` is omitted, it writes under `<apiRoot>/generated`.
 
-The plugin runs downstream Rivet with the reflected contract as `--from` and `<clientOutDir>/rivet` as `--output`, then emits the same client package entrypoint as `rivet-ts generate`.
+The plugin runs the downstream Rivet binary with the reflected contract as `--from`, `<clientOutDir>/rivet` as `--output`, and `<clientOutDir>/openapi.json` as `--openapi`, then emits the same `schema.d.ts` + `index.ts` client package as `rivet-ts generate`.
 
 ## UI imports
 
 ```ts
-import { members } from "@myapp/client";
+import { client } from "@myapp/client";
 import { configureLocalRivet } from "../rivet-local";
 
 configureLocalRivet();
+
+const all = await client.GET("/api/members");
 ```
 
 During `vite dev`, contract changes regenerate the local client/runtime artifacts and Vite reloads the UI with the updated client surface.
@@ -104,7 +107,8 @@ During `vite dev`, contract changes regenerate the local client/runtime artifact
 When a contract file changes, the plugin regenerates:
 
 - `generated/*.contract.json`
-- `packages/client/generated/rivet/*`
+- `packages/client/generated/openapi.json`
+- `packages/client/generated/schema.d.ts`
 - `packages/client/generated/index.ts`
 
 The plugin does not add handlers or route registrations for new endpoints. If a new endpoint is added to a selected contract group, the generated client updates immediately, but the scaffolded API can fail during route registration/import until that group has exactly one handler for each endpoint and no unused handlers.

@@ -67,9 +67,10 @@ pnpm run dev
 
 `scaffold-mock` creates the project shape and authored source files. The API package `generate` step produces:
 
-- `packages/api/generated/api.contract.json`
-- `packages/client/generated/rivet/*`
-- `packages/client/generated/index.ts`
+- `packages/api/generated/api.contract.json` — the runtime contract (Hono route registration)
+- `packages/client/generated/openapi.json` — the OpenAPI spec emitted by the Rivet binary
+- `packages/client/generated/schema.d.ts` — `openapi-typescript` types derived from the spec
+- `packages/client/generated/index.ts` — a typed `openapi-fetch` client facade
 
 After that initial generate, the Vite plugin keeps those artifacts current during `vite dev`.
 
@@ -151,18 +152,18 @@ Example frontend consumption:
 The scaffolded app starts in local mode. In `ui/src/main.ts`:
 
 ```ts
-import { members } from "@myapp/client";
+import { client } from "@myapp/client";
 import { configureLocalRivet } from "../rivet-local";
 
 configureLocalRivet();
 
-const created = await members.create({
+const created = await client.POST("/api/members", {
   body: {
     email: "ada@example.com",
   },
 });
 
-console.log(created.id);
+console.log(created.data?.id);
 ```
 
 The point of this shape is that the UI depends on the generated client package, not on API internals. Local browser transport is an honest app-owned seam in `ui/rivet-local.ts`, and it can later be replaced with normal remote `configureRivet(...)` setup without changing the generated client calls themselves.
@@ -236,23 +237,23 @@ Downstream Rivet emits the same artifacts it emits for C# sources: TypeScript ty
 The scaffolded app starts in local mode. In `ui/src/main.ts`:
 
 ```ts
-import { members } from "@myapp/client";
+import { client } from "@myapp/client";
 import { configureLocalRivet } from "../rivet-local";
 
 configureLocalRivet();
 
-const created = await members.create({
+const created = await client.POST("/api/members", {
   body: {
     email: "ada@example.com",
   },
 });
 
-console.log(created.id);
+console.log(created.data?.id);
 ```
 
-That lets the generated Rivet client call the Hono app in-process via `app.request(...)`.
+That lets the generated `openapi-fetch` client call the Hono app in-process via `app.request(...)` — `configureLocalRivet` swaps in a custom `fetch` that dispatches to the local app.
 
-With the Vite plugin in place, contract changes regenerate the local contract JSON and client/runtime artifacts during `vite dev`, so the frontend sees the updated client surface without a manual generate step.
+With the Vite plugin in place, contract changes regenerate the local contract JSON, the OpenAPI spec, and the client artifacts (`schema.d.ts` + `index.ts`) during `vite dev`, so the frontend sees the updated client surface without a manual generate step.
 
 When you want a real server, the happy path is almost a literal lift-and-shift:
 

@@ -50,6 +50,7 @@ type NormalizedPluginOptions = {
   readonly runtimeContractPath: string;
   readonly clientOutDir: string;
   readonly generatedRivetDir: string;
+  readonly openApiPath: string;
   readonly binaryConfig?: RivetBinaryConfig;
 };
 
@@ -93,6 +94,7 @@ const normalizeOptions = (
     runtimeContractPath,
     clientOutDir,
     generatedRivetDir: path.join(clientOutDir, "rivet"),
+    openApiPath: path.join(clientOutDir, "openapi.json"),
     binaryConfig: options.rivet,
   };
 };
@@ -130,15 +132,25 @@ const generateArtifacts = async (
     "utf8",
   );
 
+  // The binary is the sole OpenAPI emitter (Option B): contract JSON in,
+  // openapi.json out. The TypeScript client is then generated locally from the
+  // spec: openapi-typescript types + an openapi-fetch facade.
   const binary = await ensureRivetBinary(options.binaryConfig);
   await execFileAsync(
     binary.executablePath,
-    ["--from", options.runtimeContractPath, "--output", options.generatedRivetDir],
+    [
+      "--from",
+      options.runtimeContractPath,
+      "--output",
+      options.generatedRivetDir,
+      "--openapi",
+      options.openApiPath,
+    ],
     {
       cwd: options.apiRoot,
     },
   );
-  await emitClientPackage(options.clientOutDir);
+  await emitClientPackage(options.clientOutDir, options.openApiPath);
 
   const dependencies = await collectLocalDependencies(options.entryPath);
   return dependencies.map((dependency) => dependency.absolutePath);

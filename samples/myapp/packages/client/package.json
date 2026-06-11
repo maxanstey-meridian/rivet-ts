@@ -6,6 +6,7 @@
     ".": "./generated/index.ts"
   },
   "dependencies": {
+    "openapi-fetch": "^0.17.0",
     "rivet-ts": "github:maxanstey-meridian/rivet-ts#v0.9.1",
     "zod": "^4.1.12"
   }

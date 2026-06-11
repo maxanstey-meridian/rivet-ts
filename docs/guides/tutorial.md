@@ -103,7 +103,8 @@ The important boundary is that the UI consumes `@myapp/client`. Local browser tr
 `pnpm --dir packages/api run generate` creates:
 
 - `packages/api/generated/api.contract.json`
-- `packages/client/generated/rivet/*`
+- `packages/client/generated/openapi.json`
+- `packages/client/generated/schema.d.ts`
 - `packages/client/generated/index.ts`
 
 Example scaffolded handler:

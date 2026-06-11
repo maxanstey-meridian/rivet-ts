@@ -1,12 +1,18 @@
 type LocalRivetBaseConfig = {
   readonly baseUrl: string;
-  readonly headers?: () => Record<string, string> | Promise<Record<string, string>>;
   readonly fetch?: LocalRivetFetch;
 };
 
-type LocalRivetFetch = (input: string | URL, init?: RequestInit) => Response | Promise<Response>;
+/**
+ * Matches `openapi-fetch`'s `ClientOptions["fetch"]` seam: the configured
+ * client hands a fully-built `Request` to the custom fetch.
+ */
+type LocalRivetFetch = (input: Request) => Promise<Response>;
 
-type LocalRivetDispatch = LocalRivetFetch;
+type LocalRivetDispatch = (
+  input: string | URL | Request,
+  init?: RequestInit,
+) => Response | Promise<Response>;
 
 export type LocalRivetConfig<TConfig extends LocalRivetBaseConfig> = Omit<
   TConfig,
@@ -18,8 +24,7 @@ export type LocalRivetConfig<TConfig extends LocalRivetBaseConfig> = Omit<
 };
 
 export const createLocalRivetFetch = (dispatch: LocalRivetDispatch): LocalRivetFetch => {
-  return (input: string | URL, init?: RequestInit): Promise<Response> =>
-    Promise.resolve(dispatch(input, init));
+  return (input: Request): Promise<Response> => Promise.resolve(dispatch(input));
 };
 
 export const configureLocalRivet = <TConfig extends LocalRivetBaseConfig>(

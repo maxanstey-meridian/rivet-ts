@@ -11,6 +11,6 @@ export const configureLocalRivet = (config: LocalRivetConfig = {}) => {
   configureRivetLocalRuntime({
     ...config,
     configureRivet,
-    dispatch: (input, init) => app.request(input as string, init),
+    dispatch: (input, init) => app.request(input, init),
   });
 };

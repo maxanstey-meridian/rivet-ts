@@ -1,4 +1,4 @@
-import { members } from "@myapp/client";
+import { client } from "@myapp/client";
 import { configureLocalRivet } from "../rivet-local";
 
 const render = async () => {
@@ -9,11 +9,11 @@ const render = async () => {
     return;
   }
 
-  const result = await members.list();
+  const result = await client.GET("/api/members");
 
   output.textContent = [
-    "members.list()",
-    JSON.stringify(result, null, 2),
+    'client.GET("/api/members")',
+    JSON.stringify(result.data, null, 2),
     "",
     "Open ui/src/main.ts and keep consuming @myapp/client.",
   ].join("\n");

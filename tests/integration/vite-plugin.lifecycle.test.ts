@@ -39,6 +39,13 @@ describe("vite plugin lifecycle", () => {
       path.join(nodeModulesDirectory, "hono"),
       "dir",
     );
+    // The generated client package imports openapi-fetch at runtime; the
+    // sample workspace resolves it from this repo's store (offline).
+    await fs.symlink(
+      path.join(projectRoot, "node_modules", "openapi-fetch"),
+      path.join(nodeModulesDirectory, "openapi-fetch"),
+      "dir",
+    );
     await fs.writeFile(path.join(sourceDirectory, "package.json"), '{ "type": "module" }\n');
 
     await fs.writeFile(
@@ -97,6 +104,9 @@ describe("vite plugin lifecycle", () => {
       "dir",
     );
 
+    // The fake binary mirrors the real tool's contract for WP-5a: `--from
+    // <contract.json> --output <dir> --openapi <path>` writes the OpenAPI spec
+    // the plugin then feeds to openapi-typescript.
     const fakeRivetBinaryPath = path.join(sampleRoot, "fake-rivet.mjs");
     await fs.writeFile(
       fakeRivetBinaryPath,
@@ -106,34 +116,74 @@ describe("vite plugin lifecycle", () => {
         'import path from "node:path";',
         "",
         "const args = process.argv.slice(2);",
-        'const outputIndex = args.indexOf("--output");',
-        "if (outputIndex === -1 || outputIndex + 1 >= args.length) {",
-        '  throw new Error("Missing --output");',
+        'const openApiIndex = args.indexOf("--openapi");',
+        "if (openApiIndex === -1 || openApiIndex + 1 >= args.length) {",
+        '  throw new Error("Missing --openapi");',
         "}",
-        "const outDir = args[outputIndex + 1];",
-        'const clientDir = path.join(outDir, "client");',
-        'const typesDir = path.join(outDir, "types");',
-        "await fs.mkdir(clientDir, { recursive: true });",
-        "await fs.mkdir(typesDir, { recursive: true });",
-        'await fs.writeFile(path.join(typesDir, "common.ts"), `export type MemberDto = { id: string; email: string };\\nexport type CreateMemberRequest = { email: string };\\n`);',
-        'await fs.writeFile(path.join(typesDir, "index.ts"), `export * from "./common.js";\\n`);',
-        'await fs.writeFile(path.join(outDir, "schemas.ts"), `export const createMemberRequestSchema = { type: "object" };\\n`);',
-        'await fs.writeFile(path.join(outDir, "validators.ts"), `export const validateCreateMemberRequest = () => true;\\n`);',
-        'await fs.writeFile(path.join(outDir, "rivet.ts"), [',
-        '  "let currentConfig = { baseUrl: \\"\\", fetch: globalThis.fetch };",',
-        '  "export const configureRivet = (config) => { currentConfig = { ...currentConfig, ...config }; };",',
-        '  "export const rivetFetch = async (method, route, init = {}) => {",',
-        '  "  const response = await currentConfig.fetch(`${currentConfig.baseUrl}${route}`, {",',
-        '  "    method,",',
-        '  "    body: init.body ? JSON.stringify(init.body) : undefined,",',
-        '  "    headers: init.body ? { \\"content-type\\": \\"application/json\\" } : undefined,",',
-        '  "  });",',
-        '  "  return response.json();",',
-        '  "};",',
-        '  "",',
-        '].join("\\n"));',
-        'await fs.writeFile(path.join(clientDir, "members.ts"), `import { rivetFetch } from "../rivet.js";\\nexport const list = () => rivetFetch("GET", "/api/members");\\nexport const create = (body) => rivetFetch("POST", "/api/members", { body });\\n`);',
-        'await fs.writeFile(path.join(clientDir, "index.ts"), `export * as members from "./members.js";\\n`);',
+        'const fromIndex = args.indexOf("--from");',
+        "if (fromIndex === -1 || fromIndex + 1 >= args.length) {",
+        '  throw new Error("Missing --from");',
+        "}",
+        "// The contract JSON must already exist when the binary runs.",
+        "await fs.access(args[fromIndex + 1]);",
+        "const openApiPath = args[openApiIndex + 1];",
+        "await fs.mkdir(path.dirname(openApiPath), { recursive: true });",
+        "const spec = {",
+        '  openapi: "3.1.0",',
+        '  info: { title: "myapp", version: "1.0.0" },',
+        "  paths: {",
+        '    "/api/members": {',
+        "      get: {",
+        "        responses: {",
+        '          "200": {',
+        '            description: "ok",',
+        "            content: {",
+        '              "application/json": {',
+        "                schema: {",
+        '                  type: "array",',
+        "                  items: {",
+        '                    type: "object",',
+        '                    properties: { id: { type: "string" }, email: { type: "string" } },',
+        '                    required: ["id", "email"],',
+        "                  },",
+        "                },",
+        "              },",
+        "            },",
+        "          },",
+        "        },",
+        "      },",
+        "      post: {",
+        "        requestBody: {",
+        "          required: true,",
+        "          content: {",
+        '            "application/json": {',
+        "              schema: {",
+        '                type: "object",',
+        '                properties: { email: { type: "string" } },',
+        '                required: ["email"],',
+        "              },",
+        "            },",
+        "          },",
+        "        },",
+        "        responses: {",
+        '          "201": {',
+        '            description: "created",',
+        "            content: {",
+        '              "application/json": {',
+        "                schema: {",
+        '                  type: "object",',
+        '                  properties: { id: { type: "string" }, email: { type: "string" } },',
+        '                  required: ["id", "email"],',
+        "                },",
+        "              },",
+        "            },",
+        "          },",
+        "        },",
+        "      },",
+        "    },",
+        "  },",
+        "};",
+        "await fs.writeFile(openApiPath, `${JSON.stringify(spec, null, 2)}\\n`);",
         "",
       ].join("\n"),
       "utf8",
@@ -185,9 +235,8 @@ describe("vite plugin lifecycle", () => {
     await expect(
       fs.stat(path.join(apiRoot, "generated", "api.contract.json")),
     ).resolves.toBeTruthy();
-    await expect(
-      fs.stat(path.join(clientRoot, "generated", "rivet", "client", "index.ts")),
-    ).resolves.toBeTruthy();
+    await expect(fs.stat(path.join(clientRoot, "generated", "openapi.json"))).resolves.toBeTruthy();
+    await expect(fs.stat(path.join(clientRoot, "generated", "schema.d.ts"))).resolves.toBeTruthy();
     await expect(fs.stat(path.join(clientRoot, "generated", "index.ts"))).resolves.toBeTruthy();
     await expect(fs.stat(path.join(sampleRoot, "dist", "index.html"))).resolves.toBeTruthy();
 
@@ -196,17 +245,28 @@ describe("vite plugin lifecycle", () => {
       path.join(sampleRoot, "ui", "rivet-local.ts"),
       "utf8",
     );
+    const schemaSource = await fs.readFile(
+      path.join(clientRoot, "generated", "schema.d.ts"),
+      "utf8",
+    );
     const clientEntrySource = await fs.readFile(
       path.join(clientRoot, "generated", "index.ts"),
       "utf8",
     );
-    expect(uiMainSource).toContain('import { members } from "@myapp/client";');
-    expect(uiMainSource).toContain("members.list()");
+    expect(uiMainSource).toContain('import { client } from "@myapp/client";');
+    expect(uiMainSource).toContain('client.GET("/api/members")');
     expect(uiLocalRivetSource).toContain('import { app } from "@myapp/api/local";');
     expect(uiLocalRivetSource).toContain("app.request");
-    expect(clientEntrySource).toContain("export { RivetError, configureRivet, rivetFetch }");
-    expect(clientEntrySource).toContain('export * as schemas from "./rivet/schemas.js";');
-    expect(clientEntrySource).toContain('export * as validators from "./rivet/validators.js";');
+    expect(schemaSource).toContain("export interface paths");
+    expect(schemaSource).toContain('"/api/members"');
+    expect(schemaSource).toContain("email: string;");
+    expect(clientEntrySource).toContain(
+      'import createOpenApiClient, { type Client, type ClientOptions } from "openapi-fetch";',
+    );
+    expect(clientEntrySource).toContain('import type { paths } from "./schema.js";');
+    expect(clientEntrySource).toContain("export const configureRivet = (config: RivetConfig)");
+    expect(clientEntrySource).not.toContain("rivetFetch");
+    expect(clientEntrySource).not.toContain("RivetError");
   }, 20_000);
 
   // V3: the plugin used to concatenate frontend diagnostics with the lowerer

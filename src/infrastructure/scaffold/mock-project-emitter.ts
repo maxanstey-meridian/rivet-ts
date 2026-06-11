@@ -4,7 +4,7 @@ import {
   MockProjectEmitter,
   type MockProjectEmitterConfig,
 } from "../../application/ports/mock-project-emitter.js";
-import { toClientNamespace } from "../codegen/client-package-emitter.js";
+import { emitClientPackage } from "../codegen/client-package-emitter.js";
 import { toKebabCase } from "../codegen/kebab-case.js";
 import { collectLocalDependencies } from "../typescript/local-source-dependencies.js";
 import { generateEndpointMock } from "./mock-value-generator.js";
@@ -21,6 +21,8 @@ type ContractGroup = {
 type HandlerDescriptor = {
   readonly endpointName: string;
   readonly runtimeEndpointName: string;
+  readonly httpMethod: string;
+  readonly routeTemplate: string;
   readonly group: string;
   readonly contractName: string;
   readonly moduleDirectoryName: string;
@@ -41,8 +43,8 @@ type PackageManifest = {
 };
 
 type DemoClientCall = {
-  readonly clientNamespace: string;
-  readonly methodName: string;
+  readonly httpMethod: string;
+  readonly routeTemplate: string;
   readonly label: string;
 };
 
@@ -52,6 +54,7 @@ const DEFAULT_DEPENDENCY_CRUISER_VERSION = "^17.3.10";
 const RIVET_TS_DEPENDENCY_REPOSITORY = "github:maxanstey-meridian/rivet-ts";
 const DEFAULT_RIVET_VERSION = "0.34.0";
 const DEFAULT_ZOD_VERSION = "^4.1.12";
+const DEFAULT_OPENAPI_FETCH_VERSION = "^0.17.0";
 
 const toCamelCase = (value: string): string => {
   const kebab = toKebabCase(value);
@@ -208,6 +211,8 @@ const buildHandlerDescriptors = (
       descriptors.push({
         endpointName,
         runtimeEndpointName,
+        httpMethod: endpoint.httpMethod.toUpperCase(),
+        routeTemplate: endpoint.routeTemplate,
         group: group.group,
         contractName: group.contractName,
         moduleDirectoryName: group.moduleDirectoryName,
@@ -239,9 +244,9 @@ const selectDemoClientCall = (
     }
 
     return {
-      clientNamespace: toClientNamespace(group.group),
-      methodName: supportedHandler.runtimeEndpointName,
-      label: `${toClientNamespace(group.group)}.${supportedHandler.runtimeEndpointName}()`,
+      httpMethod: supportedHandler.httpMethod,
+      routeTemplate: supportedHandler.routeTemplate,
+      label: `client.${supportedHandler.httpMethod}(${JSON.stringify(supportedHandler.routeTemplate)})`,
     };
   }
 
@@ -430,7 +435,7 @@ const emitUiMainSource = (packageScope: string, demoCall: DemoClientCall | undef
   }
 
   return [
-    `import { ${demoCall.clientNamespace} } from "${packageScope}/client";`,
+    `import { client } from "${packageScope}/client";`,
     'import { configureLocalRivet } from "../rivet-local";',
     "",
     "const render = async () => {",
@@ -445,7 +450,7 @@ const emitUiMainSource = (packageScope: string, demoCall: DemoClientCall | undef
     "",
     "  output.textContent = [",
     `    ${JSON.stringify(demoCall.label)},`,
-    "    JSON.stringify(result, null, 2),",
+    "    JSON.stringify(result.data, null, 2),",
     '    "",',
     `    ${JSON.stringify(`Open ui/src/main.ts and keep consuming ${packageScope}/client.`)},`,
     '  ].join("\\n");',
@@ -471,7 +476,7 @@ const emitUiLocalRivetSource = (packageScope: string): string =>
     "  configureRivetLocalRuntime({",
     "    ...config,",
     "    configureRivet,",
-    "    dispatch: (input, init) => app.request(input as string, init),",
+    "    dispatch: (input, init) => app.request(input, init),",
     "  });",
     "};",
     "",
@@ -789,8 +794,11 @@ const emitApiPackageJsonSource = async (packageScope: string): Promise<string> =
           "./local": "./src/app/local.ts",
         },
         scripts: {
+          // The binary resolves --openapi against --output, so ../openapi.json
+          // lands at ../client/generated/openapi.json where `rivet-ts generate`
+          // picks it up to emit schema.d.ts + index.ts.
           generate:
-            "pnpm exec rivet-reflect-ts --entry src/app/contracts.ts --out generated/api.contract.json && rivet --from generated/api.contract.json --output ../client/generated/rivet && pnpm exec rivet-ts generate --generated-root ../client/generated",
+            "pnpm exec rivet-reflect-ts --entry src/app/contracts.ts --out generated/api.contract.json && rivet --from generated/api.contract.json --output ../client/generated/rivet --openapi ../openapi.json && pnpm exec rivet-ts generate --generated-root ../client/generated",
         },
         dependencies: {
           hono: honoVersion,
@@ -806,6 +814,8 @@ const emitApiPackageJsonSource = async (packageScope: string): Promise<string> =
 const emitClientPackageJsonSource = async (packageScope: string): Promise<string> => {
   const manifest = await readPackageManifest();
   const zodVersion = manifest.dependencies?.zod ?? DEFAULT_ZOD_VERSION;
+  const openApiFetchVersion =
+    manifest.dependencies?.["openapi-fetch"] ?? DEFAULT_OPENAPI_FETCH_VERSION;
 
   return (
     JSON.stringify(
@@ -817,6 +827,7 @@ const emitClientPackageJsonSource = async (packageScope: string): Promise<string
           ".": "./generated/index.ts",
         },
         dependencies: {
+          "openapi-fetch": openApiFetchVersion,
           "rivet-ts": toRivetTsDependency(manifest),
           zod: zodVersion,
         },
@@ -825,6 +836,43 @@ const emitClientPackageJsonSource = async (packageScope: string): Promise<string
       2,
     ) + "\n"
   );
+};
+
+/**
+ * Bootstrap OpenAPI document: routes and statuses only, no schemas. It exists
+ * so a fresh scaffold has a coherent generated client chain (openapi.json →
+ * schema.d.ts → index.ts) before the first real `generate`/vite run, which
+ * overwrites all three with artifacts derived from the Rivet binary's full
+ * spec — the binary stays the sole real OpenAPI emitter (Option B).
+ */
+const buildBootstrapOpenApiDocument = (config: MockProjectEmitterConfig): object => {
+  const paths: Record<string, Record<string, object>> = {};
+
+  for (const endpoint of config.document.endpoints) {
+    const responses: Record<string, object> = {};
+
+    for (const response of endpoint.responses) {
+      responses[String(response.statusCode)] = response.dataType
+        ? {
+            description: response.description ?? "Success",
+            content: { "application/json": {} },
+          }
+        : { description: response.description ?? "Success" };
+    }
+
+    if (Object.keys(responses).length === 0) {
+      responses["200"] = { description: "Success" };
+    }
+
+    const route = (paths[endpoint.routeTemplate] ??= {});
+    route[endpoint.httpMethod.toLowerCase()] = { responses };
+  }
+
+  return {
+    openapi: "3.1.0",
+    info: { title: config.projectName, version: "0.0.0" },
+    paths,
+  };
 };
 
 export class FileSystemMockProjectEmitter extends MockProjectEmitter {
@@ -960,5 +1008,14 @@ export class FileSystemMockProjectEmitter extends MockProjectEmitter {
         await fs.writeFile(targetPath, content);
       }),
     ]);
+
+    // Bootstrap client artifacts (S3 analogue for the client side): the ui
+    // imports the generated client package, so a fresh scaffold must contain
+    // openapi.json + schema.d.ts + index.ts before the first generate run.
+    await fs.writeFile(
+      path.join(clientGeneratedRoot, "openapi.json"),
+      `${JSON.stringify(buildBootstrapOpenApiDocument(config), null, 2)}\n`,
+    );
+    await emitClientPackage(clientGeneratedRoot);
   }
 }

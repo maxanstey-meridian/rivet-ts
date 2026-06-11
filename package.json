@@ -54,6 +54,8 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
+    "openapi-fetch": "^0.17.0",
+    "openapi-typescript": "^7.13.0",
     "tar": "^7.4.3",
     "typescript": "^6.0.2"
   },
