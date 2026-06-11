@@ -35,7 +35,7 @@ type ContractEndpointJson = {
   readonly isFormEncoded?: boolean;
 };
 
-type ContractJson = {
+export type ContractJson = {
   readonly endpoints: ReadonlyArray<ContractEndpointJson>;
 };
 

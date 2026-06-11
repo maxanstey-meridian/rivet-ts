@@ -4,17 +4,29 @@ import {
   MockProjectEmitter,
   type MockProjectEmitterConfig,
 } from "../../application/ports/mock-project-emitter.js";
-import { emitClientPackage } from "../codegen/client-package-emitter.js";
 import { toKebabCase } from "../codegen/kebab-case.js";
 import { collectLocalDependencies } from "../typescript/local-source-dependencies.js";
 import { generateEndpointMock } from "./mock-value-generator.js";
+import {
+  checkOutDirSafety,
+  emitWorkspaceSkeleton,
+  toPackageScope,
+  type WorkspaceConfig,
+} from "./workspace-emitter.js";
+
+/**
+ * Contract-driven scaffold (`scaffold-mock`): lowers the user's contract entry
+ * and emits a golden-shape workspace whose api modules return synthesized mock
+ * values. File naming is suffix-free (Meridian §9.1): use cases live at
+ * `modules/<m>/application/<endpoint>.ts`, route registration at
+ * `src/interface/http/<m>-routes.ts`.
+ */
 
 type ContractGroup = {
   readonly contractName: string;
   readonly contractBaseName: string;
   readonly group: string;
   readonly moduleDirectoryName: string;
-  readonly registrationName: string;
   readonly endpointNames: readonly string[];
 };
 
@@ -27,8 +39,6 @@ type HandlerDescriptor = {
   readonly contractName: string;
   readonly moduleDirectoryName: string;
   readonly fileBaseName: string;
-  readonly handlerExportName: string;
-  readonly appHandlerAlias: string;
   readonly useCaseExportName: string;
   readonly pattern: string;
   readonly body: string;
@@ -42,20 +52,9 @@ type PackageManifest = {
   readonly devDependencies?: Record<string, string>;
 };
 
-type DemoClientCall = {
-  readonly httpMethod: string;
-  readonly routeTemplate: string;
-  readonly label: string;
-};
-
-const DEFAULT_TYPESCRIPT_VERSION = "^6.0.2";
-const DEFAULT_VITE_VERSION = "^6.4.2";
-const DEFAULT_DEPENDENCY_CRUISER_VERSION = "^17.3.10";
 const RIVET_TS_DEPENDENCY_REPOSITORY = "github:maxanstey-meridian/rivet-ts";
-const DEFAULT_RIVET_VERSION = "0.34.0";
-const DEFAULT_OPENAPI_FETCH_VERSION = "^0.17.0";
 
-const toCamelCase = (value: string): string => {
+export const toCamelCase = (value: string): string => {
   const kebab = toKebabCase(value);
   const segments = kebab.split("-").filter((segment) => segment.length > 0);
 
@@ -66,7 +65,7 @@ const toCamelCase = (value: string): string => {
     .join("");
 };
 
-const toPascalCase = (value: string): string => {
+export const toPascalCase = (value: string): string => {
   const camel = toCamelCase(value);
   return camel.length === 0 ? camel : `${camel[0]?.toUpperCase() ?? ""}${camel.slice(1)}`;
 };
@@ -100,22 +99,30 @@ const indent = (value: string, spaces: number): string => {
     .join("\n");
 };
 
-const toPackageScope = (projectName: string): string =>
-  `@${toKebabCase(projectName) || "rivet-mock"}`;
-
-const readPackageManifest = async (): Promise<PackageManifest> => {
+export const readPackageManifest = async (): Promise<PackageManifest> => {
   const manifestPath = new URL("../../../package.json", import.meta.url);
   const manifestText = await fs.readFile(manifestPath, "utf8");
   return JSON.parse(manifestText) as PackageManifest;
 };
 
-const toRivetTsDependency = (manifest: PackageManifest): string => {
+export const toRivetTsDependency = (manifest: PackageManifest): string => {
   if (!manifest.version) {
     throw new Error("rivet-ts package.json is missing a version; cannot pin scaffold dependency.");
   }
 
   return `${RIVET_TS_DEPENDENCY_REPOSITORY}#v${manifest.version}`;
 };
+
+export const resolveWorkspaceVersions = (
+  manifest: PackageManifest,
+): WorkspaceConfig["versions"] => ({
+  hono: manifest.peerDependencies?.hono ?? "^4.0.0",
+  openApiFetch: manifest.dependencies?.["openapi-fetch"] ?? "^0.17.0",
+  openApiTypescript: manifest.dependencies?.["openapi-typescript"] ?? "^7.13.0",
+  typescript: manifest.devDependencies?.typescript ?? "^6.0.2",
+  nodeTypes: manifest.devDependencies?.["@types/node"] ?? "^25.5.2",
+  vitest: manifest.devDependencies?.vitest ?? "^4.1.2",
+});
 
 const buildContractGroups = (config: MockProjectEmitterConfig): readonly ContractGroup[] =>
   config.contracts.map((contract) => {
@@ -126,7 +133,6 @@ const buildContractGroups = (config: MockProjectEmitterConfig): readonly Contrac
       contractBaseName,
       group: deriveGroupName(contract.name),
       moduleDirectoryName: toKebabCase(contractBaseName),
-      registrationName: `register${toPascalCase(contractBaseName)}Module`,
       endpointNames: contract.endpoints.map((endpoint) => endpoint.name),
     };
   });
@@ -169,10 +175,13 @@ const buildHandlerDescriptors = (
       // Route-template params lower to source "route" but are absent from the
       // handler's input type, so keying off the document made handlers with
       // route params fail to compile.
+      const isBodyMethod = /^(PATCH|POST|PUT)$/iu.test(spec?.method ?? "");
       const patternParts = [
-        spec?.hasInput ? "body" : null,
+        // H1: `input` is a body only on body-carrying methods; on GET/DELETE
+        // the adapter (and the handler types) deliver it under `query`.
+        spec?.hasInput ? (isBodyMethod ? "body" : "query") : null,
         spec?.hasParams ? "params" : null,
-        spec?.hasQuery ? "query" : null,
+        spec?.hasQuery && !(spec?.hasInput && !isBodyMethod) ? "query" : null,
       ].filter((part): part is string => part !== null);
       const pattern = patternParts.length === 0 ? "" : `{ ${patternParts.join(", ")} }`;
 
@@ -189,22 +198,27 @@ const buildHandlerDescriptors = (
 
       for (const param of unsupportedParams) {
         todoLines.push(
-          `  // TODO: Endpoint "${endpoint.name}" uses unsupported param source "${param.source}" in scaffold-mock v1.`,
+          `  // TODO: Endpoint "${endpoint.name}" uses unsupported param source "${param.source}" in scaffold-mock.`,
         );
       }
 
+      const outputTypeName = `${endpointName}Output`;
       let body: string;
       if (mock.result.kind === "todo" || unsupportedParams.length > 0) {
         const message =
           mock.result.kind === "todo"
             ? mock.result.message
-            : `Endpoint "${endpoint.name}" uses unsupported parameter sources in scaffold-mock v1.`;
+            : `Endpoint "${endpoint.name}" uses unsupported parameter sources in scaffold-mock.`;
         body = [...todoLines, `  throw new Error(${JSON.stringify(message)});`].join("\n");
       } else if (mock.result.kind === "void") {
         body = "  return undefined;";
       } else {
         const expression = JSON.stringify(mock.result.value, null, 2);
-        body = `  return ${indent(expression, 2).trimStart()};`;
+        // Enum members, brands, and example-backed values are not assignable
+        // as raw JSON literals; the cast keeps the mock honest about being a
+        // mock while letting a fresh scaffold pass its own typecheck.
+        const cast = mock.result.needsCast ? ` as ${outputTypeName}` : "";
+        body = `  return ${indent(expression, 2).trimStart()}${cast};`;
       }
 
       descriptors.push({
@@ -216,9 +230,7 @@ const buildHandlerDescriptors = (
         contractName: group.contractName,
         moduleDirectoryName: group.moduleDirectoryName,
         fileBaseName: toKebabCase(endpointName),
-        handlerExportName: `${toCamelCase(endpointName)}Handler`,
-        appHandlerAlias: `${toCamelCase(`${group.moduleDirectoryName}-${toKebabCase(endpointName)}`)}Handler`,
-        useCaseExportName: `execute${toPascalCase(endpointName)}`,
+        useCaseExportName: toCamelCase(endpointName),
         pattern,
         body,
         supportsDemoCall: supportedSources.length === 0 && mock.result.kind === "value",
@@ -232,7 +244,7 @@ const buildHandlerDescriptors = (
 const selectDemoClientCall = (
   groups: readonly ContractGroup[],
   handlers: readonly HandlerDescriptor[],
-): DemoClientCall | undefined => {
+): WorkspaceConfig["demoCall"] => {
   for (const group of groups) {
     const supportedHandler = handlers.find(
       (handler) => handler.contractName === group.contractName && handler.supportsDemoCall,
@@ -245,7 +257,6 @@ const selectDemoClientCall = (
     return {
       httpMethod: supportedHandler.httpMethod,
       routeTemplate: supportedHandler.routeTemplate,
-      label: `client.${supportedHandler.httpMethod}(${JSON.stringify(supportedHandler.routeTemplate)})`,
     };
   }
 
@@ -270,579 +281,88 @@ const emitUseCaseSource = (descriptor: HandlerDescriptor): string => {
   ].join("\n");
 };
 
-const emitHandlerSource = (descriptor: HandlerDescriptor): string => {
-  const parameter = descriptor.pattern.length === 0 ? "" : "input";
-  const invocation =
-    descriptor.pattern.length === 0
-      ? `${descriptor.useCaseExportName}({})`
-      : `${descriptor.useCaseExportName}(input)`;
+const emitRoutesSource = (
+  group: ContractGroup,
+  handlers: readonly HandlerDescriptor[],
+): string => {
+  const lines = [
+    'import type { Hono } from "hono";',
+    'import { type ContractJson, registerRivetHonoRoutes } from "rivet-ts/hono";',
+    `import type { ${group.contractName} } from "#contract";`,
+  ];
 
-  return [
-    'import type { RivetHandler } from "rivet-ts";',
-    `import type { ${descriptor.contractName} } from "#contract";`,
-    `import { ${descriptor.useCaseExportName} } from "../../application/${descriptor.fileBaseName}.use-case.js";`,
-    "",
-    `export const ${descriptor.handlerExportName}: RivetHandler<${descriptor.contractName}, "${descriptor.endpointName}"> = async ${parameter.length === 0 ? "()" : `(${parameter})`} => {`,
-    `  return ${invocation};`,
-    "};",
-    "",
-  ].join("\n");
-};
-
-const emitModuleSource = (group: ContractGroup): string =>
-  [
-    `export const ${group.registrationName} = (): void => {`,
-    "  // Module composition root goes here.",
-    "};",
-    "",
-  ].join("\n");
-
-const emitCommonModuleSource = (): string =>
-  [
-    "export const registerCommonModule = (): void => {",
-    "  // Module composition root goes here.",
-    "};",
-    "",
-  ].join("\n");
-
-const emitPlaceholderSource = (): string => "export {};\n";
-
-const emitMapContractErrorSource = (): string =>
-  [
-    'import type { Context } from "hono";',
-    "",
-    "/* App-level transport error hook. Return null when this error is not handled here; app.ts will rethrow it. */",
-    "export const tryMapContractError = (_error: unknown, _context: Context): Response | null => {",
-    "  return null;",
-    "};",
-    "",
-  ].join("\n");
-
-const emitContractSource = (groups: readonly ContractGroup[]): string => {
-  const exports = groups
-    .map((group) => group.contractName)
-    .sort()
-    .join(", ");
-
-  return `export type { ${exports} } from "./contracts.js";\n`;
-};
-
-const emitCompositionSource = (groups: readonly ContractGroup[]): string => {
-  const lines = [];
-
-  for (const group of groups) {
+  for (const handler of handlers) {
     lines.push(
-      `import { ${group.registrationName} } from "../modules/${group.moduleDirectoryName}/${group.moduleDirectoryName}.module.js";`,
+      `import { ${handler.useCaseExportName} } from "../../modules/${handler.moduleDirectoryName}/application/${handler.fileBaseName}.js";`,
     );
   }
 
-  lines.push('import { registerCommonModule } from "../modules/common/common.module.js";');
+  const registrationName = `register${toPascalCase(group.contractBaseName)}Routes`;
 
   lines.push("");
-  lines.push("export const compose = (): void => {");
-  lines.push("  registerCommonModule();");
-
-  for (const group of groups) {
-    lines.push(`  ${group.registrationName}();`);
+  lines.push(`export const ${registrationName} = (app: Hono, contract: ContractJson): void => {`);
+  lines.push(`  registerRivetHonoRoutes<${group.contractName}>(app, contract, {`);
+  lines.push(`    group: ${JSON.stringify(group.group)},`);
+  lines.push("    handlers: {");
+  for (const handler of handlers) {
+    const invocation =
+      handler.pattern.length === 0
+        ? `() => ${handler.useCaseExportName}({})`
+        : `(input) => ${handler.useCaseExportName}(input)`;
+    lines.push(`      ${JSON.stringify(handler.endpointName)}: ${invocation},`);
   }
-
+  lines.push("    },");
+  lines.push("  });");
   lines.push("};");
   lines.push("");
 
   return lines.join("\n");
 };
 
-const emitAppSource = (
-  groups: readonly ContractGroup[],
-  handlers: readonly HandlerDescriptor[],
-): string => {
+const emitAppSource = (groups: readonly ContractGroup[]): string => {
   const lines = [
     'import { Hono } from "hono";',
-    'import { registerRivetHonoRoutes } from "rivet-ts/hono";',
-    'import contract from "../generated/api.contract.json";',
-    'import { compose } from "./app/composition.js";',
-    'import { tryMapContractError } from "./app/map-contract-error.js";',
+    'import contract from "../generated/api.contract.json" with { type: "json" };',
   ];
 
   for (const group of groups) {
-    lines.push(`import type { ${group.contractName} } from "#contract";`);
-  }
-
-  for (const handler of handlers) {
-    // Handler exports are named after the endpoint alone, so two contracts that
-    // declare the same endpoint name would collide here without a distinct,
-    // module-qualified import alias (S1).
     lines.push(
-      `import { ${handler.handlerExportName} as ${handler.appHandlerAlias} } from "./modules/${handler.moduleDirectoryName}/interface/http/${handler.fileBaseName}.handler.js";`,
+      `import { register${toPascalCase(group.contractBaseName)}Routes } from "./interface/http/${group.moduleDirectoryName}-routes.js";`,
     );
   }
 
-  lines.push("");
-  lines.push("compose();");
   lines.push("");
   lines.push("export const app = new Hono();");
   lines.push("");
 
   for (const group of groups) {
-    const moduleHandlers = handlers.filter(
-      (handler) => handler.contractName === group.contractName,
-    );
-
-    lines.push(`registerRivetHonoRoutes<${group.contractName}>(app, contract, {`);
-    lines.push("  handlers: {");
-    for (const handler of moduleHandlers) {
-      lines.push(`    ${handler.endpointName}: ${handler.appHandlerAlias},`);
-    }
-    lines.push("  },");
-    lines.push(`  group: ${JSON.stringify(group.group)},`);
-    lines.push("});");
-    lines.push("");
+    lines.push(`register${toPascalCase(group.contractBaseName)}Routes(app, contract);`);
   }
 
-  lines.push("app.onError((error, context) => {");
-  lines.push("  const response = tryMapContractError(error, context);");
-  lines.push("  if (response !== null) {");
-  lines.push("    return response;");
-  lines.push("  }");
   lines.push("");
-  lines.push("  throw error;");
+  lines.push("// Unhandled handler errors become a structured 500 in BOTH the local");
+  lines.push("// (in-browser) transport and a real server — same envelope, same status,");
+  lines.push('// keeping the "local now, server later" behavioral parity promise.');
+  lines.push("app.onError((error, context) => {");
+  lines.push("  console.error(error);");
+  lines.push('  return context.json({ code: "internal_error", message: "Unexpected error." }, 500);');
   lines.push("});");
   lines.push("");
 
   return lines.join("\n");
 };
 
-const emitLocalSource = (): string => 'export { app } from "../app.js";\n';
-
-const emitUiMainSource = (packageScope: string, demoCall: DemoClientCall | undefined): string => {
-  if (!demoCall) {
-    return [
-      'import { configureLocalRivet } from "../rivet-local";',
-      "",
-      "configureLocalRivet();",
-      "",
-      'const output = document.getElementById("output");',
-      "",
-      "if (output) {",
-      "  output.textContent = [",
-      '    "Local Rivet transport configured.",',
-      `    ${JSON.stringify(`Open ui/src/main.ts and start consuming ${packageScope}/client.`)},`,
-      '  ].join("\\n");',
-      "}",
-      "",
-    ].join("\n");
-  }
-
-  return [
-    `import { client } from "${packageScope}/client";`,
-    'import { configureLocalRivet } from "../rivet-local";',
-    "",
-    "const render = async () => {",
-    "  configureLocalRivet();",
-    "",
-    '  const output = document.getElementById("output");',
-    "  if (!output) {",
-    "    return;",
-    "  }",
-    "",
-    `  const result = await ${demoCall.label};`,
-    "",
-    "  output.textContent = [",
-    `    ${JSON.stringify(demoCall.label)},`,
-    "    JSON.stringify(result.data, null, 2),",
-    '    "",',
-    `    ${JSON.stringify(`Open ui/src/main.ts and keep consuming ${packageScope}/client.`)},`,
-    '  ].join("\\n");',
-    "};",
-    "",
-    "void render();",
-    "",
-  ].join("\n");
-};
-
-const emitUiLocalRivetSource = (packageScope: string): string =>
-  [
-    `import { configureRivet, type RivetConfig } from "${packageScope}/client";`,
-    `import { app } from "${packageScope}/api/local";`,
-    'import { configureLocalRivet as configureRivetLocalRuntime } from "rivet-ts/local";',
-    "",
-    'type LocalRivetConfig = Omit<RivetConfig, "fetch" | "baseUrl"> & {',
-    "  readonly baseUrl?: string;",
-    "};",
-    "",
-    '/* Replace this with configureRivet({ baseUrl: "https://api.example.com" }) when you are ready to promote the API to a real server. */',
-    "export const configureLocalRivet = (config: LocalRivetConfig = {}) => {",
-    "  configureRivetLocalRuntime({",
-    "    ...config,",
-    "    configureRivet,",
-    "    dispatch: (input, init) => app.request(input, init),",
-    "  });",
-    "};",
-    "",
-  ].join("\n");
-
-const emitUiIndexHtmlSource = (projectName: string): string => `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>${projectName}</title>
-  <style>
-    body { font-family: monospace; background: #1a1a1a; color: #e0e0e0; padding: 2rem; }
-    h1 { color: #fff; font-size: 1.2rem; }
-    p { color: #888; margin-bottom: 1rem; }
-    pre { background: #111; padding: 1rem; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; }
-  </style>
-</head>
-<body>
-  <h1>${projectName}</h1>
-  <p>Hono-backed Rivet mock scaffold. Local transport is wired in ui/rivet-local.ts.</p>
-  <pre id="output"></pre>
-  <script type="module" src="/src/main.ts"></script>
-</body>
-</html>
-`;
-
-const emitRootViteConfigSource = (): string =>
-  [
-    'import { defineConfig } from "vite";',
-    'import { rivetTs } from "rivet-ts/vite";',
-    "",
-    "export default defineConfig({",
-    '  root: "./ui",',
-    "  plugins: [",
-    "    rivetTs({",
-    '      entry: "./packages/api/src/app/contracts.ts",',
-    '      apiRoot: "./packages/api",',
-    '      runtimeContractOut: "./packages/api/generated/api.contract.json",',
-    '      clientOutDir: "./packages/client/generated",',
-    "      rivet: {",
-    `        version: ${JSON.stringify(DEFAULT_RIVET_VERSION)},`,
-    "      },",
-    "    }),",
-    "  ],",
-    "});",
-    "",
-  ].join("\n");
-
-const emitPnpmWorkspaceSource = (): string => ["packages:", '  - "packages/*"', ""].join("\n");
-
-const emitRootTsconfigSource = (packageScope: string): string =>
-  JSON.stringify(
-    {
-      compilerOptions: {
-        target: "ES2022",
-        module: "ESNext",
-        moduleResolution: "Bundler",
-        lib: ["ES2022", "DOM"],
-        strict: true,
-        noEmit: true,
-        verbatimModuleSyntax: true,
-        isolatedModules: true,
-        esModuleInterop: true,
-        resolveJsonModule: true,
-        skipLibCheck: true,
-        ignoreDeprecations: "6.0",
-        types: ["node"],
-        baseUrl: ".",
-        paths: {
-          [`${packageScope}/client`]: ["./packages/client/generated/index.ts"],
-          [`${packageScope}/api/local`]: ["./packages/api/src/app/local.ts"],
-        },
-      },
-      include: ["ui/**/*.ts", "vite.config.ts"],
-    },
-    null,
-    2,
-  ) + "\n";
-
-const emitDependencyCruiserConfigSource = (): string =>
-  [
-    "module.exports = {",
-    "  forbidden: [",
-    "    {",
-    '      name: "no-circular",',
-    '      severity: "error",',
-    '      comment: "Circular dependencies make ownership and dependency direction unclear.",',
-    "      from: {},",
-    "      to: {",
-    "        circular: true,",
-    "      },",
-    "    },",
-    "    {",
-    '      name: "no-feature-to-feature",',
-    '      severity: "error",',
-    '      comment: "Feature modules may depend only on themselves and common.",',
-    "      from: {",
-    '        path: "^packages/api/src/modules/(?!common/)([^/]+)/.+\\\\.ts$",',
-    "      },",
-    "      to: {",
-    '        path: "^packages/api/src/modules/.+\\\\.ts$",',
-    '        pathNot: "^packages/api/src/modules/($1|common)/",',
-    "      },",
-    "    },",
-    "    {",
-    '      name: "no-common-to-feature",',
-    '      severity: "error",',
-    '      comment: "Common is shared infrastructure, not a backdoor into feature internals.",',
-    "      from: {",
-    '        path: "^packages/api/src/modules/common/.+\\\\.ts$",',
-    "      },",
-    "      to: {",
-    '        path: "^packages/api/src/modules/(?!common/).+\\\\.ts$",',
-    "      },",
-    "    },",
-    "    {",
-    '      name: "no-domain-outside-own-domain",',
-    '      severity: "error",',
-    '      comment: "Domain stays inside its own local domain boundary.",',
-    "      from: {",
-    '        path: "^packages/api/src/modules/(?!common/)([^/]+)/domain/.+\\\\.ts$",',
-    "      },",
-    "      to: {",
-    '        path: "^packages/api/src/.+\\\\.ts$",',
-    '        pathNot: "^packages/api/src/modules/$1/domain/",',
-    "      },",
-    "    },",
-    "    {",
-    '      name: "no-application-to-infrastructure",',
-    '      severity: "error",',
-    '      comment: "Application must not depend on infrastructure.",',
-    "      from: {",
-    '        path: "^packages/api/src/modules/[^/]+/application/.+\\\\.ts$",',
-    "      },",
-    "      to: {",
-    '        path: "^packages/api/src/modules/[^/]+/infrastructure/.+\\\\.ts$",',
-    "      },",
-    "    },",
-    "    {",
-    '      name: "no-application-to-interface",',
-    '      severity: "error",',
-    '      comment: "Application must not depend on transport.",',
-    "      from: {",
-    '        path: "^packages/api/src/modules/[^/]+/application/.+\\\\.ts$",',
-    "      },",
-    "      to: {",
-    '        path: "^packages/api/src/modules/[^/]+/interface/.+\\\\.ts$",',
-    "      },",
-    "    },",
-    "    {",
-    '      name: "no-infrastructure-to-interface",',
-    '      severity: "error",',
-    '      comment: "Infrastructure must not depend on transport.",',
-    "      from: {",
-    '        path: "^packages/api/src/modules/[^/]+/infrastructure/.+\\\\.ts$",',
-    "      },",
-    "      to: {",
-    '        path: "^packages/api/src/modules/[^/]+/interface/.+\\\\.ts$",',
-    "      },",
-    "    },",
-    "    {",
-    '      name: "no-handler-to-domain",',
-    '      severity: "error",',
-    '      comment: "HTTP handlers should go through application, not domain.",',
-    "      from: {",
-    '        path: "^packages/api/src/modules/[^/]+/interface/http/.+\\\\.handler\\\\.ts$",',
-    "      },",
-    "      to: {",
-    '        path: "^packages/api/src/modules/[^/]+/domain/.+\\\\.ts$",',
-    "      },",
-    "    },",
-    "    {",
-    '      name: "no-handler-to-infrastructure",',
-    '      severity: "error",',
-    '      comment: "HTTP handlers must not depend on infrastructure directly.",',
-    "      from: {",
-    '        path: "^packages/api/src/modules/[^/]+/interface/http/.+\\\\.handler\\\\.ts$",',
-    "      },",
-    "      to: {",
-    '        path: "^packages/api/src/modules/[^/]+/infrastructure/.+\\\\.ts$",',
-    "      },",
-    "    },",
-    "    {",
-    '      name: "no-module-to-app-runtime",',
-    '      severity: "error",',
-    '      comment: "Composition happens at the app edge, not inside modules.",',
-    "      from: {",
-    '        path: "^packages/api/src/modules/.+\\\\.ts$",',
-    "      },",
-    "      to: {",
-    '        path: "^packages/api/src/(app\\\\.ts|app/.+\\\\.ts)$",',
-    '        pathNot: "^packages/api/src/app/contract\\\\.ts$",',
-    "      },",
-    "    },",
-    "    {",
-    '      name: "no-api-to-client",',
-    '      severity: "error",',
-    '      comment: "API source must not depend on client artifacts.",',
-    "      from: {",
-    '        path: "^packages/api/src/.+\\\\.ts$",',
-    "      },",
-    "      to: {",
-    '        path: "^packages/client/.+\\\\.(ts|js|json)$",',
-    "      },",
-    "    },",
-    "  ],",
-    "  options: {",
-    "    doNotFollow: {",
-    '      path: "^node_modules",',
-    "    },",
-    "    tsPreCompilationDeps: true,",
-    "    tsConfig: {",
-    '      fileName: "tsconfig.json",',
-    "    },",
-    "  },",
-    "};",
-    "",
-  ].join("\n");
-
-const emitApiTsconfigSource = (): string =>
-  JSON.stringify(
-    {
-      compilerOptions: {
-        target: "ESNext",
-        module: "ESNext",
-        moduleResolution: "bundler",
-        strict: true,
-        esModuleInterop: true,
-        skipLibCheck: true,
-        resolveJsonModule: true,
-        lib: ["ESNext", "DOM"],
-      },
-      include: ["./src/**/*.ts"],
-    },
-    null,
-    2,
-  ) + "\n";
-
-const emitClientTsconfigSource = (): string =>
-  JSON.stringify(
-    {
-      compilerOptions: {
-        target: "ESNext",
-        module: "ESNext",
-        moduleResolution: "bundler",
-        strict: true,
-        esModuleInterop: true,
-        skipLibCheck: true,
-        resolveJsonModule: true,
-        lib: ["ESNext", "DOM"],
-      },
-      include: ["./generated/**/*.ts"],
-    },
-    null,
-    2,
-  ) + "\n";
-
-const emitRootPackageJsonSource = async (
-  projectName: string,
-  packageScope: string,
-): Promise<string> => {
-  const manifest = await readPackageManifest();
-  const nodeTypesVersion = manifest.devDependencies?.["@types/node"] ?? "^25.5.2";
-  const typescriptVersion = manifest.devDependencies?.typescript ?? DEFAULT_TYPESCRIPT_VERSION;
-  const dependencyCruiserVersion =
-    manifest.devDependencies?.["dependency-cruiser"] ?? DEFAULT_DEPENDENCY_CRUISER_VERSION;
-
-  return (
-    JSON.stringify(
-      {
-        name: toKebabCase(projectName) || "rivet-mock",
-        private: true,
-        type: "module",
-        scripts: {
-          generate: "pnpm --dir packages/api run generate",
-          dev: "vite",
-          build: "vite build",
-          check: "tsc --noEmit",
-          "check:architecture":
-            "depcruise --config .dependency-cruiser.cjs --ts-config tsconfig.json packages/api/src",
-          test: "pnpm run check && pnpm run check:architecture",
-        },
-        dependencies: {
-          [`${packageScope}/api`]: "workspace:*",
-          [`${packageScope}/client`]: "workspace:*",
-          "rivet-ts": toRivetTsDependency(manifest),
-        },
-        devDependencies: {
-          "@types/node": nodeTypesVersion,
-          "dependency-cruiser": dependencyCruiserVersion,
-          typescript: typescriptVersion,
-          vite: DEFAULT_VITE_VERSION,
-        },
-      },
-      null,
-      2,
-    ) + "\n"
-  );
-};
-
-const emitApiPackageJsonSource = async (packageScope: string): Promise<string> => {
-  const manifest = await readPackageManifest();
-  const honoVersion = manifest.peerDependencies?.hono ?? "^4.0.0";
-
-  return (
-    JSON.stringify(
-      {
-        name: `${packageScope}/api`,
-        private: true,
-        type: "module",
-        imports: {
-          "#contract": "./src/app/contract.ts",
-        },
-        exports: {
-          "./local": "./src/app/local.ts",
-        },
-        scripts: {
-          // `rivet --from <contract> --output <dir>` writes <dir>/openapi.json
-          // (the binary's sole output post-Phase-3); `rivet-ts generate` then
-          // derives schema.d.ts + index.ts from that spec.
-          generate:
-            "pnpm exec rivet-reflect-ts --entry src/app/contracts.ts --out generated/api.contract.json && rivet --from generated/api.contract.json --output ../client/generated && pnpm exec rivet-ts generate --generated-root ../client/generated",
-        },
-        dependencies: {
-          hono: honoVersion,
-          "rivet-ts": toRivetTsDependency(manifest),
-        },
-      },
-      null,
-      2,
-    ) + "\n"
-  );
-};
-
-const emitClientPackageJsonSource = async (packageScope: string): Promise<string> => {
-  const manifest = await readPackageManifest();
-  const openApiFetchVersion =
-    manifest.dependencies?.["openapi-fetch"] ?? DEFAULT_OPENAPI_FETCH_VERSION;
-
-  return (
-    JSON.stringify(
-      {
-        name: `${packageScope}/client`,
-        private: true,
-        type: "module",
-        exports: {
-          ".": "./generated/index.ts",
-        },
-        dependencies: {
-          "openapi-fetch": openApiFetchVersion,
-          "rivet-ts": toRivetTsDependency(manifest),
-        },
-      },
-      null,
-      2,
-    ) + "\n"
-  );
-};
-
 /**
  * Bootstrap OpenAPI document: routes and statuses only, no schemas. It exists
  * so a fresh scaffold has a coherent generated client chain (openapi.json →
- * schema.d.ts → index.ts) before the first real `generate`/vite run, which
- * overwrites all three with artifacts derived from the Rivet binary's full
- * spec — the binary stays the sole real OpenAPI emitter (Option B).
+ * schema.d.ts) before the first real `task generate`, which overwrites both
+ * with artifacts derived from the Rivet binary's full spec — the binary stays
+ * the sole real OpenAPI emitter (Option B).
  */
-const buildBootstrapOpenApiDocument = (config: MockProjectEmitterConfig): object => {
+export const buildBootstrapOpenApiDocument = (config: {
+  readonly projectName: string;
+  readonly document: MockProjectEmitterConfig["document"];
+}): object => {
   const paths: Record<string, Record<string, object>> = {};
 
   for (const endpoint of config.document.endpoints) {
@@ -883,136 +403,87 @@ export class FileSystemMockProjectEmitter extends MockProjectEmitter {
       throw new Error(`Could not locate copied entry path for ${config.entryPath}.`);
     }
 
-    const groups = buildContractGroups(config);
-    const handlers = buildHandlerDescriptors(config, groups);
-    const demoCall = selectDemoClientCall(groups, handlers);
-    const packageScope = toPackageScope(config.projectName);
-    const apiRoot = path.join(config.outDir, "packages", "api");
-    const apiSourceRoot = path.join(apiRoot, "src");
-    const apiAppRoot = path.join(apiSourceRoot, "app");
-    const apiInterfaceRoot = path.join(apiSourceRoot, "interface", "http");
-    const apiGeneratedRoot = path.join(apiRoot, "generated");
-    const clientRoot = path.join(config.outDir, "packages", "client");
-    const clientGeneratedRoot = path.join(clientRoot, "generated");
-    const uiRoot = path.join(config.outDir, "ui");
-
-    await fs.mkdir(apiAppRoot, { recursive: true });
-    await fs.mkdir(apiInterfaceRoot, { recursive: true });
-    await fs.mkdir(apiGeneratedRoot, { recursive: true });
-    await fs.mkdir(clientGeneratedRoot, { recursive: true });
-    await fs.mkdir(path.join(uiRoot, "src"), { recursive: true });
-
-    for (const group of groups) {
-      const moduleRoot = path.join(apiSourceRoot, "modules", group.moduleDirectoryName);
-      await fs.mkdir(path.join(moduleRoot, "application"), { recursive: true });
-      await fs.mkdir(path.join(moduleRoot, "domain"), { recursive: true });
-      await fs.mkdir(path.join(moduleRoot, "infrastructure"), { recursive: true });
-      await fs.mkdir(path.join(moduleRoot, "interface", "http"), { recursive: true });
+    const safetyError = await checkOutDirSafety(config.outDir, config.force ?? false);
+    if (safetyError) {
+      throw new Error(safetyError);
     }
 
-    await fs.mkdir(path.join(apiSourceRoot, "modules", "common", "application"), {
-      recursive: true,
-    });
-    await fs.mkdir(path.join(apiSourceRoot, "modules", "common", "infrastructure"), {
-      recursive: true,
-    });
+    const groups = buildContractGroups(config);
+    const handlers = buildHandlerDescriptors(config, groups);
+    const manifest = await readPackageManifest();
 
-    await Promise.all([
-      // The emitted app.ts imports this file; without it a fresh scaffold does
-      // not typecheck until the first generate/vite run (S3).
-      fs.writeFile(
-        path.join(apiGeneratedRoot, config.contractJsonFileName),
-        `${JSON.stringify(config.document, null, 2)}\n`,
-      ),
-      fs.writeFile(
-        path.join(config.outDir, "package.json"),
-        await emitRootPackageJsonSource(config.projectName, packageScope),
-      ),
-      fs.writeFile(path.join(config.outDir, "pnpm-workspace.yaml"), emitPnpmWorkspaceSource()),
-      fs.writeFile(path.join(config.outDir, "tsconfig.json"), emitRootTsconfigSource(packageScope)),
-      fs.writeFile(
-        path.join(config.outDir, ".dependency-cruiser.cjs"),
-        emitDependencyCruiserConfigSource(),
-      ),
-      fs.writeFile(path.join(config.outDir, "vite.config.ts"), emitRootViteConfigSource()),
-      fs.writeFile(path.join(uiRoot, "index.html"), emitUiIndexHtmlSource(config.projectName)),
-      fs.writeFile(path.join(uiRoot, "src", "main.ts"), emitUiMainSource(packageScope, demoCall)),
-      fs.writeFile(path.join(uiRoot, "rivet-local.ts"), emitUiLocalRivetSource(packageScope)),
-      fs.writeFile(
-        path.join(apiRoot, "package.json"),
-        await emitApiPackageJsonSource(packageScope),
-      ),
-      fs.writeFile(path.join(apiRoot, "tsconfig.json"), emitApiTsconfigSource()),
-      fs.writeFile(path.join(apiAppRoot, "contract.ts"), emitContractSource(groups)),
-      fs.writeFile(path.join(apiAppRoot, "composition.ts"), emitCompositionSource(groups)),
-      fs.writeFile(path.join(apiSourceRoot, "app.ts"), emitAppSource(groups, handlers)),
-      fs.writeFile(path.join(apiAppRoot, "local.ts"), emitLocalSource()),
-      fs.writeFile(path.join(apiAppRoot, "map-contract-error.ts"), emitMapContractErrorSource()),
-      fs.writeFile(
-        path.join(clientRoot, "package.json"),
-        await emitClientPackageJsonSource(packageScope),
-      ),
-      fs.writeFile(path.join(clientRoot, "tsconfig.json"), emitClientTsconfigSource()),
-      fs.writeFile(
-        path.join(apiSourceRoot, "modules", "common", "common.module.ts"),
-        emitCommonModuleSource(),
-      ),
-      fs.writeFile(
-        path.join(apiSourceRoot, "modules", "common", "application", "index.ts"),
-        emitPlaceholderSource(),
-      ),
-      fs.writeFile(
-        path.join(apiSourceRoot, "modules", "common", "infrastructure", "index.ts"),
-        emitPlaceholderSource(),
-      ),
-    ]);
+    // The entry (and its local imports) are copied into src/ preserving their
+    // relative layout; every reference to the entry derives from where it
+    // actually lands — never a hardcoded "contracts.ts" (S4).
+    const entryRelativePath = entryDependency.relativePath.split(path.sep).join("/");
 
-    await Promise.all([
-      ...groups.map((group) => {
-        const moduleRoot = path.join(apiSourceRoot, "modules", group.moduleDirectoryName);
-        const moduleHandlers = handlers.filter(
-          (handler) => handler.contractName === group.contractName,
+    // Copied user files must not silently clobber emitted app files (S6).
+    const reservedSourcePaths = new Set(["contract.ts", "local.ts", "main.ts", "app.ts"]);
+    for (const dependency of sourceDependencies) {
+      const landed = dependency.relativePath.split(path.sep).join("/");
+      if (reservedSourcePaths.has(landed)) {
+        throw new Error(
+          `Entry dependency "${landed}" collides with a scaffold-emitted file in apps/api/src/. ` +
+            "Rename the source file and re-run.",
         );
+      }
+    }
 
-        return Promise.all([
-          fs.writeFile(
-            path.join(moduleRoot, `${group.moduleDirectoryName}.module.ts`),
-            emitModuleSource(group),
+    const workspaceConfig: WorkspaceConfig = {
+      outDir: config.outDir,
+      projectName: config.projectName,
+      packageScope: toPackageScope(config.projectName),
+      rivetTsDependency: toRivetTsDependency(manifest),
+      versions: resolveWorkspaceVersions(manifest),
+      contractEntryRelativePath: entryRelativePath,
+      contractNames: groups.map((group) => group.contractName),
+      bootstrapOpenApiDocument: buildBootstrapOpenApiDocument(config),
+      demoCall: selectDemoClientCall(groups, handlers),
+    };
+
+    const { apiSourceRoot } = await emitWorkspaceSkeleton(
+      workspaceConfig,
+      `${JSON.stringify(config.document, null, 2)}\n`,
+    );
+
+    const interfaceHttpRoot = path.join(apiSourceRoot, "interface", "http");
+    await fs.mkdir(interfaceHttpRoot, { recursive: true });
+
+    for (const group of groups) {
+      await fs.mkdir(path.join(apiSourceRoot, "modules", group.moduleDirectoryName, "application"), {
+        recursive: true,
+      });
+    }
+
+    await Promise.all([
+      fs.writeFile(path.join(apiSourceRoot, "app.ts"), emitAppSource(groups)),
+      ...groups.map((group) =>
+        fs.writeFile(
+          path.join(interfaceHttpRoot, `${group.moduleDirectoryName}-routes.ts`),
+          emitRoutesSource(
+            group,
+            handlers.filter((handler) => handler.contractName === group.contractName),
           ),
-          fs.writeFile(path.join(moduleRoot, "domain", "index.ts"), emitPlaceholderSource()),
-          fs.writeFile(
-            path.join(moduleRoot, "infrastructure", "index.ts"),
-            emitPlaceholderSource(),
+        ),
+      ),
+      ...handlers.map((handler) =>
+        fs.writeFile(
+          path.join(
+            apiSourceRoot,
+            "modules",
+            handler.moduleDirectoryName,
+            "application",
+            `${handler.fileBaseName}.ts`,
           ),
-          ...moduleHandlers.map((handler) =>
-            fs.writeFile(
-              path.join(moduleRoot, "application", `${handler.fileBaseName}.use-case.ts`),
-              emitUseCaseSource(handler),
-            ),
-          ),
-          ...moduleHandlers.map((handler) =>
-            fs.writeFile(
-              path.join(moduleRoot, "interface", "http", `${handler.fileBaseName}.handler.ts`),
-              emitHandlerSource(handler),
-            ),
-          ),
-        ]);
-      }),
+          emitUseCaseSource(handler),
+        ),
+      ),
       ...sourceDependencies.map(async (dependency) => {
-        const targetPath = path.join(apiAppRoot, dependency.relativePath);
+        const targetPath = path.join(apiSourceRoot, dependency.relativePath);
         await fs.mkdir(path.dirname(targetPath), { recursive: true });
         const content = await fs.readFile(dependency.absolutePath, "utf8");
         await fs.writeFile(targetPath, content);
       }),
     ]);
-
-    // Bootstrap client artifacts (S3 analogue for the client side): the ui
-    // imports the generated client package, so a fresh scaffold must contain
-    // openapi.json + schema.d.ts + index.ts before the first generate run.
-    await fs.writeFile(
-      path.join(clientGeneratedRoot, "openapi.json"),
-      `${JSON.stringify(buildBootstrapOpenApiDocument(config), null, 2)}\n`,
-    );
-    await emitClientPackage(clientGeneratedRoot);
   }
 }

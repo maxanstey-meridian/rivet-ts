@@ -5,7 +5,7 @@ export type MockProjectEmitterConfig = {
   outDir: string;
   projectName: string;
   entryPath: string;
-  contractJsonFileName: string;
+  force?: boolean;
   contracts: readonly DiscoveredContract[];
   document: RivetContractDocument;
 };

@@ -3,16 +3,19 @@ export class ScaffoldMockConfig {
   public readonly outDir: string;
   public readonly projectName?: string;
   public readonly tsconfigPath?: string;
+  public readonly force: boolean;
 
   public constructor(input: {
     entryPath: string;
     outDir: string;
     projectName?: string;
     tsconfigPath?: string;
+    force?: boolean;
   }) {
     this.entryPath = input.entryPath;
     this.outDir = input.outDir;
     this.projectName = input.projectName;
     this.tsconfigPath = input.tsconfigPath;
+    this.force = input.force ?? false;
   }
 }

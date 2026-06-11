@@ -25,13 +25,12 @@ export class ScaffoldMockProject {
     }
 
     const projectName = config.projectName ?? path.basename(config.outDir);
-    const contractJsonFileName = "api.contract.json";
 
     await this.emitter.emit({
       outDir: config.outDir,
       projectName,
       entryPath: config.entryPath,
-      contractJsonFileName,
+      force: config.force,
       contracts: lowered.contracts,
       document: lowered.document,
     });

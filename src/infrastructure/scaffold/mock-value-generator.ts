@@ -8,7 +8,9 @@ import type {
   RivetTypeDefinition,
 } from "../../domain/rivet-contract.js";
 
-type MockGenerationSuccess = { kind: "value"; value: RivetEndpointExampleValue } | { kind: "void" };
+type MockGenerationSuccess =
+  | { kind: "value"; value: RivetEndpointExampleValue; needsCast: boolean }
+  | { kind: "void" };
 
 type MockGenerationFailure = {
   kind: "todo";
@@ -24,6 +26,26 @@ type TypeContext = {
   readonly substitutions: ReadonlyMap<string, RivetType>;
   readonly visiting: ReadonlySet<string>;
   readonly depth: number;
+  /** Mutable: set when the synthesized value passes through a TS enum ref or a
+   * brand — raw JSON literals are not assignable to either, so the emitted
+   * mock body needs an `as <Output>` cast (S7/GAPS 5.1 TS2322 class). */
+  readonly state: { needsCast: boolean };
+};
+
+/**
+ * Conformant mock literals per OpenAPI/Rivet string format. Anything absent
+ * falls back to "example" — formats are open-ended on the TS side
+ * (`Format<string, "...">` accepts arbitrary strings).
+ */
+const FORMAT_MOCK_VALUES: Record<string, string> = {
+  uuid: "00000000-0000-0000-0000-000000000000",
+  "date-time": "2025-01-01T00:00:00.000Z",
+  date: "2025-01-01",
+  time: "00:00:00",
+  duration: "PT1M",
+  email: "user@example.com",
+  uri: "https://example.com/",
+  url: "https://example.com/",
 };
 
 /** Backstop against unbounded recursion in mock synthesis; deep real-world DTOs stay far below this. */
@@ -51,7 +73,12 @@ const parseExample = (example: RivetResponseExample): RivetEndpointExampleValue 
     return undefined;
   }
 
-  return JSON.parse(rawJson) as RivetEndpointExampleValue;
+  // A malformed stored example must degrade to synthesis, not crash the run (S7).
+  try {
+    return JSON.parse(rawJson) as RivetEndpointExampleValue;
+  } catch {
+    return undefined;
+  }
 };
 
 /**
@@ -143,7 +170,7 @@ const synthesizeObject = (
     }
   }
 
-  return { kind: "value", value: output };
+  return { kind: "value", value: output, needsCast: false };
 };
 
 const synthesizeTaggedUnion = (
@@ -174,6 +201,7 @@ const synthesizeTaggedUnion = (
       ...objectValue,
       [type.discriminator]: firstVariant.tag,
     },
+    needsCast: false,
   };
 };
 
@@ -190,18 +218,17 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): MockGenerat
   switch (type.kind) {
     case "primitive":
       switch (type.type) {
-        case "string":
-          if (type.format === "uuid") {
-            return { kind: "value", value: "00000000-0000-0000-0000-000000000000" };
+        case "string": {
+          const formatted = type.format ? FORMAT_MOCK_VALUES[type.format] : undefined;
+          if (formatted !== undefined) {
+            return { kind: "value", value: formatted, needsCast: false };
           }
-          if (type.format === "date-time") {
-            return { kind: "value", value: "2025-01-01T00:00:00.000Z" };
-          }
-          return { kind: "value", value: "example" };
+          return { kind: "value", value: "example", needsCast: false };
+        }
         case "number":
-          return { kind: "value", value: 0 };
+          return { kind: "value", value: 0, needsCast: false };
         case "boolean":
-          return { kind: "value", value: false };
+          return { kind: "value", value: false, needsCast: false };
         case "unknown":
           return {
             kind: "todo",
@@ -216,7 +243,7 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): MockGenerat
 
     case "nullable": {
       const inner = synthesizeType(type.inner, context);
-      return inner.kind === "todo" ? { kind: "value", value: null } : inner;
+      return inner.kind === "todo" ? { kind: "value", value: null, needsCast: false } : inner;
     }
 
     case "array": {
@@ -227,6 +254,7 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): MockGenerat
       return {
         kind: "value",
         value: element.kind === "void" ? [] : [element.value],
+        needsCast: false,
       };
     }
 
@@ -235,11 +263,12 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): MockGenerat
       if (value.kind === "todo") {
         return value;
       }
+      // An empty dictionary is assignable to Record<string, T> for every T;
+      // {key: null} is not (S7).
       return {
         kind: "value",
-        value: {
-          key: value.kind === "void" ? null : value.value,
-        },
+        value: value.kind === "void" ? {} : { key: value.value },
+        needsCast: false,
       };
     }
 
@@ -250,7 +279,7 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): MockGenerat
           message: `Endpoint "${context.endpointName}" uses an empty string union.`,
         };
       }
-      return { kind: "value", value: type.values[0] };
+      return { kind: "value", value: type.values[0], needsCast: false };
 
     case "intUnion":
       if (type.values.length === 0) {
@@ -259,7 +288,7 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): MockGenerat
           message: `Endpoint "${context.endpointName}" uses an empty int union.`,
         };
       }
-      return { kind: "value", value: type.values[0] };
+      return { kind: "value", value: type.values[0], needsCast: false };
 
     case "ref": {
       const enumValues = context.enumValues.get(type.name);
@@ -270,7 +299,8 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): MockGenerat
             message: `Endpoint "${context.endpointName}" references empty enum "${type.name}".`,
           };
         }
-        return { kind: "value", value: enumValues[0] as string | number };
+        context.state.needsCast = true;
+        return { kind: "value", value: enumValues[0] as string | number, needsCast: true };
       }
 
       const typeDef = context.typeDefinitions.get(type.name);
@@ -349,6 +379,7 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): MockGenerat
     }
 
     case "brand":
+      context.state.needsCast = true;
       return synthesizeType(type.underlying, context);
 
     case "inlineObject":
@@ -370,8 +401,10 @@ export const generateEndpointMock = (
   if (firstExample) {
     const parsed = parseExample(firstExample);
     if (parsed !== undefined) {
+      // Example-backed mocks are emitted verbatim with no conformance check
+      // against the response type, so they always cast (S7).
       return {
-        result: { kind: "value", value: parsed },
+        result: { kind: "value", value: parsed, needsCast: true },
         diagnostics,
       };
     }
@@ -400,14 +433,18 @@ export const generateEndpointMock = (
     };
   }
 
-  const result = synthesizeType(responseType, {
+  const state = { needsCast: false };
+  const synthesized = synthesizeType(responseType, {
     endpointName: endpoint.name,
     typeDefinitions: createTypeDefinitions(document),
     enumValues: createEnumValues(document),
     substitutions: new Map(),
     visiting: new Set(),
     depth: 0,
+    state,
   });
+  const result: MockGenerationResult =
+    synthesized.kind === "value" ? { ...synthesized, needsCast: state.needsCast } : synthesized;
 
   if (result.kind === "todo") {
     diagnostics.push(

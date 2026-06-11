@@ -123,10 +123,19 @@ export const ensureRivetBinary = async (
   config: RivetBinaryConfig | undefined,
 ): Promise<ResolvedRivetBinary> => {
   if (config?.binaryPath) {
+    // The rid is informational on this branch; resolving it eagerly would
+    // reject self-built binaries on platforms outside the release matrix —
+    // the exact users the escape hatch exists for (B1).
+    let rid: string;
+    try {
+      rid = resolveRid();
+    } catch {
+      rid = `${process.platform}-${process.arch}`;
+    }
     return {
       executablePath: path.resolve(config.binaryPath),
       version: config.version ?? "manual",
-      rid: resolveRid(),
+      rid,
     };
   }
 
@@ -154,42 +163,64 @@ export const ensureRivetBinary = async (
     }
   }
 
-  await fs.mkdir(installDirectory, { recursive: true });
+  // Download + extract into a temp sibling, verify, then atomically rename
+  // into place (B2): a process dying mid-extraction must not leave a
+  // truncated-but-present executable that passes the access() check forever,
+  // and concurrent vite processes must not race each other's extraction.
+  const stagingDirectory = `${installDirectory}.tmp-${process.pid}`;
+  await fs.rm(stagingDirectory, { recursive: true, force: true });
+  await fs.mkdir(stagingDirectory, { recursive: true });
 
-  const assetName = `rivet-${rid}.tar.gz`;
-  const asset = await downloadReleaseAsset(tagName, assetName);
-  const archivePath = path.join(installDirectory, asset.name);
-  const downloadResponse = await fetch(asset.browser_download_url, {
-    headers: {
-      Accept: "application/octet-stream",
-      "User-Agent": "rivet-ts/vite",
-    },
-  });
-  await ensureOk(downloadResponse, `Failed to download Rivet asset ${assetName}`);
+  try {
+    const assetName = `rivet-${rid}.tar.gz`;
+    const asset = await downloadReleaseAsset(tagName, assetName);
+    const archivePath = path.join(stagingDirectory, asset.name);
+    const downloadResponse = await fetch(asset.browser_download_url, {
+      headers: {
+        Accept: "application/octet-stream",
+        "User-Agent": "rivet-ts/vite",
+      },
+    });
+    await ensureOk(downloadResponse, `Failed to download Rivet asset ${assetName}`);
 
-  if (!downloadResponse.body) {
-    throw new Error(`Download for ${assetName} returned an empty body.`);
+    if (!downloadResponse.body) {
+      throw new Error(`Download for ${assetName} returned an empty body.`);
+    }
+
+    await pipeline(
+      Readable.fromWeb(downloadResponse.body as globalThis.ReadableStream),
+      await fs.open(archivePath, "w").then((handle) => handle.createWriteStream()),
+    );
+
+    if (asset.digest) {
+      await verifyDigest(archivePath, asset.digest);
+    }
+
+    await tar.x({
+      file: archivePath,
+      cwd: stagingDirectory,
+    });
+
+    const stagedExecutable = path.join(stagingDirectory, executableName);
+    await fs.access(stagedExecutable).catch(() => {
+      throw new Error(`Archive ${assetName} did not contain ${executableName}.`);
+    });
+
+    if (process.platform !== "win32") {
+      await fs.chmod(stagedExecutable, 0o755);
+    }
+
+    await fs.unlink(archivePath).catch(() => undefined);
+    await fs.mkdir(path.dirname(installDirectory), { recursive: true });
+    try {
+      await fs.rename(stagingDirectory, installDirectory);
+    } catch {
+      // A concurrent process won the rename; use its install if it's whole.
+      await fs.access(executablePath);
+    }
+  } finally {
+    await fs.rm(stagingDirectory, { recursive: true, force: true }).catch(() => undefined);
   }
-
-  await pipeline(
-    Readable.fromWeb(downloadResponse.body as globalThis.ReadableStream),
-    await fs.open(archivePath, "w").then((handle) => handle.createWriteStream()),
-  );
-
-  if (asset.digest) {
-    await verifyDigest(archivePath, asset.digest);
-  }
-
-  await tar.x({
-    file: archivePath,
-    cwd: installDirectory,
-  });
-
-  if (process.platform !== "win32") {
-    await fs.chmod(executablePath, 0o755);
-  }
-
-  await fs.unlink(archivePath).catch(() => undefined);
 
   return {
     executablePath,

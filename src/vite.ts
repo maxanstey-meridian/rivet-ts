@@ -198,6 +198,30 @@ export const rivetTs = (options: RivetTsVitePluginOptions): Plugin => {
   let normalized: NormalizedPluginOptions | undefined;
   let resolvedConfig: ResolvedConfig | undefined;
   let queue = Promise.resolve();
+  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  let debounced: Promise<void> | undefined;
+  let resolveDebounced: (() => void) | undefined;
+
+  // Editors commonly fire two change events per save; collapse a burst into
+  // one regeneration (GAPS 5.1).
+  const regenerateDebounced = (reason: string): Promise<void> => {
+    if (!debounced) {
+      debounced = new Promise((resolve) => {
+        resolveDebounced = resolve;
+      });
+    }
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    debounceTimer = setTimeout(() => {
+      const release = resolveDebounced;
+      debounced = undefined;
+      resolveDebounced = undefined;
+      debounceTimer = undefined;
+      void regenerate(reason).finally(() => release?.());
+    }, 50);
+    return debounced;
+  };
 
   const regenerate = async (reason: string): Promise<void> => {
     const currentConfig = resolvedConfig;
@@ -211,13 +235,16 @@ export const rivetTs = (options: RivetTsVitePluginOptions): Plugin => {
       .then(async () => {
         currentConfig.logger.info(`[rivet-ts] Generating API artifacts (${reason})...`);
         const dependencies = await generateArtifacts(currentOptions, currentConfig);
-        watchedFiles.clear();
-        for (const dependency of dependencies) {
-          watchedFiles.add(path.resolve(dependency));
-        }
+        // Swap, never clear-then-refill: a change event landing mid-regen must
+        // still match the previous watch set (GAPS 5.1 race).
+        const next = new Set(dependencies.map((dependency) => path.resolve(dependency)));
         // The entry stays watched even if a later regeneration narrows the
         // dependency set.
-        watchedFiles.add(currentOptions.entryPath);
+        next.add(currentOptions.entryPath);
+        watchedFiles.clear();
+        for (const file of next) {
+          watchedFiles.add(file);
+        }
       });
 
     return queue;
@@ -254,7 +281,7 @@ export const rivetTs = (options: RivetTsVitePluginOptions): Plugin => {
         return;
       }
 
-      await regenerate(path.relative(process.cwd(), changedFile));
+      await regenerateDebounced(path.relative(process.cwd(), changedFile));
       context.server.watcher.add([...watchedFiles]);
       context.server.ws.send({ type: "full-reload" });
       return [];

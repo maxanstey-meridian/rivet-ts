@@ -1,12 +1,20 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { LowerTsContractsToRivetContract } from "../../application/use-cases/lower-ts-contracts-to-rivet-contract.js";
 import { ScaffoldMockProject } from "../../application/use-cases/scaffold-mock-project.js";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import { ScaffoldMockConfig } from "../../domain/scaffold-mock-config.js";
 import { emitClientPackage } from "../../infrastructure/codegen/client-package-emitter.js";
+import {
+  EXAMPLE_CONTRACTS_SOURCE,
+  emitExampleProject,
+} from "../../infrastructure/scaffold/example-project-emitter.js";
 import { FileSystemMockProjectEmitter } from "../../infrastructure/scaffold/mock-project-emitter.js";
 import { TypeScriptRivetContractLowerer } from "../../infrastructure/typescript/typescript-rivet-contract-lowerer.js";
+import { ensureRivetBinary } from "../../infrastructure/vite/rivet-binary.js";
 
 type CliIO = {
   stdout: (text: string) => void;
@@ -21,8 +29,10 @@ const DEFAULT_IO: CliIO = {
 const USAGE = [
   "Usage:",
   "  rivet-ts --entry <path> [--out <file>]",
-  "  rivet-ts scaffold-mock --entry <file> --out <dir> [--name <project-name>] [--tsconfig <file>]",
+  "  rivet-ts scaffold --out <dir> [--name <project-name>] [--force]",
+  "  rivet-ts scaffold-mock --entry <file> --out <dir> [--name <project-name>] [--tsconfig <file>] [--force]",
   "  rivet-ts generate --generated-root <dir>",
+  "  rivet-ts rivet [--] <args passed to the Rivet binary>",
   "",
 ].join("\n");
 
@@ -34,20 +44,31 @@ const readOwnVersion = async (): Promise<string> => {
 
 type ParsedFlags = {
   readonly values: ReadonlyMap<string, string>;
+  readonly switches: ReadonlySet<string>;
   readonly errors: readonly string[];
 };
 
 /**
- * Strict flag parser: every argument must be a known flag followed by a value.
- * Unknown flags and flags missing their value are loud errors (C3), never
- * silently ignored.
+ * Strict flag parser: every argument must be a known flag. Valued flags take
+ * the next argument; switches stand alone. Unknown flags and valued flags
+ * missing their value are loud errors (C3), never silently ignored.
  */
-const parseFlags = (args: readonly string[], knownFlags: readonly string[]): ParsedFlags => {
+const parseFlags = (
+  args: readonly string[],
+  knownFlags: readonly string[],
+  knownSwitches: readonly string[] = [],
+): ParsedFlags => {
   const values = new Map<string, string>();
+  const switches = new Set<string>();
   const errors: string[] = [];
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index] ?? "";
+
+    if (knownSwitches.includes(arg)) {
+      switches.add(arg);
+      continue;
+    }
 
     if (!knownFlags.includes(arg)) {
       errors.push(`Unknown argument: ${arg}`);
@@ -64,7 +85,7 @@ const parseFlags = (args: readonly string[], knownFlags: readonly string[]): Par
     index += 1;
   }
 
-  return { values, errors };
+  return { values, switches, errors };
 };
 
 const reportUsageErrors = (errors: readonly string[], io: CliIO): void => {
@@ -94,12 +115,20 @@ export const runCli = async (args: readonly string[], io: CliIO = DEFAULT_IO): P
     return 0;
   }
 
+  if (args[0] === "scaffold") {
+    return runScaffold(args.slice(1), io);
+  }
+
   if (args[0] === "scaffold-mock") {
     return runScaffoldMock(args.slice(1), io);
   }
 
   if (args[0] === "generate") {
     return runGenerate(args.slice(1), io);
+  }
+
+  if (args[0] === "rivet") {
+    return runRivetPassthrough(args.slice(1), io);
   }
 
   const parsed = parseFlags(args, ["--entry", "--out"]);
@@ -152,7 +181,7 @@ export const runCli = async (args: readonly string[], io: CliIO = DEFAULT_IO): P
 };
 
 const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<number> => {
-  const parsed = parseFlags(args, ["--entry", "--out", "--name", "--tsconfig"]);
+  const parsed = parseFlags(args, ["--entry", "--out", "--name", "--tsconfig"], ["--force"]);
 
   if (parsed.errors.length > 0) {
     reportUsageErrors(parsed.errors, io);
@@ -173,18 +202,112 @@ const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<numb
   const emitter = new FileSystemMockProjectEmitter();
   const useCase = new ScaffoldMockProject(lowerer, emitter);
 
-  const result = await useCase.execute(
-    new ScaffoldMockConfig({
-      entryPath,
+  try {
+    const result = await useCase.execute(
+      new ScaffoldMockConfig({
+        entryPath,
+        outDir,
+        projectName,
+        tsconfigPath,
+        force: parsed.switches.has("--force"),
+      }),
+    );
+
+    reportDiagnostics(result.diagnostics, io);
+
+    return result.hasErrors ? 1 : 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    io.stderr(`error: ${message}\n`);
+    return 1;
+  }
+};
+
+/**
+ * Stages the example contract entry in a temp project whose tsconfig maps
+ * "rivet-ts" onto this package's own type surface, so the entry lowers through
+ * the REAL pipeline before rivet-ts is installed anywhere. The scaffolded
+ * bootstrap artifacts therefore can never drift from what the emitted
+ * contracts.ts actually declares.
+ */
+const lowerExampleEntry = async () => {
+  const stagingDir = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-"));
+
+  try {
+    const packageTypesPath = fileURLToPath(new URL("../../index.d.ts", import.meta.url));
+    const entryPath = path.join(stagingDir, "contracts.ts");
+    const tsconfigPath = path.join(stagingDir, "tsconfig.json");
+
+    await fs.writeFile(entryPath, EXAMPLE_CONTRACTS_SOURCE);
+    await fs.writeFile(
+      tsconfigPath,
+      JSON.stringify(
+        {
+          compilerOptions: {
+            target: "ES2022",
+            module: "ESNext",
+            moduleResolution: "Bundler",
+            strict: true,
+            noEmit: true,
+            skipLibCheck: true,
+            baseUrl: ".",
+            paths: { "rivet-ts": [packageTypesPath] },
+          },
+          include: ["contracts.ts"],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const lowerer = new TypeScriptRivetContractLowerer(tsconfigPath);
+    return await lowerer.lower(entryPath);
+  } finally {
+    await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
+const runScaffold = async (args: readonly string[], io: CliIO): Promise<number> => {
+  const parsed = parseFlags(args, ["--out", "--name"], ["--force"]);
+
+  if (parsed.errors.length > 0) {
+    reportUsageErrors(parsed.errors, io);
+    return 1;
+  }
+
+  const outDir = parsed.values.get("--out");
+
+  if (!outDir) {
+    io.stderr(USAGE);
+    return 1;
+  }
+
+  const projectName = parsed.values.get("--name") ?? path.basename(path.resolve(outDir));
+
+  try {
+    const lowered = await lowerExampleEntry();
+    reportDiagnostics(lowered.diagnostics, io);
+
+    if (lowered.hasErrors) {
+      io.stderr("error: the example contract entry failed to lower; this is a rivet-ts bug.\n");
+      return 1;
+    }
+
+    await emitExampleProject({
       outDir,
       projectName,
-      tsconfigPath,
-    }),
-  );
+      force: parsed.switches.has("--force"),
+      document: lowered.document,
+    });
 
-  reportDiagnostics(result.diagnostics, io);
-
-  return result.hasErrors ? 1 : 0;
+    io.stdout(`Scaffolded ${projectName} into ${outDir}.\n`);
+    io.stdout("Next: task install && task dev (see README.md).\n");
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    io.stderr(`error: ${message}\n`);
+    return 1;
+  }
 };
 
 const runGenerate = async (args: readonly string[], io: CliIO): Promise<number> => {
@@ -208,6 +331,37 @@ const runGenerate = async (args: readonly string[], io: CliIO): Promise<number> 
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     io.stderr(`${message}\n`);
+    return 1;
+  }
+};
+
+/**
+ * Resolves the cached Rivet binary (auto-installing on first use, exactly as
+ * the vite plugin does) and passes the remaining arguments through verbatim.
+ * Scaffolded `task generate` pipelines call this instead of a bare `rivet`
+ * that is never on PATH (GAPS 5.1 exit-127).
+ */
+const runRivetPassthrough = async (args: readonly string[], io: CliIO): Promise<number> => {
+  const passthroughArgs = args[0] === "--" ? args.slice(1) : [...args];
+
+  try {
+    const binary = await ensureRivetBinary(
+      process.env.RIVET_VERSION ? { version: process.env.RIVET_VERSION } : undefined,
+    );
+
+    return await new Promise<number>((resolve) => {
+      const child = execFile(binary.executablePath, passthroughArgs);
+      child.stdout?.on("data", (chunk: string | Buffer) => io.stdout(chunk.toString()));
+      child.stderr?.on("data", (chunk: string | Buffer) => io.stderr(chunk.toString()));
+      child.on("error", (error) => {
+        io.stderr(`${error.message}\n`);
+        resolve(1);
+      });
+      child.on("close", (code) => resolve(code ?? 1));
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    io.stderr(`error: ${message}\n`);
     return 1;
   }
 };
