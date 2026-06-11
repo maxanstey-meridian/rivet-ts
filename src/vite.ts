@@ -136,13 +136,53 @@ const generateArtifacts = async (
   // then generated locally from the spec: openapi-typescript types + an
   // openapi-fetch facade.
   const binary = await ensureRivetBinary(options.binaryConfig);
-  await execFileAsync(
-    binary.executablePath,
-    ["--from", options.runtimeContractPath, "--output", options.clientOutDir],
-    {
-      cwd: options.apiRoot,
-    },
+
+  // Freshness guard: the spec on disk may be the scaffold-time bootstrap
+  // placeholder (or a previous run's output), so it is moved aside before the
+  // binary runs. A binary that exits 0 without writing openapi.json (wrong
+  // path, missing emitter, partial failure) must hard-fail here instead of
+  // silently feeding the stale spec back into `schema.d.ts` — silently wrong
+  // types are the exact failure mode Rivet exists to prevent. On failure the
+  // previous spec is restored and the generated client package is left
+  // untouched, so last-good artifacts persist and recovery is instant.
+  const previousSpec = await fs.readFile(options.openApiPath, "utf8").catch(() => undefined);
+  if (previousSpec !== undefined) {
+    await fs.rm(options.openApiPath, { force: true });
+  }
+  const restorePreviousSpec = async (): Promise<void> => {
+    if (previousSpec !== undefined) {
+      await fs.writeFile(options.openApiPath, previousSpec, "utf8");
+    }
+  };
+
+  try {
+    await execFileAsync(
+      binary.executablePath,
+      ["--from", options.runtimeContractPath, "--output", options.clientOutDir],
+      {
+        cwd: options.apiRoot,
+      },
+    );
+  } catch (error) {
+    await restorePreviousSpec();
+    throw error;
+  }
+
+  const specWasWritten = await fs.access(options.openApiPath).then(
+    () => true,
+    () => false,
   );
+  if (!specWasWritten) {
+    await restorePreviousSpec();
+    const message =
+      `[rivet-ts] The Rivet binary exited successfully but did not write an OpenAPI spec to ` +
+      `${options.openApiPath}. The generated client package was NOT regenerated` +
+      `${previousSpec !== undefined ? " (previous artifacts were left in place)" : ""}. ` +
+      `Likely cause: the binary's --output handling changed, or "${binary.executablePath}" is not the Rivet OpenAPI emitter.`;
+    config.logger.error(message);
+    throw new Error(`rivet-ts/vite: the Rivet binary did not write ${options.openApiPath}.`);
+  }
+
   await emitClientPackage(options.clientOutDir, options.openApiPath);
 
   const dependencies = await collectLocalDependencies(options.entryPath);

@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { build } from "vite";
+import { build, createServer } from "vite";
 import { runCli } from "../../src/interfaces/cli/run-cli.js";
 
 const getProjectRoot = (): string => {
@@ -334,5 +334,193 @@ describe("vite plugin lifecycle", () => {
     const combinedLog = logged.join("\n");
     const occurrences = combinedLog.match(/\[ENTRY_NOT_FOUND\]/g) ?? [];
     expect(occurrences).toHaveLength(1);
+  }, 20_000);
+
+  // Spec-dropout fixture: a valid contract, a generated/ directory pre-seeded
+  // with the scaffold-time bootstrap spec + last-good client artifacts, and a
+  // fake binary that exits 0 WITHOUT writing openapi.json. This is the §5.1
+  // P0 failure mode: the plugin used to silently re-read the stale bootstrap
+  // spec and regenerate schema.d.ts from it.
+  const createSpecDropoutFixture = async (
+    prefix: string,
+  ): Promise<{
+    readonly tempDirectory: string;
+    readonly uiRoot: string;
+    readonly entryPath: string;
+    readonly binaryPath: string;
+    readonly openApiPath: string;
+    readonly schemaPath: string;
+    readonly bootstrapSpecSource: string;
+    readonly lastGoodSchemaSource: string;
+  }> => {
+    const projectRoot = getProjectRoot();
+    const tempDirectory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), prefix)));
+    const uiRoot = path.join(tempDirectory, "ui");
+    const generatedRoot = path.join(tempDirectory, "generated");
+    await fs.mkdir(uiRoot, { recursive: true });
+    await fs.mkdir(generatedRoot, { recursive: true });
+    await fs.mkdir(path.join(tempDirectory, "node_modules"), { recursive: true });
+    await fs.symlink(projectRoot, path.join(tempDirectory, "node_modules", "rivet-ts"), "dir");
+    await fs.writeFile(
+      path.join(uiRoot, "index.html"),
+      '<!DOCTYPE html><html><body><script type="module"></script></body></html>\n',
+    );
+
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    await fs.writeFile(
+      entryPath,
+      [
+        'import type { Contract, Endpoint } from "rivet-ts";',
+        "",
+        "export interface MemberDto {",
+        "  id: string;",
+        "}",
+        "",
+        'export interface MembersContract extends Contract<"MembersContract"> {',
+        "  List: Endpoint<{",
+        '    method: "GET";',
+        '    route: "/api/members";',
+        "    response: MemberDto[];",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    // The stale spec the plugin must NOT fall back to.
+    const bootstrapSpecSource = `${JSON.stringify(
+      {
+        openapi: "3.1.0",
+        info: { title: "bootstrap-placeholder", version: "0.0.0" },
+        paths: {},
+      },
+      null,
+      2,
+    )}\n`;
+    const lastGoodSchemaSource = "/* last-good schema.d.ts — must survive spec dropout */\n";
+    const openApiPath = path.join(generatedRoot, "openapi.json");
+    const schemaPath = path.join(generatedRoot, "schema.d.ts");
+    await fs.writeFile(openApiPath, bootstrapSpecSource);
+    await fs.writeFile(schemaPath, lastGoodSchemaSource);
+
+    // Exits 0 without writing openapi.json — the silent-dropout binary.
+    const binaryPath = path.join(tempDirectory, "fake-rivet-no-spec.mjs");
+    await fs.writeFile(binaryPath, "#!/usr/bin/env node\nprocess.exit(0);\n");
+    await fs.chmod(binaryPath, 0o755);
+
+    return {
+      tempDirectory,
+      uiRoot,
+      entryPath,
+      binaryPath,
+      openApiPath,
+      schemaPath,
+      bootstrapSpecSource,
+      lastGoodSchemaSource,
+    };
+  };
+
+  it("hard-fails the build when the binary does not write openapi.json (no bootstrap fallback)", async () => {
+    const fixture = await createSpecDropoutFixture("rivet-ts-vite-plugin-spec-dropout-build-");
+
+    const logged: string[] = [];
+    const logger = {
+      info: (message: string) => logged.push(message),
+      warn: (message: string) => logged.push(message),
+      warnOnce: (message: string) => logged.push(message),
+      error: (message: string) => logged.push(message),
+      clearScreen: () => undefined,
+      hasErrorLogged: () => false,
+      hasWarned: false,
+    };
+
+    const { rivetTs } = await import("../../src/vite.js");
+
+    await expect(
+      build({
+        configFile: false,
+        root: fixture.uiRoot,
+        logLevel: "silent",
+        customLogger: logger,
+        plugins: [
+          rivetTs({
+            entry: fixture.entryPath,
+            apiRoot: fixture.tempDirectory,
+            rivet: { binaryPath: fixture.binaryPath },
+          }),
+        ],
+      }),
+    ).rejects.toThrow(`rivet-ts/vite: the Rivet binary did not write ${fixture.openApiPath}.`);
+
+    // The error names the expected spec path and states what was preserved.
+    const combinedLog = logged.join("\n");
+    expect(combinedLog).toContain(fixture.openApiPath);
+    expect(combinedLog).toContain("NOT regenerated");
+
+    // Last-good artifacts persist: the stale spec is restored verbatim and
+    // schema.d.ts is NOT rewritten from the bootstrap spec.
+    await expect(fs.readFile(fixture.openApiPath, "utf8")).resolves.toBe(
+      fixture.bootstrapSpecSource,
+    );
+    await expect(fs.readFile(fixture.schemaPath, "utf8")).resolves.toBe(
+      fixture.lastGoodSchemaSource,
+    );
+  }, 20_000);
+
+  it("dev server fails loudly on spec dropout and leaves last-good artifacts untouched", async () => {
+    const fixture = await createSpecDropoutFixture("rivet-ts-vite-plugin-spec-dropout-dev-");
+
+    const logged: string[] = [];
+    const errors: string[] = [];
+    const logger = {
+      info: (message: string) => logged.push(message),
+      warn: (message: string) => logged.push(message),
+      warnOnce: (message: string) => logged.push(message),
+      error: (message: string) => {
+        logged.push(message);
+        errors.push(message);
+      },
+      clearScreen: () => undefined,
+      hasErrorLogged: () => false,
+      hasWarned: false,
+    };
+
+    const { rivetTs } = await import("../../src/vite.js");
+
+    const server = await createServer({
+      configFile: false,
+      root: fixture.uiRoot,
+      logLevel: "silent",
+      customLogger: logger,
+      server: { port: 0 },
+      plugins: [
+        rivetTs({
+          entry: fixture.entryPath,
+          apiRoot: fixture.tempDirectory,
+          rivet: { binaryPath: fixture.binaryPath },
+        }),
+      ],
+    });
+
+    try {
+      // The dev server must stay up (listen resolves) while the failure is
+      // surfaced as a prominent error log naming the expected spec path.
+      await server.listen();
+    } finally {
+      await server.close();
+    }
+
+    const combinedErrors = errors.join("\n");
+    expect(combinedErrors).toContain(fixture.openApiPath);
+    expect(combinedErrors).toContain("NOT regenerated");
+
+    // No silent rewrite from the bootstrap spec: the stale spec is restored
+    // verbatim and schema.d.ts keeps its last-good content.
+    await expect(fs.readFile(fixture.openApiPath, "utf8")).resolves.toBe(
+      fixture.bootstrapSpecSource,
+    );
+    await expect(fs.readFile(fixture.schemaPath, "utf8")).resolves.toBe(
+      fixture.lastGoodSchemaSource,
+    );
   }, 20_000);
 });
