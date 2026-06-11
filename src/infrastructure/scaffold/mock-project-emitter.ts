@@ -4,9 +4,11 @@ import {
   MockProjectEmitter,
   type MockProjectEmitterConfig,
 } from "../../application/ports/mock-project-emitter.js";
+import type { RivetType } from "../../domain/rivet-contract.js";
 import { toKebabCase } from "../codegen/kebab-case.js";
 import { collectLocalDependencies } from "../typescript/local-source-dependencies.js";
 import { generateEndpointMock } from "./mock-value-generator.js";
+import { zodSourceForType } from "./zod-schema-emitter.js";
 import {
   checkOutDirSafety,
   emitWorkspaceSkeleton,
@@ -43,6 +45,8 @@ type HandlerDescriptor = {
   readonly pattern: string;
   readonly body: string;
   readonly supportsDemoCall: boolean;
+  readonly hasBody: boolean;
+  readonly bodyType?: RivetType;
 };
 
 type PackageManifest = {
@@ -221,6 +225,7 @@ const buildHandlerDescriptors = (
         body = `  return ${indent(expression, 2).trimStart()}${cast};`;
       }
 
+      const bodyParam = endpoint.params.find((param) => param.source === "body");
       descriptors.push({
         endpointName,
         runtimeEndpointName,
@@ -234,6 +239,8 @@ const buildHandlerDescriptors = (
         pattern,
         body,
         supportsDemoCall: supportedSources.length === 0 && mock.result.kind === "value",
+        hasBody: patternParts.includes("body"),
+        bodyType: bodyParam?.type,
       });
     }
   }
@@ -281,19 +288,80 @@ const emitUseCaseSource = (descriptor: HandlerDescriptor): string => {
   ].join("\n");
 };
 
+const schemaExportName = (handler: HandlerDescriptor): string =>
+  `${handler.useCaseExportName}Request`;
+
+/**
+ * Synthesized Zod schemas per body-carrying endpoint — scaffold-time emitted,
+ * owned thereafter. When synthesis is provably exact, the schema is locked to
+ * the contract type with `satisfies` so later shape drift is a tsc error.
+ */
+const emitValidationSource = (
+  group: ContractGroup,
+  bodyHandlers: readonly HandlerDescriptor[],
+  config: MockProjectEmitterConfig,
+): string => {
+  const schemas = bodyHandlers.map((handler) => ({
+    handler,
+    schema: zodSourceForType(handler.bodyType!, config.document),
+  }));
+  const anyExact = schemas.some((entry) => entry.schema.exact);
+
+  const lines = ['import { z } from "zod";'];
+  if (anyExact) {
+    lines.push('import type { RivetHandlerInput } from "rivet-ts";');
+    lines.push(`import type { ${group.contractName} } from "#contract";`);
+  }
+  lines.push("");
+  lines.push("// Synthesized from the contract at scaffold time — owned by you now. Add");
+  lines.push("// the rules the contract can't express (lengths, trims, formats); the");
+  lines.push("// `satisfies` lock keeps shape drift a compile error.");
+
+  for (const { handler, schema } of schemas) {
+    const lock = schema.exact
+      ? ` satisfies z.ZodType<RivetHandlerInput<${group.contractName}, ${JSON.stringify(handler.endpointName)}>["body"]>`
+      : "";
+    lines.push(`export const ${schemaExportName(handler)} = ${schema.source}${lock};`);
+    lines.push("");
+  }
+
+  return lines.join("\n");
+};
+
+const emitValidationIndexSource = (groupsWithBodies: readonly ContractGroup[]): string => {
+  if (groupsWithBodies.length === 0) {
+    return "export {};\n";
+  }
+  return `${groupsWithBodies
+    .map((group) => `export * from "./${group.moduleDirectoryName}.js";`)
+    .join("\n")}\n`;
+};
+
 const emitRoutesSource = (
   group: ContractGroup,
   handlers: readonly HandlerDescriptor[],
 ): string => {
-  const lines = [
-    'import type { Hono } from "hono";',
-    'import { type ContractJson, registerRivetHonoRoutes } from "rivet-ts/hono";',
-    `import type { ${group.contractName} } from "#contract";`,
-  ];
+  const bodyHandlers = handlers.filter((handler) => handler.hasBody && handler.bodyType);
+  const lines = ['import type { Hono } from "hono";'];
+
+  if (bodyHandlers.length > 0) {
+    lines.push(
+      'import { type ContractJson, registerRivetHonoRoutes, rivetHttpError } from "rivet-ts/hono";',
+    );
+    lines.push('import { z } from "zod";');
+  } else {
+    lines.push('import { type ContractJson, registerRivetHonoRoutes } from "rivet-ts/hono";');
+  }
+  lines.push(`import type { ${group.contractName} } from "#contract";`);
 
   for (const handler of handlers) {
     lines.push(
       `import { ${handler.useCaseExportName} } from "../../modules/${handler.moduleDirectoryName}/application/${handler.fileBaseName}.js";`,
+    );
+  }
+  if (bodyHandlers.length > 0) {
+    lines.push(
+      `import { ${bodyHandlers.map(schemaExportName).join(", ")} } from "../validation/${group.moduleDirectoryName}.js";`,
     );
   }
 
@@ -305,6 +373,21 @@ const emitRoutesSource = (
   lines.push(`    group: ${JSON.stringify(group.group)},`);
   lines.push("    handlers: {");
   for (const handler of handlers) {
+    if (handler.hasBody && handler.bodyType) {
+      lines.push(`      ${JSON.stringify(handler.endpointName)}: async (input) => {`);
+      lines.push("        // The wire is untrusted: parse before the use case sees it.");
+      lines.push(`        const result = ${schemaExportName(handler)}.safeParse(input.body);`);
+      lines.push("        if (!result.success) {");
+      lines.push("          throw rivetHttpError(422, {");
+      lines.push('            code: "validation_failed",');
+      lines.push('            message: "Validation failed.",');
+      lines.push("            errors: z.flattenError(result.error).fieldErrors,");
+      lines.push("          });");
+      lines.push("        }");
+      lines.push(`        return ${handler.useCaseExportName}(input);`);
+      lines.push("      },");
+      continue;
+    }
     const invocation =
       handler.pattern.length === 0
         ? `() => ${handler.useCaseExportName}({})`
@@ -447,7 +530,16 @@ export class FileSystemMockProjectEmitter extends MockProjectEmitter {
     );
 
     const interfaceHttpRoot = path.join(apiSourceRoot, "interface", "http");
+    const interfaceValidationRoot = path.join(apiSourceRoot, "interface", "validation");
     await fs.mkdir(interfaceHttpRoot, { recursive: true });
+    await fs.mkdir(interfaceValidationRoot, { recursive: true });
+
+    const groupsWithBodies = groups.filter((group) =>
+      handlers.some(
+        (handler) =>
+          handler.contractName === group.contractName && handler.hasBody && handler.bodyType,
+      ),
+    );
 
     for (const group of groups) {
       await fs.mkdir(path.join(apiSourceRoot, "modules", group.moduleDirectoryName, "application"), {
@@ -457,6 +549,23 @@ export class FileSystemMockProjectEmitter extends MockProjectEmitter {
 
     await Promise.all([
       fs.writeFile(path.join(apiSourceRoot, "app.ts"), emitAppSource(groups)),
+      fs.writeFile(
+        path.join(interfaceValidationRoot, "index.ts"),
+        emitValidationIndexSource(groupsWithBodies),
+      ),
+      ...groupsWithBodies.map((group) =>
+        fs.writeFile(
+          path.join(interfaceValidationRoot, `${group.moduleDirectoryName}.ts`),
+          emitValidationSource(
+            group,
+            handlers.filter(
+              (handler) =>
+                handler.contractName === group.contractName && handler.hasBody && handler.bodyType,
+            ),
+            config,
+          ),
+        ),
+      ),
       ...groups.map((group) =>
         fs.writeFile(
           path.join(interfaceHttpRoot, `${group.moduleDirectoryName}-routes.ts`),

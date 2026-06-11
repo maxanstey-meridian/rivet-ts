@@ -33,6 +33,9 @@ importers:
       dependency-cruiser:
         specifier: ^17.3.10
         version: 17.3.10
+      dexie:
+        specifier: ^4.4.3
+        version: 4.4.3
       gitnexus:
         specifier: 1.6.5
         version: 1.6.5(graphology-types@0.24.8)(zod@4.4.3)
@@ -54,6 +57,9 @@ importers:
       vitest:
         specifier: ^4.1.2
         version: 4.1.2(@types/node@25.5.2)(vite@6.4.2(@types/node@25.5.2)(lightningcss@1.32.0))
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
 
 packages:
 
@@ -1117,6 +1123,9 @@ packages:
 
   detect-node@2.1.0:
     resolution: {integrity: sha512-T0NIuQpnTvFDATNuHN5roPwSBG83rFsuO+MXXH9/3N1eFbn4wcPjttvjMLEPWJ0RGUYgQE7cGgS3tNxbqCGM7g==}
+
+  dexie@4.4.3:
+    resolution: {integrity: sha512-N+3IGQ3HPlyO2YAkntGAwitm42BpBGV86MttzUMiRzWLa4NGh0pltVRcUVF4ybL/OnXjCrr9k7SDPIKkFYP2Lg==}
 
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
@@ -3163,6 +3172,8 @@ snapshots:
   detect-libc@2.1.2: {}
 
   detect-node@2.1.0: {}
+
+  dexie@4.4.3: {}
 
   dunder-proto@1.0.1:
     dependencies:

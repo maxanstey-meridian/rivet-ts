@@ -225,7 +225,8 @@ describe("scaffold-mock lifecycle", () => {
     expect(routesSource).toContain("registerRivetHonoRoutes<MembersContract>(app, contract, {");
     expect(routesSource).toContain('group: "members"');
     expect(routesSource).toContain('"List": () => list({}),');
-    expect(routesSource).toContain('"Create": (input) => create(input),');
+    // Body-carrying endpoints parse at the edge before the mock runs.
+    expect(routesSource).toContain('"Create": async (input) => {');
     expect(appSource).toContain("registerMembersRoutes(app, contract);");
     expect(appSource).toContain("app.onError");
 
@@ -265,6 +266,20 @@ describe("scaffold-mock lifecycle", () => {
     // The UI demo call handles { data, error } (openapi-fetch never throws).
     expect(appVueSource).toContain('client.GET("/api/members")');
     expect(appVueSource).toContain("error");
+
+    // Synthesized Zod schemas: emitted once from the IR, locked to the
+    // contract type when synthesis is exact, parsed at the route edge.
+    const validationSource = await read(
+      path.join(apiSource, "interface", "validation", "members.ts"),
+    );
+    expect(validationSource).toContain("export const createRequest = z.object(");
+    expect(validationSource).toContain('satisfies z.ZodType<RivetHandlerInput<MembersContract, "Create">["body"]>');
+    expect(routesSource).toContain("createRequest.safeParse(input.body)");
+    expect(routesSource).toContain("rivetHttpError(422");
+    const validationIndexSource = await read(
+      path.join(apiSource, "interface", "validation", "index.ts"),
+    );
+    expect(validationIndexSource).toContain('"./members.js"');
 
     // S8/T6: the scaffolded rivet-ts pin tracks this package's version.
     const { version: rivetTsVersion } = JSON.parse(

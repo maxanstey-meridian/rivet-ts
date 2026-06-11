@@ -60,6 +60,8 @@ export type WorkspaceConfig = {
   readonly demoCall?: { readonly httpMethod: string; readonly routeTemplate: string };
   /** extra runtime dependencies for the api package (e.g. typed-inject) */
   readonly extraApiDependencies?: Record<string, string>;
+  /** full replacement for the generic app.vue (the example ships a UForm page) */
+  readonly appVueSource?: string;
 };
 
 export const toPackageScope = (projectName: string): string =>
@@ -314,7 +316,12 @@ const emitApiPackageJson = (config: WorkspaceConfig): string =>
       private: true,
       type: "module",
       imports: { "#contract": "./src/contract.ts" },
-      exports: { "./local": "./src/local.ts" },
+      exports: {
+        "./local": "./src/local.ts",
+        // The same schemas that guard the server's front door validate UForm
+        // state in the ui — one source of rules, two enforcement points.
+        "./validation": "./src/interface/validation/index.ts",
+      },
       scripts: {
         start: "tsx src/main.ts",
         test: "tsc --noEmit && vitest run --passWithNoTests",
@@ -322,6 +329,7 @@ const emitApiPackageJson = (config: WorkspaceConfig): string =>
       dependencies: {
         hono: config.versions.hono,
         "rivet-ts": config.rivetTsDependency,
+        zod: "^4.3.6",
         ...config.extraApiDependencies,
       },
       devDependencies: {
@@ -393,7 +401,8 @@ const emitUiPackageJson = (config: WorkspaceConfig): string =>
           ? {}
           : { [`${config.packageScope}/api`]: "workspace:*" }),
         [`${config.packageScope}/contracts`]: "workspace:*",
-        nuxt: "^4.1.0",
+        "@nuxt/ui": "^4.5.1",
+        nuxt: "^4.3.1",
         vue: "^3.5.0",
       },
       devDependencies: {
@@ -409,7 +418,8 @@ const emitNuxtConfig = (): string =>
   [
     "export default defineNuxtConfig({",
     "  ssr: false,",
-    '  modules: ["@nuxt/eslint"],',
+    '  modules: ["@nuxt/eslint", "@nuxt/ui"],',
+    '  css: ["~/assets/css/app.css"],',
     "  devtools: { enabled: true },",
     "  typescript: {",
     "    strict: true,",
@@ -460,7 +470,12 @@ const emitRivetClientPlugin = (config: WorkspaceConfig): string => {
   ].join("\n");
 };
 
+const emitUiAppCss = (): string => ['@import "tailwindcss";', '@import "@nuxt/ui";', ""].join("\n");
+
 const emitAppVue = (config: WorkspaceConfig): string => {
+  if (config.appVueSource) {
+    return config.appVueSource;
+  }
   if (!config.demoCall) {
     return [
       '<script setup lang="ts">',
@@ -539,6 +554,7 @@ export const emitWorkspaceSkeleton = async (
         ]
       : []),
     fs.mkdir(path.join(uiRoot, "app", "plugins"), { recursive: true }),
+    fs.mkdir(path.join(uiRoot, "app", "assets", "css"), { recursive: true }),
     fs.mkdir(contractsGeneratedRoot, { recursive: true }),
     fs.mkdir(path.join(contractsRoot, "src"), { recursive: true }),
   ]);
@@ -571,6 +587,7 @@ export const emitWorkspaceSkeleton = async (
     fs.writeFile(path.join(uiRoot, "eslint.config.mjs"), emitUiEslintConfig()),
     fs.writeFile(path.join(uiRoot, "tsconfig.json"), emitUiTsconfig()),
     fs.writeFile(path.join(uiRoot, "app", "app.vue"), emitAppVue(config)),
+    fs.writeFile(path.join(uiRoot, "app", "assets", "css", "app.css"), emitUiAppCss()),
     fs.writeFile(
       path.join(uiRoot, "app", "plugins", "rivet.client.ts"),
       emitRivetClientPlugin(config),

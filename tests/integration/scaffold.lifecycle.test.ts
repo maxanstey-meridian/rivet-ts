@@ -55,7 +55,14 @@ describe("scaffold lifecycle", () => {
       path.join("apps", "api", "src", "modules", "quotes", "application", "ports", "quote-store.ts"),
       path.join("apps", "api", "src", "modules", "quotes", "application", "add-quote.ts"),
       path.join("apps", "api", "src", "modules", "quotes", "infrastructure", "in-memory-quote-store.ts"),
+      path.join("apps", "api", "src", "modules", "quotes", "infrastructure", "dexie-quote-store.ts"),
+      path.join("apps", "api", "src", "modules", "users", "application", "ports", "current-user.ts"),
+      path.join("apps", "api", "src", "interface", "http", "users-routes.ts"),
+      path.join("apps", "api", "src", "interface", "validation", "quotes.ts"),
+      path.join("apps", "api", "src", "interface", "validation", "index.ts"),
+      path.join("apps", "ui", "app", "assets", "css", "app.css"),
       path.join("apps", "api", "test", "add-quote.test.ts"),
+      path.join("apps", "api", "test", "validation.test.ts"),
       path.join("apps", "api", "generated", "api.contract.json"),
       path.join("apps", "ui", "nuxt.config.ts"),
       path.join("apps", "ui", "eslint.config.mjs"),
@@ -84,6 +91,7 @@ describe("scaffold lifecycle", () => {
     expect(contractJson.endpoints.map((endpoint) => endpoint.name).sort()).toEqual([
       "addQuote",
       "listQuotes",
+      "me",
     ]);
 
     const nuxtConfigSource = await fs.readFile(
@@ -92,17 +100,47 @@ describe("scaffold lifecycle", () => {
     );
     expect(nuxtConfigSource).toContain("ssr: false");
     expect(nuxtConfigSource).toContain('"@nuxt/eslint"');
+    expect(nuxtConfigSource).toContain('"@nuxt/ui"');
+
+    // The ui form consumes the SAME schema the api parses with.
+    const appVueSource = await fs.readFile(
+      path.join(outputDirectory, "apps", "ui", "app", "app.vue"),
+      "utf8",
+    );
+    expect(appVueSource).toContain('":schema="addQuoteRequest"'.replace(/^"|"$/g, ""));
+    expect(appVueSource).toContain("/api/validation");
+
+    const apiPackageJsonSource = await fs.readFile(
+      path.join(outputDirectory, "apps", "api", "package.json"),
+      "utf8",
+    );
+    expect(apiPackageJsonSource).toContain('"./validation"');
+    expect(apiPackageJsonSource).toContain('"zod"');
+    expect(apiPackageJsonSource).toContain('"dexie"');
   });
 
   it("typechecks (api + contracts) against the current runtime", async () => {
     await typecheckScaffoldedWorkspace(outputDirectory);
   }, 120000);
 
-  it("serves the contract: list, add, declared 409, structured 500 envelope", async () => {
+  it("serves the contract: list, add, 422, declared 409, structured 500, /api/me", async () => {
     await linkScaffoldDependencies(outputDirectory);
-    const { app } = (await import(
-      path.join(outputDirectory, "apps", "api", "src", "app.ts")
-    )) as { app: { request: (input: string, init?: RequestInit) => Promise<Response> } };
+    const apiSrc = path.join(outputDirectory, "apps", "api", "src");
+    const { createApp } = (await import(path.join(apiSrc, "app.ts"))) as {
+      createApp: (
+        useCases: unknown,
+      ) => { request: (input: string, init?: RequestInit) => Promise<Response> };
+    };
+    const { composeApp } = (await import(path.join(apiSrc, "composition.ts"))) as {
+      composeApp: (adapters: { quoteStore: unknown }) => unknown;
+    };
+    const { InMemoryQuoteStore } = (await import(
+      path.join(apiSrc, "modules", "quotes", "infrastructure", "in-memory-quote-store.ts")
+    )) as { InMemoryQuoteStore: new () => unknown };
+
+    // The server entry's wiring, minus serve(): the composition split means
+    // the node-side test never touches the Dexie adapter (no IndexedDB here).
+    const app = createApp(composeApp({ quoteStore: new InMemoryQuoteStore() }));
 
     const list = await app.request("/api/quotes");
     expect(list.status).toBe(200);
@@ -118,6 +156,22 @@ describe("scaffold lifecycle", () => {
 
     const created = await add("Ship it.");
     expect(created.status).toBe(201);
+
+    // Edge validation: blank fields produce the 422 envelope BEFORE any
+    // use case runs.
+    const invalid = await add("   ");
+    expect(invalid.status).toBe(422);
+    const invalidBody = (await invalid.json()) as {
+      code: string;
+      errors: Record<string, string[]>;
+    };
+    expect(invalidBody.code).toBe("validation_failed");
+    expect(invalidBody.errors.text).toBeTruthy();
+
+    // The users module serves the stubbed identity.
+    const me = await app.request("/api/me");
+    expect(me.status).toBe(200);
+    expect(((await me.json()) as { name: string }).name).toBe("Local Dev");
 
     // The declared failure travels as the contract's 409 result.
     const duplicate = await add("  ship it. ");
