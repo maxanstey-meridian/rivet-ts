@@ -1,0 +1,195 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { runCli } from "../../src/interfaces/cli/run-cli.js";
+import { emitGoldenConfigSources } from "../../src/infrastructure/scaffold/workspace-emitter.js";
+import {
+  PLUMB_EXECUTABLE,
+  expectPlumbClean,
+  linkScaffoldDependencies,
+  plumbAvailable,
+  typecheckScaffoldedWorkspace,
+} from "../support/scaffold-oracles.js";
+
+/**
+ * The `scaffold` command is the engine behind `meridian init --ts-backend`:
+ * a contract-less golden-shape workspace with one worked example module.
+ * Gates, in order of strictness: shape → tsc → runtime behavior → plumb
+ * (zero findings — the permanent generator/doctrine coupling).
+ */
+describe("scaffold lifecycle", () => {
+  let outputDirectory: string;
+
+  beforeAll(async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-"));
+    outputDirectory = path.join(tempDirectory, "demo-app");
+
+    const stderr: string[] = [];
+    const exitCode = await runCli(
+      ["scaffold", "--out", outputDirectory, "--name", "demo"],
+      {
+        stdout: () => undefined,
+        stderr: (text) => stderr.push(text),
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toHaveLength(0);
+  }, 120000);
+
+  it("emits the golden workspace shape with the worked quotes example", async () => {
+    const mustExist = [
+      "Taskfile.yml",
+      ".gitignore",
+      ".editorconfig",
+      ".oxlintrc.json",
+      ".oxfmtrc.json",
+      "README.md",
+      "pnpm-workspace.yaml",
+      path.join("apps", "api", "src", "contracts.ts"),
+      path.join("apps", "api", "src", "app.ts"),
+      path.join("apps", "api", "src", "composition.ts"),
+      path.join("apps", "api", "src", "interface", "http", "quotes-routes.ts"),
+      path.join("apps", "api", "src", "modules", "quotes", "domain", "quote.ts"),
+      path.join("apps", "api", "src", "modules", "quotes", "application", "ports", "quote-store.ts"),
+      path.join("apps", "api", "src", "modules", "quotes", "application", "add-quote.ts"),
+      path.join("apps", "api", "src", "modules", "quotes", "infrastructure", "in-memory-quote-store.ts"),
+      path.join("apps", "api", "test", "add-quote.test.ts"),
+      path.join("apps", "api", "generated", "api.contract.json"),
+      path.join("apps", "ui", "nuxt.config.ts"),
+      path.join("apps", "ui", "eslint.config.mjs"),
+      path.join("apps", "ui", "app", "app.vue"),
+      path.join("apps", "ui", "app", "plugins", "rivet.client.ts"),
+      path.join("packages", "contracts", "src", "index.ts"),
+      path.join("packages", "contracts", "generated", "openapi.json"),
+      path.join("packages", "contracts", "generated", "schema.d.ts"),
+    ];
+
+    for (const relativePath of mustExist) {
+      await expect(
+        fs.stat(path.join(outputDirectory, relativePath)),
+        relativePath,
+      ).resolves.toBeTruthy();
+    }
+
+    // The bootstrap contract derives from lowering the EMITTED entry through
+    // the real pipeline — never a hand-maintained copy that can drift.
+    const contractJson = JSON.parse(
+      await fs.readFile(
+        path.join(outputDirectory, "apps", "api", "generated", "api.contract.json"),
+        "utf8",
+      ),
+    ) as { endpoints: Array<{ name: string; routeTemplate: string }> };
+    expect(contractJson.endpoints.map((endpoint) => endpoint.name).sort()).toEqual([
+      "addQuote",
+      "listQuotes",
+    ]);
+
+    const nuxtConfigSource = await fs.readFile(
+      path.join(outputDirectory, "apps", "ui", "nuxt.config.ts"),
+      "utf8",
+    );
+    expect(nuxtConfigSource).toContain("ssr: false");
+    expect(nuxtConfigSource).toContain('"@nuxt/eslint"');
+  });
+
+  it("typechecks (api + contracts) against the current runtime", async () => {
+    await typecheckScaffoldedWorkspace(outputDirectory);
+  }, 120000);
+
+  it("serves the contract: list, add, declared 409, structured 500 envelope", async () => {
+    await linkScaffoldDependencies(outputDirectory);
+    const { app } = (await import(
+      path.join(outputDirectory, "apps", "api", "src", "app.ts")
+    )) as { app: { request: (input: string, init?: RequestInit) => Promise<Response> } };
+
+    const list = await app.request("/api/quotes");
+    expect(list.status).toBe(200);
+    const quotes = (await list.json()) as Array<{ text: string }>;
+    expect(quotes[0]?.text).toBe("Never cross; always Common.");
+
+    const add = (text: string) =>
+      app.request("/api/quotes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text, author: "Max" }),
+      });
+
+    const created = await add("Ship it.");
+    expect(created.status).toBe(201);
+
+    // The declared failure travels as the contract's 409 result.
+    const duplicate = await add("  ship it. ");
+    expect(duplicate.status).toBe(409);
+    expect(((await duplicate.json()) as { code: string }).code).toBe("duplicate_quote");
+
+    // S5 regression: malformed input must produce a structured response in
+    // local mode — never a rejected dispatch promise.
+    const malformed = await app.request("/api/quotes", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{not json",
+    });
+    expect([400, 500]).toContain(malformed.status);
+  }, 60000);
+
+  it("passes plumb with zero findings (generator/doctrine coupling)", async () => {
+    if (!(await plumbAvailable())) {
+      console.warn(`plumb not found at ${PLUMB_EXECUTABLE}; skipping the doctrine gate.`);
+      return;
+    }
+
+    await expectPlumbClean(outputDirectory);
+  }, 60000);
+
+  it("keeps the embedded golden configs in sync with plumb's configs/ (D3)", async () => {
+    if (!(await plumbAvailable())) {
+      console.warn(`plumb not found at ${PLUMB_EXECUTABLE}; skipping the config sync gate.`);
+      return;
+    }
+
+    const plumbConfigsRoot = path.join(path.dirname(PLUMB_EXECUTABLE), "configs");
+    const embedded = emitGoldenConfigSources();
+
+    // plumb's golden base is a SUPERSET floor: every key plumb requires must
+    // be present with the required value in what we embed.
+    const assertCovers = (golden: unknown, actual: unknown, context: string): void => {
+      if (Array.isArray(golden)) {
+        expect(actual, context).toEqual(golden);
+        return;
+      }
+      if (golden && typeof golden === "object") {
+        for (const [key, value] of Object.entries(golden)) {
+          expect(actual, context).toHaveProperty(key);
+          assertCovers(value, (actual as Record<string, unknown>)[key], `${context}.${key}`);
+        }
+        return;
+      }
+      expect(actual, context).toBe(golden);
+    };
+
+    const pairs: Array<[plumbFile: string, embeddedFile: string]> = [
+      ["oxlintrc.json", ".oxlintrc.json"],
+      ["oxfmtrc.json", ".oxfmtrc.json"],
+    ];
+
+    for (const [plumbFile, embeddedFile] of pairs) {
+      const golden = JSON.parse(
+        await fs.readFile(path.join(plumbConfigsRoot, plumbFile), "utf8"),
+      ) as unknown;
+      const ours = JSON.parse(embedded[embeddedFile] ?? "{}") as unknown;
+      assertCovers(golden, ours, embeddedFile);
+    }
+  });
+
+  it("refuses to overwrite a non-empty output directory unless --force is passed", async () => {
+    const stderr: string[] = [];
+    const exitCode = await runCli(["scaffold", "--out", outputDirectory, "--name", "demo"], {
+      stdout: () => undefined,
+      stderr: (text) => stderr.push(text),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join("")).toContain("--force");
+  });
+});

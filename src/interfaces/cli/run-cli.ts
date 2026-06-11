@@ -234,7 +234,11 @@ const lowerExampleEntry = async () => {
   const stagingDir = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-"));
 
   try {
-    const packageTypesPath = fileURLToPath(new URL("../../index.d.ts", import.meta.url));
+    // ../../../ is the package root from BOTH src/interfaces/cli (tests run
+    // the TS directly) and dist/interfaces/cli (the shipped CLI).
+    const packageTypesPath = fileURLToPath(
+      new URL("../../../dist/index.d.ts", import.meta.url),
+    );
     const entryPath = path.join(stagingDir, "contracts.ts");
     const tsconfigPath = path.join(stagingDir, "tsconfig.json");
 

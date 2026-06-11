@@ -1,22 +1,60 @@
 # Getting Started
 
 1. install `rivet-ts`
-2. write a TypeScript contract
-3. scaffold the full app
-4. run `pnpm install`
-5. open `ui/src/main.ts` and start consuming the generated client
+2. scaffold a workspace (or write a contract first and scaffold mocks from it)
+3. run `task install && task dev`
+4. open `apps/ui/app/app.vue` and start consuming the typed client
 
 ## 1. Install
 
 ```bash
-pnpm add -D github:maxanstey-meridian/rivet-ts#v0.9.1
+pnpm add -D github:maxanstey-meridian/rivet-ts#v0.10.0
 ```
 
-The scaffolded Vite plugin can download a pinned Rivet binary automatically when it runs. The manual API package `generate` script shells out to `rivet`, so that command expects the Rivet CLI to be available on `PATH`.
+The Rivet binary (the OpenAPI emitter) is downloaded and cached automatically
+on first use — both by the Vite plugin and by the `rivet-ts rivet --` CLI
+passthrough that scaffolded `task generate` pipelines call. Nothing needs to be
+on `PATH`.
 
-## 2. Write a contract
+## 2a. Scaffold a fresh workspace
 
-Create `contracts.ts`:
+```bash
+pnpm exec rivet-ts scaffold --out ./myapp --name myapp
+cd ./myapp
+task install
+task dev
+```
+
+This emits the golden workspace shape with one worked example module
+(`quotes`): typed-inject use cases, abstract-class ports, an in-memory adapter,
+a domain error mapped to the contract's declared 409 at the transport edge, and
+vitest tests faking the port.
+
+```text
+myapp/
+├── Taskfile.yml             ← install / dev / generate / api:run / api:test / plumb
+├── .oxlintrc.json / .oxfmtrc.json / .editorconfig / .gitignore
+├── apps/
+│   ├── api/                 ← Hono backend
+│   │   ├── generated/api.contract.json
+│   │   └── src/
+│   │       ├── contracts.ts ← the contract entry (source of truth)
+│   │       ├── app.ts / composition.ts / main.ts / local.ts
+│   │       ├── interface/http/quotes-routes.ts
+│   │       └── modules/quotes/{domain,application,infrastructure}/
+│   └── ui/                  ← Nuxt SPA (ssr: false)
+│       └── app/plugins/rivet.client.ts   ← local in-browser transport
+└── packages/contracts/
+    ├── generated/           ← read-only: openapi.json + schema.d.ts
+    └── src/index.ts         ← hand-owned typed client facade
+```
+
+File naming is suffix-free throughout (`add-quote.ts`, not
+`add-quote.use-case.ts`): the directory carries the role.
+
+## 2b. Or scaffold mocks from an existing contract
+
+Write `contracts.ts`:
 
 ```ts
 import type { Contract, Endpoint } from "rivet-ts";
@@ -24,18 +62,10 @@ import type { Contract, Endpoint } from "rivet-ts";
 export interface MemberDto {
   id: string;
   email: string;
-  role: MemberRole;
 }
-
-export type MemberRole = "admin" | "member";
 
 export interface CreateMemberRequest {
   email: string;
-}
-
-export interface ValidationErrorDto {
-  message: string;
-  fields: Record<string, string[]>;
 }
 
 export interface MembersContract extends Contract<"MembersContract"> {
@@ -43,7 +73,6 @@ export interface MembersContract extends Contract<"MembersContract"> {
     method: "GET";
     route: "/api/members";
     response: MemberDto[];
-    description: "List all members";
   }>;
 
   Create: Endpoint<{
@@ -52,106 +81,55 @@ export interface MembersContract extends Contract<"MembersContract"> {
     input: CreateMemberRequest;
     response: MemberDto;
     successStatus: 201;
-    errors: [{ status: 422; response: ValidationErrorDto; description: "Validation failed" }];
   }>;
 }
 ```
 
-## 3. Scaffold the full app
-
 ```bash
 pnpm exec rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp
-cd ./myapp
-pnpm install
-pnpm --dir packages/api run generate
 ```
 
-This creates the default browser-local app shape and then generates the initial local artifacts:
+Same workspace shape; the api modules return synthesized mock values
+(`modules/members/application/list.ts` etc.) until you replace them with real
+use cases. Re-running over an existing directory refuses to clobber your edits
+unless you pass `--force`.
 
-```text
-myapp/
-├── package.json
-├── pnpm-workspace.yaml
-├── vite.config.ts
-├── tsconfig.json
-├── .dependency-cruiser.cjs
-├── packages/
-│   ├── api/
-│   │   ├── generated/
-│   │   ├── package.json
-│   │   ├── tsconfig.json
-│   │   └── src/
-│   │       ├── app.ts
-│   │       ├── app/
-│   │       └── modules/
-│   └── client/
-│       ├── generated/
-│       ├── tsconfig.json
-│       └── package.json
-└── ui/
-    ├── index.html
-    ├── rivet-local.ts
-    └── src/main.ts
-```
+## 3. The dev loop
 
-The scaffold already includes:
+- `task dev` — the Nuxt frontend; the whole API runs **in the browser**,
+  dispatched through `app.request` (wired once in
+  `apps/ui/app/plugins/rivet.client.ts`).
+- `task generate` — contract entry → `api.contract.json` → `openapi.json`
+  (Rivet binary) → `schema.d.ts` (openapi-typescript). Run after contract
+  changes.
+- `task api:run` — promote the API to a real server; point the UI at it by
+  swapping the plugin's fetch dispatch for `{ baseUrl }`.
+- `task api:test` — typecheck + vitest.
+- `task plumb` — Meridian doctrine check (zero findings on a fresh scaffold).
 
-- the API package under `packages/api`
-- the root Vite config with `rivet-ts/vite`
-- the `ui/` root
-- an initial `ui/src/main.ts` that configures local transport and consumes the generated client when possible
-
-Important:
-
-- `scaffold-mock` creates the project shape and authored handlers
-- `pnpm --dir packages/api run generate` produces `packages/api/generated/api.contract.json`, `packages/client/generated/openapi.json`, `packages/client/generated/schema.d.ts`, and `packages/client/generated/index.ts`; it uses the `rivet` command from `PATH`
-- once those initial artifacts exist, `vite dev` keeps them current
-
-The important boundary is that normal UI call sites consume `@myapp/client`, and local browser transport is wired once in `ui/rivet-local.ts` via `@myapp/api/local`. Feature UI code does not import `packages/api/src/*` or generated internals directly.
-
-## 4. Start consuming from the UI
-
-Open `ui/src/main.ts`.
-
-Typical usage looks like this:
+## 4. Consuming the client
 
 ```ts
-import { client } from "@myapp/client";
-import { configureLocalRivet } from "../rivet-local";
+import { client } from "@myapp/contracts";
 
-configureLocalRivet();
-
-const all = await client.GET("/api/members");
-console.log(all.data);
+const { data, error } = await client.GET("/api/members");
 ```
 
-The client is a typed [`openapi-fetch`](https://openapi-ts.dev/openapi-fetch/) instance: paths, methods, request bodies, and response shapes are all checked against `schema.d.ts`, which is generated from the emitted OpenAPI spec.
+The client is a typed [`openapi-fetch`](https://openapi-ts.dev/openapi-fetch/)
+instance: paths, methods, request bodies, and response shapes are all checked
+against `schema.d.ts`. openapi-fetch never throws on HTTP errors — always
+handle `{ data, error }`.
 
-That means the client code is written against the generated client surface, not against its hosting mode. Later, you can swap `configureLocalRivet()` for `configureRivet({ baseUrl })` without rewriting the generated client calls.
-
-During `vite dev`, contract changes regenerate:
-
-- `packages/api/generated/*.contract.json`
-- `packages/client/generated/openapi.json`
-- `packages/client/generated/schema.d.ts`
-- `packages/client/generated/index.ts`
-
-Vite then reloads the UI against the updated client surface.
-
-## 5. Run the app
-
-```bash
-pnpm run dev
-```
+UI call sites consume `@myapp/contracts` only; feature code never imports
+`apps/api/src/*` or generated internals directly.
 
 ## Manual artifact generation
 
-For non-plugin/manual flows, the binary writes the OpenAPI spec and `rivet-ts generate` derives the typed client from it:
+For non-Taskfile flows:
 
 ```bash
-dotnet tool install --global dotnet-rivet
-pnpm exec rivet-reflect-ts --entry ./packages/api/src/app/contracts.ts --out ./contract.json
-dotnet rivet --from ./contract.json --output ./generated
+pnpm exec rivet-reflect-ts --entry ./apps/api/src/contracts.ts --out ./contract.json
+pnpm exec rivet-ts rivet -- --from ./contract.json --output ./generated
 pnpm exec rivet-ts generate --generated-root ./generated
 ```
 

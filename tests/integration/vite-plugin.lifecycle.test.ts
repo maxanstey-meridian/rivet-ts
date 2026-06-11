@@ -3,7 +3,6 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build, createServer } from "vite";
-import { runCli } from "../../src/interfaces/cli/run-cli.js";
 
 const getProjectRoot = (): string => {
   const currentFilePath = fileURLToPath(import.meta.url);
@@ -20,20 +19,14 @@ describe("vite plugin lifecycle", () => {
     );
     const sampleRoot = path.join(tempDirectory, "myapp");
     const nodeModulesDirectory = path.join(sampleRoot, "node_modules");
-    const sourceDirectory = path.join(tempDirectory, "source");
-    const sourceNodeModulesDirectory = path.join(sourceDirectory, "node_modules");
 
-    await fs.mkdir(sourceDirectory, { recursive: true });
     await fs.mkdir(nodeModulesDirectory, { recursive: true });
-    await fs.mkdir(sourceNodeModulesDirectory, { recursive: true });
     await fs.symlink(projectRoot, path.join(nodeModulesDirectory, "rivet-ts"), "dir");
-    await fs.symlink(projectRoot, path.join(sourceNodeModulesDirectory, "rivet-ts"), "dir");
     await fs.symlink(
       path.join(projectRoot, "node_modules", "vite"),
       path.join(nodeModulesDirectory, "vite"),
       "dir",
     );
-    await fs.mkdir(path.join(nodeModulesDirectory, "@myapp"), { recursive: true });
     await fs.symlink(
       path.join(projectRoot, "node_modules", "hono"),
       path.join(nodeModulesDirectory, "hono"),
@@ -46,10 +39,19 @@ describe("vite plugin lifecycle", () => {
       path.join(nodeModulesDirectory, "openapi-fetch"),
       "dir",
     );
-    await fs.writeFile(path.join(sourceDirectory, "package.json"), '{ "type": "module" }\n');
+    // Hand-built minimal sample (the scaffolder now emits the golden Nuxt
+    // workspace, which is exercised by its own lifecycle suite; this test is
+    // about the PLUGIN: artifact generation, V1 path resolution, the binary
+    // handshake, and a real vite build).
+    const apiRoot = path.join(sampleRoot, "packages", "api");
+    const clientRoot = path.join(sampleRoot, "packages", "client");
+    await fs.mkdir(path.join(apiRoot, "src", "app"), { recursive: true });
+    await fs.mkdir(path.join(clientRoot, "generated"), { recursive: true });
+    await fs.mkdir(path.join(sampleRoot, "ui", "src"), { recursive: true });
+    await fs.writeFile(path.join(sampleRoot, "package.json"), '{ "type": "module" }\n');
 
     await fs.writeFile(
-      path.join(sourceDirectory, "contracts.ts"),
+      path.join(apiRoot, "src", "app", "contracts.ts"),
       [
         'import type { Contract, Endpoint } from "rivet-ts";',
         "",
@@ -81,27 +83,22 @@ describe("vite plugin lifecycle", () => {
       ].join("\n"),
     );
 
-    const scaffoldExitCode = await runCli([
-      "scaffold-mock",
-      "--entry",
-      path.join(sourceDirectory, "contracts.ts"),
-      "--out",
-      sampleRoot,
-    ]);
-
-    expect(scaffoldExitCode).toBe(0);
-    const apiRoot = path.join(sampleRoot, "packages", "api");
-    const clientRoot = path.join(sampleRoot, "packages", "client");
-
-    await fs.symlink(
-      path.join(sampleRoot, "packages", "api"),
-      path.join(nodeModulesDirectory, "@myapp", "api"),
-      "dir",
+    await fs.writeFile(
+      path.join(sampleRoot, "ui", "index.html"),
+      '<!DOCTYPE html><html><body><script type="module" src="/src/main.ts"></script></body></html>\n',
     );
-    await fs.symlink(
-      path.join(sampleRoot, "packages", "client"),
-      path.join(nodeModulesDirectory, "@myapp", "client"),
-      "dir",
+    // The ui consumes the generated types + openapi-fetch directly; the
+    // generated dir holds artifacts only (openapi.json + schema.d.ts).
+    await fs.writeFile(
+      path.join(sampleRoot, "ui", "src", "main.ts"),
+      [
+        'import createOpenApiClient from "openapi-fetch";',
+        'import type { paths } from "../../packages/client/generated/schema.js";',
+        "",
+        'const client = createOpenApiClient<paths>({ baseUrl: "http://localhost" });',
+        'void client.GET("/api/members");',
+        "",
+      ].join("\n"),
     );
 
     // The fake binary mirrors the REAL tool's post-Phase-3 contract exactly:
@@ -258,36 +255,18 @@ describe("vite plugin lifecycle", () => {
     ]);
     await expect(fs.stat(path.join(clientRoot, "generated", "rivet"))).rejects.toThrow();
     await expect(fs.stat(path.join(clientRoot, "generated", "schema.d.ts"))).resolves.toBeTruthy();
-    await expect(fs.stat(path.join(clientRoot, "generated", "index.ts"))).resolves.toBeTruthy();
+    // Types only (RV-020): no facade inside the artifact dir.
+    await expect(fs.stat(path.join(clientRoot, "generated", "index.ts"))).rejects.toThrow();
     await expect(fs.stat(path.join(sampleRoot, "dist", "index.html"))).resolves.toBeTruthy();
 
-    const uiMainSource = await fs.readFile(path.join(sampleRoot, "ui", "src", "main.ts"), "utf8");
-    const uiLocalRivetSource = await fs.readFile(
-      path.join(sampleRoot, "ui", "rivet-local.ts"),
-      "utf8",
-    );
     const schemaSource = await fs.readFile(
       path.join(clientRoot, "generated", "schema.d.ts"),
       "utf8",
     );
-    const clientEntrySource = await fs.readFile(
-      path.join(clientRoot, "generated", "index.ts"),
-      "utf8",
-    );
-    expect(uiMainSource).toContain('import { client } from "@myapp/client";');
-    expect(uiMainSource).toContain('client.GET("/api/members")');
-    expect(uiLocalRivetSource).toContain('import { app } from "@myapp/api/local";');
-    expect(uiLocalRivetSource).toContain("app.request");
+    expect(schemaSource).toContain("auto-generated by openapi-typescript");
     expect(schemaSource).toContain("export interface paths");
     expect(schemaSource).toContain('"/api/members"');
     expect(schemaSource).toContain("email: string;");
-    expect(clientEntrySource).toContain(
-      'import createOpenApiClient, { type Client, type ClientOptions } from "openapi-fetch";',
-    );
-    expect(clientEntrySource).toContain('import type { paths } from "./schema.js";');
-    expect(clientEntrySource).toContain("export const configureRivet = (config: RivetConfig)");
-    expect(clientEntrySource).not.toContain("rivetFetch");
-    expect(clientEntrySource).not.toContain("RivetError");
   }, 20_000);
 
   // V3: the plugin used to concatenate frontend diagnostics with the lowerer
