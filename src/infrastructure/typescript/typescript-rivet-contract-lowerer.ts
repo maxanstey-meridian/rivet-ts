@@ -145,46 +145,49 @@ const createNodeDiagnostic = (
   });
 };
 
-const isContractInterface = (node: ts.InterfaceDeclaration): boolean => {
+// X6: resolve the heritage expression's symbol so renamed Contract imports
+// (import { Contract as C }) are recognized; raw text kept as a fast path.
+const getContractHeritageType = (
+  node: ts.InterfaceDeclaration,
+  checker: ts.TypeChecker,
+): ts.ExpressionWithTypeArguments | null => {
   for (const clause of node.heritageClauses ?? []) {
     if (clause.token !== ts.SyntaxKind.ExtendsKeyword) {
       continue;
     }
 
     for (const type of clause.types) {
-      if (type.expression.getText(getNodeSourceFile(node)) !== "Contract") {
-        continue;
+      if (type.expression.getText(getNodeSourceFile(node)) === "Contract") {
+        return type;
       }
 
-      const [argument] = type.typeArguments ?? [];
-      return Boolean(
-        argument &&
-        ts.isLiteralTypeNode(argument) &&
-        ts.isStringLiteral(argument.literal) &&
-        argument.literal.text.length > 0,
-      );
+      const symbol = checker.getSymbolAtLocation(type.expression);
+      const resolvedSymbol =
+        symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0
+          ? checker.getAliasedSymbol(symbol)
+          : symbol;
+      if (resolvedSymbol?.getName() === "Contract") {
+        return type;
+      }
     }
   }
 
-  return false;
+  return null;
 };
 
-const getContractName = (node: ts.InterfaceDeclaration): string | null => {
-  for (const clause of node.heritageClauses ?? []) {
-    if (clause.token !== ts.SyntaxKind.ExtendsKeyword) {
-      continue;
-    }
+const isContractInterface = (node: ts.InterfaceDeclaration, checker: ts.TypeChecker): boolean =>
+  getContractHeritageType(node, checker) !== null;
 
-    for (const type of clause.types) {
-      if (type.expression.getText(getNodeSourceFile(node)) !== "Contract") {
-        continue;
-      }
-
-      const [argument] = type.typeArguments ?? [];
-      if (argument && ts.isLiteralTypeNode(argument) && ts.isStringLiteral(argument.literal)) {
-        return argument.literal.text;
-      }
-    }
+const getContractName = (node: ts.InterfaceDeclaration, checker: ts.TypeChecker): string | null => {
+  const heritageType = getContractHeritageType(node, checker);
+  const [argument] = heritageType?.typeArguments ?? [];
+  if (
+    argument &&
+    ts.isLiteralTypeNode(argument) &&
+    ts.isStringLiteral(argument.literal) &&
+    argument.literal.text.length > 0
+  ) {
+    return argument.literal.text;
   }
 
   return null;
@@ -207,15 +210,18 @@ const getEndpointSpecNode = (member: ts.TypeElement): ts.TypeNode | null => {
   return argument ?? null;
 };
 
-const indexContractEndpointSpecs = (sourceFile: ts.SourceFile): ContractIndex => {
+const indexContractEndpointSpecs = (
+  sourceFile: ts.SourceFile,
+  checker: ts.TypeChecker,
+): ContractIndex => {
   const contracts: ContractIndex = new Map();
 
   for (const statement of sourceFile.statements) {
-    if (!ts.isInterfaceDeclaration(statement) || !isContractInterface(statement)) {
+    if (!ts.isInterfaceDeclaration(statement) || !isContractInterface(statement, checker)) {
       continue;
     }
 
-    const contractName = getContractName(statement);
+    const contractName = getContractName(statement, checker);
     if (!contractName) {
       continue;
     }
@@ -243,6 +249,7 @@ const indexContractEndpointSpecs = (sourceFile: ts.SourceFile): ContractIndex =>
 
 const indexDeclarations = (
   program: ts.Program,
+  checker: ts.TypeChecker,
   diagnostics: ExtractionDiagnostic[],
 ): Map<string, SupportedDeclaration> => {
   const declarations = new Map<string, SupportedDeclaration>();
@@ -265,7 +272,7 @@ const indexDeclarations = (
         continue;
       }
 
-      if (ts.isInterfaceDeclaration(statement) && isContractInterface(statement)) {
+      if (ts.isInterfaceDeclaration(statement) && isContractInterface(statement, checker)) {
         continue;
       }
 
@@ -359,8 +366,8 @@ export class TypeScriptRivetContractLowerer extends RivetContractLowerer {
     }
 
     const checker = program.getTypeChecker();
-    const declarations = indexDeclarations(program, diagnostics);
-    const contractIndex = indexContractEndpointSpecs(sourceFile);
+    const declarations = indexDeclarations(program, checker, diagnostics);
+    const contractIndex = indexContractEndpointSpecs(sourceFile, checker);
     const typeDefinitions = new Map<string, RivetTypeDefinition>();
     const enums = new Map<string, RivetContractEnum>();
     const endpoints: RivetEndpointDefinition[] = [];
@@ -539,6 +546,19 @@ class TypeEmissionContext {
     const inputType = this.lowerOptionalTypeNode(inputNode);
     const responseType = this.lowerOptionalTypeNode(responseNode);
 
+    // X7: buildExplicitEndpointParams has no multipart handling, so explicit
+    // params:/query: would silently bypass acceptsFile and emit output that
+    // contradicts the multipart/form-data request media type.
+    if (context.acceptsFile && (paramsNode || queryNode)) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          paramsNode ?? queryNode ?? specNode,
+          "INVALID_MULTIPART_INPUT",
+          `Endpoint "${context.contractName}.${context.endpointName}" cannot combine acceptsFile with explicit params/query declarations; declare route and form fields on the input type instead.`,
+        ),
+      );
+    }
+
     const params =
       paramsNode || queryNode
         ? this.buildExplicitEndpointParams(
@@ -684,17 +704,27 @@ class TypeEmissionContext {
   } | null {
     const stringValues: string[] = [];
     const intValues: number[] = [];
+    // X16: auto-numbered members (enum Role { Admin, User }) follow standard
+    // TypeScript semantics: start at 0 and continue from the previous numeric
+    // value. String members invalidate further auto-numbering (as in tsc).
+    let nextAutoValue: number | null = 0;
 
     for (const member of declaration.members) {
       if (!member.initializer) {
-        this.diagnostics.push(
-          createNodeDiagnostic(
-            member,
-            "UNSUPPORTED_ENUM_MEMBER",
-            `Enum "${declaration.name.text}" must use explicit string or numeric literal members.`,
-          ),
-        );
-        return null;
+        if (nextAutoValue === null) {
+          this.diagnostics.push(
+            createNodeDiagnostic(
+              member,
+              "UNSUPPORTED_ENUM_MEMBER",
+              `Enum "${declaration.name.text}" has a member without an initializer after a non-numeric member.`,
+            ),
+          );
+          return null;
+        }
+
+        intValues.push(nextAutoValue);
+        nextAutoValue += 1;
+        continue;
       }
 
       if (
@@ -702,11 +732,26 @@ class TypeEmissionContext {
         ts.isNoSubstitutionTemplateLiteral(member.initializer)
       ) {
         stringValues.push(member.initializer.text);
+        nextAutoValue = null;
         continue;
       }
 
       if (ts.isNumericLiteral(member.initializer)) {
-        intValues.push(Number(member.initializer.text));
+        const value = Number(member.initializer.text);
+        intValues.push(value);
+        nextAutoValue = value + 1;
+        continue;
+      }
+
+      // X16: negative initializers (= -1) parse as prefix-unary expressions.
+      if (
+        ts.isPrefixUnaryExpression(member.initializer) &&
+        member.initializer.operator === ts.SyntaxKind.MinusToken &&
+        ts.isNumericLiteral(member.initializer.operand)
+      ) {
+        const value = -Number(member.initializer.operand.text);
+        intValues.push(value);
+        nextAutoValue = value + 1;
         continue;
       }
 
@@ -800,8 +845,8 @@ class TypeEmissionContext {
     const typeParameters =
       declaration.typeParameters?.map((parameter) => parameter.name.text) ?? [];
     if (ts.isInterfaceDeclaration(declaration)) {
-      const properties = this.readPropertyMembers(
-        declaration.members,
+      const properties = this.readInterfaceProperties(
+        declaration,
         `Type "${declaration.name.text}"`,
       );
 
@@ -886,7 +931,16 @@ class TypeEmissionContext {
 
     if (paramsNode) {
       const properties = this.getObjectProperties(paramsNode);
-      if (properties) {
+      if (!properties) {
+        // X4: non-object params: shapes were previously discarded silently.
+        this.diagnostics.push(
+          createNodeDiagnostic(
+            paramsNode,
+            "UNSUPPORTED_PARAMS_SHAPE",
+            `Endpoint "${context.contractName}.${context.endpointName}" must declare params as an object literal type or an interface/alias of property signatures.`,
+          ),
+        );
+      } else {
         for (const property of properties) {
           const propertyType = this.lowerTypeNode(
             property.typeNode,
@@ -906,9 +960,36 @@ class TypeEmissionContext {
       }
     }
 
+    // X3: route placeholders not covered by params: previously vanished;
+    // emit fallback string route params like the implicit branches do.
+    const coveredRouteParams = new Set(
+      params.filter((param) => param.source === "route").map((param) => param.name.toLowerCase()),
+    );
+    for (const routeParamName of parseRouteParamNames(route)) {
+      if (!coveredRouteParams.has(routeParamName.toLowerCase())) {
+        params.push(
+          new RivetEndpointParam({
+            name: routeParamName,
+            type: { kind: "primitive", type: "string" },
+            source: "route",
+            isOptional: false,
+          }),
+        );
+      }
+    }
+
     if (queryNode) {
       const properties = this.getObjectProperties(queryNode);
-      if (properties) {
+      if (!properties) {
+        // X4: non-object query: shapes were previously discarded silently.
+        this.diagnostics.push(
+          createNodeDiagnostic(
+            queryNode,
+            "UNSUPPORTED_QUERY_SHAPE",
+            `Endpoint "${context.contractName}.${context.endpointName}" must declare query as an object literal type or an interface/alias of property signatures.`,
+          ),
+        );
+      } else {
         for (const property of properties) {
           const propertyType = this.lowerTypeNode(
             property.typeNode,
@@ -1041,6 +1122,25 @@ class TypeEmissionContext {
           isOptional: property.optional,
         }),
       );
+    }
+
+    // X3: route placeholders with no matching input property previously
+    // vanished on non-body methods; emit fallback string route params like
+    // the no-input and body-method branches do.
+    const coveredRouteParams = new Set(
+      params.filter((param) => param.source === "route").map((param) => param.name.toLowerCase()),
+    );
+    for (const routeParamName of routeParamNames) {
+      if (!coveredRouteParams.has(routeParamName.toLowerCase())) {
+        params.push(
+          new RivetEndpointParam({
+            name: routeParamName,
+            type: { kind: "primitive", type: "string" },
+            source: "route",
+            isOptional: false,
+          }),
+        );
+      }
     }
 
     return params;
@@ -1517,6 +1617,77 @@ class TypeEmissionContext {
     return null;
   }
 
+  // X5: interfaces with heritage clauses previously lowered only their own
+  // members, silently dropping inherited properties. Flatten the inheritance
+  // chain (own members override inherited ones by name) or fail loudly when
+  // a base type cannot be resolved to a supported local interface.
+  private readInterfaceProperties(
+    declaration: ts.InterfaceDeclaration,
+    contextLabel: string,
+    seen: Set<ts.InterfaceDeclaration> = new Set(),
+  ): PropertyDescriptor[] | null {
+    if (seen.has(declaration)) {
+      return [];
+    }
+    seen.add(declaration);
+
+    const inherited: PropertyDescriptor[] = [];
+    for (const clause of declaration.heritageClauses ?? []) {
+      if (clause.token !== ts.SyntaxKind.ExtendsKeyword) {
+        continue;
+      }
+
+      for (const type of clause.types) {
+        const baseDeclaration = this.resolveHeritageInterface(type);
+        if (!baseDeclaration || (type.typeArguments?.length ?? 0) > 0) {
+          this.diagnostics.push(
+            createNodeDiagnostic(
+              type,
+              "UNSUPPORTED_HERITAGE_CLAUSE",
+              `${contextLabel} extends "${type.getText(getNodeSourceFile(type))}", which is not a supported base type. Only exported, non-generic local interfaces can be inherited.`,
+            ),
+          );
+          return null;
+        }
+
+        const baseProperties = this.readInterfaceProperties(baseDeclaration, contextLabel, seen);
+        if (!baseProperties) {
+          return null;
+        }
+
+        inherited.push(...baseProperties);
+      }
+    }
+
+    const ownProperties = this.readPropertyMembers(declaration.members, contextLabel);
+    if (!ownProperties) {
+      return null;
+    }
+
+    const overriddenNames = new Set(ownProperties.map((property) => property.name));
+    const merged = new Map<string, PropertyDescriptor>();
+    for (const property of inherited) {
+      if (!overriddenNames.has(property.name)) {
+        merged.set(property.name, property);
+      }
+    }
+
+    return [...merged.values(), ...ownProperties];
+  }
+
+  private resolveHeritageInterface(
+    type: ts.ExpressionWithTypeArguments,
+  ): ts.InterfaceDeclaration | null {
+    const symbol = this.checker.getSymbolAtLocation(type.expression);
+    const resolvedSymbol =
+      symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0
+        ? this.checker.getAliasedSymbol(symbol)
+        : symbol;
+    const name = resolvedSymbol?.getName();
+    const declaration = name ? this.declarations.get(name) : undefined;
+    return declaration && ts.isInterfaceDeclaration(declaration) ? declaration : null;
+  }
+
   private readPropertyMembers(
     members: ts.NodeArray<ts.TypeElement>,
     contextLabel: string,
@@ -1546,10 +1717,27 @@ class TypeEmissionContext {
         return null;
       }
 
+      // X10: `T | undefined` is the union spelling of an optional property;
+      // record the optionality here and lower the defined member directly
+      // when only one remains (lowerUnionTypeNode drops undefined otherwise).
+      let typeNode = member.type;
+      let optional = Boolean(member.questionToken);
+      if (ts.isUnionTypeNode(typeNode)) {
+        const definedMembers = typeNode.types.filter(
+          (unionMember) => unionMember.kind !== ts.SyntaxKind.UndefinedKeyword,
+        );
+        if (definedMembers.length < typeNode.types.length) {
+          optional = true;
+          if (definedMembers.length === 1) {
+            typeNode = definedMembers[0]!;
+          }
+        }
+      }
+
       properties.push({
         name: propertyName,
-        typeNode: member.type,
-        optional: Boolean(member.questionToken),
+        typeNode,
+        optional,
         readOnly: hasReadonlyModifier(member),
       });
     }
@@ -1573,7 +1761,7 @@ class TypeEmissionContext {
     }
 
     if (ts.isInterfaceDeclaration(declaration)) {
-      return this.readPropertyMembers(declaration.members, `Type "${name}"`);
+      return this.readInterfaceProperties(declaration, `Type "${name}"`);
     }
 
     if (ts.isTypeAliasDeclaration(declaration) && ts.isTypeLiteralNode(declaration.type)) {
@@ -1837,6 +2025,17 @@ class TypeEmissionContext {
       };
     }
 
+    // X8: Date lives in lib .d.ts files the declaration index never sees, so
+    // a bare ref would dangle and later fail with a context-free
+    // TYPE_NOT_FOUND. Lower it to its wire shape instead.
+    if (typeName === "Date" && typeArguments.length === 0 && !this.declarations.has("Date")) {
+      return {
+        kind: "primitive",
+        type: "string",
+        format: "date-time",
+      };
+    }
+
     if (typeParameters.has(typeName) && typeArguments.length === 0) {
       return {
         kind: "typeParam",
@@ -1872,25 +2071,56 @@ class TypeEmissionContext {
     node: ts.UnionTypeNode,
     typeParameters: Set<string>,
   ): RivetType | null {
-    const nonNullMembers = node.types.filter((member) => !isNullTypeNode(member));
-    if (nonNullMembers.length === 1 && nonNullMembers.length !== node.types.length) {
-      const innerType = this.lowerTypeNode(nonNullMembers[0]!, typeParameters);
-      return innerType
-        ? {
-            kind: "nullable",
-            inner: innerType,
-          }
-        : null;
+    // X10: `T | undefined` carries no JSON meaning beyond optionality (which
+    // readPropertyMembers records); drop undefined members before lowering.
+    const definedMembers = node.types.filter(
+      (member) => member.kind !== ts.SyntaxKind.UndefinedKeyword,
+    );
+    const nonNullMembers = definedMembers.filter((member) => !isNullTypeNode(member));
+    const isNullable = nonNullMembers.length !== definedMembers.length;
+
+    if (nonNullMembers.length === 0) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          node,
+          "UNSUPPORTED_UNION",
+          `Union "${node.getText(getNodeSourceFile(node))}" is not supported.`,
+        ),
+      );
+      return null;
     }
 
-    const taggedUnion = this.tryLowerTaggedUnionTypeNode(node, typeParameters);
+    const loweredMembers =
+      nonNullMembers.length === 1
+        ? this.lowerTypeNode(nonNullMembers[0]!, typeParameters)
+        : this.lowerUnionMembers(node, nonNullMembers, typeParameters);
+    if (!loweredMembers) {
+      return null;
+    }
+
+    // X10: `A | B | null` previously failed because the null filter only
+    // applied when exactly one non-null member remained.
+    return isNullable
+      ? {
+          kind: "nullable",
+          inner: loweredMembers,
+        }
+      : loweredMembers;
+  }
+
+  private lowerUnionMembers(
+    node: ts.UnionTypeNode,
+    members: readonly ts.TypeNode[],
+    typeParameters: Set<string>,
+  ): RivetType | null {
+    const taggedUnion = this.tryLowerTaggedUnionTypeNode(node, members, typeParameters);
     if (taggedUnion) {
       return taggedUnion;
     }
 
     const stringValues: string[] = [];
     const intValues: number[] = [];
-    for (const member of node.types) {
+    for (const member of members) {
       if (!ts.isLiteralTypeNode(member)) {
         this.diagnostics.push(
           createNodeDiagnostic(
@@ -1948,9 +2178,10 @@ class TypeEmissionContext {
 
   private tryLowerTaggedUnionTypeNode(
     node: ts.UnionTypeNode,
+    memberNodes: readonly ts.TypeNode[],
     typeParameters: Set<string>,
   ): RivetType | null {
-    const members = node.types.map((member) => this.readTaggedUnionMember(member));
+    const members = memberNodes.map((member) => this.readTaggedUnionMember(member));
     if (members.some((member) => member === null)) {
       return null;
     }

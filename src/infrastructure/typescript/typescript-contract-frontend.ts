@@ -72,8 +72,23 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
         continue;
       }
 
-      const contractName = this.getDeclaredContractName(statement);
-      if (!contractName) {
+      const contractHeritage = this.getContractHeritageType(statement, checker);
+      if (!contractHeritage) {
+        continue;
+      }
+
+      // X6/X23: an interface that opted into the Contract DSL must either
+      // yield a usable name or fail loudly — never vanish silently.
+      const contractName = this.getDeclaredContractName(contractHeritage);
+      if (contractName === null) {
+        diagnostics.push(
+          this.createNodeDiagnostic(
+            sourceFile,
+            contractHeritage,
+            "INVALID_CONTRACT_NAME",
+            `Interface "${statement.name.text}" must declare Contract<"Name"> with a non-empty string literal name.`,
+          ),
+        );
         continue;
       }
 
@@ -133,31 +148,49 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
     return mapTypeScriptDiagnostics(ts.getPreEmitDiagnostics(program), entryPath);
   }
 
-  private getDeclaredContractName(node: ts.InterfaceDeclaration): string | null {
+  // X6: detect the Contract heritage clause by resolving the heritage
+  // expression's symbol so renamed imports (import { Contract as C }) are not
+  // silently skipped. The raw-text comparison is kept as a fast path.
+  private getContractHeritageType(
+    node: ts.InterfaceDeclaration,
+    checker: ts.TypeChecker,
+  ): ts.ExpressionWithTypeArguments | null {
     for (const clause of node.heritageClauses ?? []) {
       if (clause.token !== ts.SyntaxKind.ExtendsKeyword) {
         continue;
       }
 
       for (const type of clause.types) {
-        if (type.expression.getText() !== "Contract") {
-          continue;
+        if (type.expression.getText() === "Contract") {
+          return type;
         }
 
-        const [firstArgument] = type.typeArguments ?? [];
-        if (
-          !firstArgument ||
-          !ts.isLiteralTypeNode(firstArgument) ||
-          !ts.isStringLiteral(firstArgument.literal)
-        ) {
-          return null;
+        const symbol = checker.getSymbolAtLocation(type.expression);
+        const resolvedSymbol =
+          symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0
+            ? checker.getAliasedSymbol(symbol)
+            : symbol;
+        if (resolvedSymbol?.getName() === "Contract") {
+          return type;
         }
-
-        return firstArgument.literal.text;
       }
     }
 
     return null;
+  }
+
+  private getDeclaredContractName(heritageType: ts.ExpressionWithTypeArguments): string | null {
+    const [firstArgument] = heritageType.typeArguments ?? [];
+    if (
+      !firstArgument ||
+      !ts.isLiteralTypeNode(firstArgument) ||
+      !ts.isStringLiteral(firstArgument.literal) ||
+      firstArgument.literal.text.length === 0
+    ) {
+      return null;
+    }
+
+    return firstArgument.literal.text;
   }
 
   private getMemberName(name: ts.PropertyName): string | null {
@@ -195,6 +228,21 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
           typeNode,
           "INVALID_ENDPOINT_SPEC",
           `Endpoint "${endpointName}" must declare an endpoint authoring spec.`,
+        ),
+      );
+      return null;
+    }
+
+    // X2: generic spec aliases (Endpoint<CrudSpec<T>>) would lower the
+    // declaration's unsubstituted type parameters; reject them loudly until
+    // the pipeline can instantiate type arguments.
+    if (ts.isTypeReferenceNode(specNode) && (specNode.typeArguments?.length ?? 0) > 0) {
+      diagnostics.push(
+        this.createNodeDiagnostic(
+          sourceFile,
+          specNode,
+          "UNSUPPORTED_GENERIC_ENDPOINT_SPEC",
+          `Endpoint "${endpointName}" uses a generic endpoint spec alias; generic spec aliases are not supported. Inline the spec or use a non-generic alias.`,
         ),
       );
       return null;
@@ -1629,13 +1677,15 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
 
   private parseNumericLiteral(
     node: ts.TypeNode | undefined,
-    sourceFile: ts.SourceFile,
+    _sourceFile: ts.SourceFile,
   ): number | null {
     if (!node || !ts.isLiteralTypeNode(node) || !ts.isNumericLiteral(node.literal)) {
       return null;
     }
 
-    return Number.parseInt(node.literal.getText(sourceFile), 10);
+    // X1: read .text instead of slicing source text — the node may be
+    // declared in a different file than the entry SourceFile.
+    return Number(node.literal.text);
   }
 
   private parseBooleanLiteral(
@@ -1659,63 +1709,61 @@ export class TypeScriptContractFrontend extends TsContractFrontend {
 
   private parseTypeExpression(
     node: ts.TypeNode | undefined,
-    sourceFile: ts.SourceFile,
+    _sourceFile: ts.SourceFile,
   ): TypeExpression | null {
     if (!node || node.kind === ts.SyntaxKind.VoidKeyword) {
       return null;
     }
 
     const references = new Set<string>();
-    this.collectTypeReferences(node, references, sourceFile);
+    this.collectTypeReferences(node, references);
 
-    return new TypeExpression(node.getText(sourceFile), [...references].sort());
+    // X1: getText() must index into the node's own SourceFile — spec nodes
+    // resolved through the checker can live in files other than the entry.
+    return new TypeExpression(node.getText(node.getSourceFile()), [...references].sort());
   }
 
-  private collectTypeReferences(
-    node: ts.TypeNode,
-    references: Set<string>,
-    sourceFile: ts.SourceFile,
-  ): void {
+  private collectTypeReferences(node: ts.TypeNode, references: Set<string>): void {
     if (ts.isTypeReferenceNode(node)) {
-      const name = node.typeName.getText(sourceFile);
+      const name = node.typeName.getText(node.typeName.getSourceFile());
       if (!BUILTIN_TYPE_NAMES.has(name)) {
         references.add(name);
       }
 
       for (const typeArgument of node.typeArguments ?? []) {
-        this.collectTypeReferences(typeArgument, references, sourceFile);
+        this.collectTypeReferences(typeArgument, references);
       }
       return;
     }
 
     if (ts.isArrayTypeNode(node)) {
-      this.collectTypeReferences(node.elementType, references, sourceFile);
+      this.collectTypeReferences(node.elementType, references);
       return;
     }
 
     if (ts.isUnionTypeNode(node) || ts.isIntersectionTypeNode(node)) {
       for (const member of node.types) {
-        this.collectTypeReferences(member, references, sourceFile);
+        this.collectTypeReferences(member, references);
       }
       return;
     }
 
     if (ts.isTupleTypeNode(node)) {
       for (const member of node.elements) {
-        this.collectTypeReferences(member, references, sourceFile);
+        this.collectTypeReferences(member, references);
       }
       return;
     }
 
     if (ts.isParenthesizedTypeNode(node) || ts.isTypeOperatorNode(node)) {
-      this.collectTypeReferences(node.type, references, sourceFile);
+      this.collectTypeReferences(node.type, references);
       return;
     }
 
     if (ts.isTypeLiteralNode(node)) {
       for (const member of node.members) {
         if (ts.isPropertySignature(member) && member.type) {
-          this.collectTypeReferences(member.type, references, sourceFile);
+          this.collectTypeReferences(member.type, references);
         }
       }
       return;
