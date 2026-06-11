@@ -45,15 +45,9 @@ The handlers are plain TypeScript functions typed against the contract surface w
 
 ## 4. Generate downstream artifacts
 
-Main Rivet consumes the reflected contract JSON and emits:
+Main Rivet consumes the reflected contract JSON and emits one artifact: an OpenAPI 3.1 document (`openapi.json`).
 
-- TypeScript DTOs
-- a typed client
-- OpenAPI
-- validators
-- JSON Schema
-
-Downstream Rivet owns the `rivet/*` artifact generation. After that, `rivet-ts generate` emits the app-facing client package entrypoint, such as `packages/client/generated/index.ts`, that re-exports the generated modules and runtime helpers.
+Everything downstream of the spec comes from the OpenAPI ecosystem. `rivet-ts generate` derives the app-facing client package from it — `openapi-typescript` types (`schema.d.ts`) plus a typed `openapi-fetch` facade (`index.ts`), such as `packages/client/generated/index.ts`. Runtime request validation is the Hono adapter's job on the server; client-side runtime validation, if wanted, is `openapi-zod-client` over the same spec.
 
 ## 5. Promote transport later
 

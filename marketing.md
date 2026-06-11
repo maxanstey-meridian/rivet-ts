@@ -34,10 +34,12 @@ export interface UserContract extends Contract<"UserContract"> {
 ### The client
 
 ```ts
-import { user } from "./generated/rivet/client/index.js";
+import { client } from "./generated/index.js";
 
-const record = await user.getUser("usr_123");
-console.log(record.name);
+const { data: record } = await client.GET("/users/{id}", {
+  params: { path: { id: "usr_123" } },
+});
+console.log(record?.name);
 ```
 
 The client surface is the same the whole way through.
@@ -95,7 +97,7 @@ Bun.serve({
 ```
 
 ```ts
-import { configureRivet } from "./generated/rivet/rivet.js";
+import { configureRivet } from "./generated/index.js";
 
 configureRivet({ baseUrl: "https://api.myapp.dev" });
 ```
@@ -117,7 +119,7 @@ app.MapGet(UserContract.GetUser.Route, async (string id) =>
 ```
 
 ```ts
-import { configureRivet } from "./generated/rivet/rivet.js";
+import { configureRivet } from "./generated/index.js";
 
 configureRivet({ baseUrl: "https://api.myapp.dev" });
 ```

@@ -63,7 +63,7 @@ Options:
 
 ## `rivet-ts generate`
 
-Emit the app-facing generated client package entrypoint after downstream Rivet has generated `rivet/*`.
+Derive the app-facing client package from the OpenAPI spec the Rivet binary wrote (`rivet --from <contract.json> --output <dir>` writes `<dir>/openapi.json`).
 
 ```bash
 rivet-ts generate --generated-root <dir>
@@ -75,7 +75,12 @@ Example:
 pnpm exec rivet-ts generate --generated-root ./packages/client/generated
 ```
 
-This writes `<generated-root>/index.ts`. The entrypoint imports each generated client module from `rivet/client/*.ts`, exports those modules as camel-cased namespaces, re-exports `RivetError`, `configureRivet`, `rivetFetch`, their public runtime types, and conditionally re-exports generated schemas, validators, and common types when the corresponding downstream files exist.
+This reads `<generated-root>/openapi.json` and writes:
+
+- `<generated-root>/schema.d.ts` — `openapi-typescript` types derived from the spec
+- `<generated-root>/index.ts` — a typed `openapi-fetch` client facade exporting `paths`, `createClient`, `configureRivet`, and the configured `client`
+
+It fails loudly when `openapi.json` is missing.
 
 ## Diagnostics
 

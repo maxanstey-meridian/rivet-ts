@@ -146,12 +146,13 @@ pnpm run dev
 
 ## Manual artifact generation
 
-For OpenAPI, validators, JSON Schema, or non-plugin/manual flows:
+For non-plugin/manual flows, the binary writes the OpenAPI spec and `rivet-ts generate` derives the typed client from it:
 
 ```bash
 dotnet tool install --global dotnet-rivet
 pnpm exec rivet-reflect-ts --entry ./packages/api/src/app/contracts.ts --out ./contract.json
-dotnet rivet --from ./contract.json --output ./generated --openapi ./openapi.json
+dotnet rivet --from ./contract.json --output ./generated
+pnpm exec rivet-ts generate --generated-root ./generated
 ```
 
 ## Next steps
@@ -160,5 +161,5 @@ dotnet rivet --from ./contract.json --output ./generated --openapi ./openapi.jso
 - Read [Vite Plugin](/guides/vite-plugin)
 - Follow the [5 minute tutorial](/guides/tutorial)
 - Read [Local Now, Bun Later](/guides/local-now-server-later)
-- Read [OpenAPI and Validators](/guides/openapi-and-validators)
+- Read [OpenAPI and Generated Clients](/guides/openapi-and-validators)
 - Read [.NET Handoff](/guides/dotnet-handoff)

@@ -47,7 +47,7 @@ const readOpenApiSpec = async (openApiPath: string): Promise<OpenAPI3> => {
   } catch {
     throw new Error(
       `Cannot generate the client package: OpenAPI spec not found at ${openApiPath}. ` +
-        "Run the Rivet binary with --openapi first.",
+        "Run the Rivet binary first (rivet --from <contract.json> --output <dir> writes <dir>/openapi.json).",
     );
   }
 

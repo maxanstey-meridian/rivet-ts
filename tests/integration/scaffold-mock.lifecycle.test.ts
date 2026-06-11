@@ -353,9 +353,13 @@ describe("scaffold-mock lifecycle", () => {
     expect(apiPackageJsonSource).toContain(
       "src/app/contracts.ts --out generated/api.contract.json",
     );
-    // The binary emits the OpenAPI spec the client types derive from; the path
-    // is resolved against --output, landing in ../client/generated/openapi.json.
-    expect(apiPackageJsonSource).toContain("--openapi ../openapi.json");
+    // The binary emits the OpenAPI spec the client types derive from:
+    // `--output <dir>` writes <dir>/openapi.json and nothing else
+    // (post-Phase-3 the binary emits no TS clients, types, or validators).
+    expect(apiPackageJsonSource).toContain(
+      "rivet --from generated/api.contract.json --output ../client/generated &&",
+    );
+    expect(apiPackageJsonSource).not.toContain("--openapi");
     expect(apiPackageJsonSource).toContain(
       "pnpm exec rivet-ts generate --generated-root ../client/generated",
     );
@@ -367,7 +371,9 @@ describe("scaffold-mock lifecycle", () => {
     expect(clientPackageJsonSource).toContain('"name": "@members-mock/client"');
     expect(clientPackageJsonSource).toContain('"."');
     expect(clientPackageJsonSource).toContain('"openapi-fetch"');
-    expect(clientPackageJsonSource).toContain('"zod": "^4.1.12"');
+    // Zod left with the binary's deleted validator emitter; client-side runtime
+    // validation, if wanted, is openapi-zod-client over openapi.json.
+    expect(clientPackageJsonSource).not.toContain('"zod"');
 
     // S8/T6: the scaffolded rivet-ts dependency pin must track this package's
     // version instead of drifting behind it.

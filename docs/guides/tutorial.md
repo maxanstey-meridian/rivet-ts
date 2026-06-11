@@ -215,4 +215,4 @@ The app runs in the browser runtime until it is exposed through a server entry.
 ## Next
 
 - Read [Local Now, Bun Later](/guides/local-now-server-later)
-- Read [OpenAPI and Validators](/guides/openapi-and-validators)
+- Read [OpenAPI and Generated Clients](/guides/openapi-and-validators)

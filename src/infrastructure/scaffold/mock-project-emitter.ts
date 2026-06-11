@@ -53,7 +53,6 @@ const DEFAULT_VITE_VERSION = "^6.4.2";
 const DEFAULT_DEPENDENCY_CRUISER_VERSION = "^17.3.10";
 const RIVET_TS_DEPENDENCY_REPOSITORY = "github:maxanstey-meridian/rivet-ts";
 const DEFAULT_RIVET_VERSION = "0.34.0";
-const DEFAULT_ZOD_VERSION = "^4.1.12";
 const DEFAULT_OPENAPI_FETCH_VERSION = "^0.17.0";
 
 const toCamelCase = (value: string): string => {
@@ -794,11 +793,11 @@ const emitApiPackageJsonSource = async (packageScope: string): Promise<string> =
           "./local": "./src/app/local.ts",
         },
         scripts: {
-          // The binary resolves --openapi against --output, so ../openapi.json
-          // lands at ../client/generated/openapi.json where `rivet-ts generate`
-          // picks it up to emit schema.d.ts + index.ts.
+          // `rivet --from <contract> --output <dir>` writes <dir>/openapi.json
+          // (the binary's sole output post-Phase-3); `rivet-ts generate` then
+          // derives schema.d.ts + index.ts from that spec.
           generate:
-            "pnpm exec rivet-reflect-ts --entry src/app/contracts.ts --out generated/api.contract.json && rivet --from generated/api.contract.json --output ../client/generated/rivet --openapi ../openapi.json && pnpm exec rivet-ts generate --generated-root ../client/generated",
+            "pnpm exec rivet-reflect-ts --entry src/app/contracts.ts --out generated/api.contract.json && rivet --from generated/api.contract.json --output ../client/generated && pnpm exec rivet-ts generate --generated-root ../client/generated",
         },
         dependencies: {
           hono: honoVersion,
@@ -813,7 +812,6 @@ const emitApiPackageJsonSource = async (packageScope: string): Promise<string> =
 
 const emitClientPackageJsonSource = async (packageScope: string): Promise<string> => {
   const manifest = await readPackageManifest();
-  const zodVersion = manifest.dependencies?.zod ?? DEFAULT_ZOD_VERSION;
   const openApiFetchVersion =
     manifest.dependencies?.["openapi-fetch"] ?? DEFAULT_OPENAPI_FETCH_VERSION;
 
@@ -829,7 +827,6 @@ const emitClientPackageJsonSource = async (packageScope: string): Promise<string
         dependencies: {
           "openapi-fetch": openApiFetchVersion,
           "rivet-ts": toRivetTsDependency(manifest),
-          zod: zodVersion,
         },
       },
       null,

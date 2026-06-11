@@ -3,7 +3,7 @@
   <a href="https://github.com/maxanstey-meridian/rivet-ts/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License" /></a>
 </p>
 
-**Contract-first APIs from TypeScript to working app, typed client, OpenAPI, and validators.** No decorators, no schema files, no codegen config.
+**Contract-first APIs from TypeScript to working app, typed client, and OpenAPI 3.1.** No decorators, no schema files, no codegen config.
 
 > Write a TypeScript contract, scaffold a working Hono app, generate a separate client and OpenAPI downstream, and keep the same contract-first story if you later move to .NET with [Rivet](https://github.com/maxanstey-meridian/rivet).
 
@@ -205,7 +205,7 @@ myapp/
 
 The API package stays scaffold-shaped. The client package stays generated. The UI stays separate. The Vite plugin keeps the reflected contract JSON under `packages/api/generated` and the generated client/runtime under `packages/client/generated`.
 
-## Generate a separate client, OpenAPI, and validators
+## Generate OpenAPI and the typed client
 
 First reflect your TypeScript contract to Rivet contract JSON:
 
@@ -213,24 +213,26 @@ First reflect your TypeScript contract to Rivet contract JSON:
 pnpm exec rivet-reflect-ts --entry ./contracts.ts --out ./contract.json
 ```
 
-Then feed that contract to downstream Rivet:
+Then feed that contract to downstream Rivet, which writes a single artifact — `openapi.json`:
 
 ```bash
-# TypeScript types, typed client, OpenAPI spec
-dotnet rivet --from contract.json --output ./generated --openapi openapi.json
+# Writes ./generated/openapi.json
+dotnet rivet --from contract.json --output ./generated
+
+# Explicit spec path (relative paths resolve against --output)
+dotnet rivet --from contract.json --openapi ./openapi.json
 
 # With security scheme definitions
-dotnet rivet --from contract.json --output ./generated --openapi openapi.json \
-  --security admin:bearer
-
-# With Zod validators
-dotnet rivet --from contract.json --output ./generated --compile
-
-# JSON Schema only
-dotnet rivet --from contract.json --output ./generated --jsonschema
+dotnet rivet --from contract.json --output ./generated --security admin:bearer
 ```
 
-Downstream Rivet emits the same artifacts it emits for C# sources: TypeScript types, typed clients, OpenAPI specs, JSON Schema, Zod validators, and generated C# DTOs.
+Everything downstream of the spec is the OpenAPI ecosystem's job. `rivet-ts generate` derives the typed client from it — `openapi-typescript` types plus an `openapi-fetch` facade:
+
+```bash
+pnpm exec rivet-ts generate --generated-root ./generated
+```
+
+Runtime request validation (query/route coercion, structured 400s) is the Hono adapter's job on the server. If you also want client-side runtime validation, run [`openapi-zod-client`](https://github.com/astahmer/openapi-zod-client) over `openapi.json`.
 
 ## Local now, server later
 
@@ -308,7 +310,7 @@ So yes: if your handlers are already server-safe, promotion can be as simple as 
 If the project eventually needs to move to .NET, the story stays coherent:
 
 - the contract-first workflow still applies
-- downstream Rivet still owns the generated client/OpenAPI/validator pipeline
+- downstream Rivet still owns OpenAPI emission; the client keeps coming from the same OpenAPI ecosystem tooling
 - the main [Rivet](https://github.com/maxanstey-meridian/rivet) repo covers the .NET server-side path
 
 The important continuity is the client:
@@ -365,7 +367,7 @@ You can also use those examples with Prism:
 
 ```bash
 pnpm exec rivet-reflect-ts --entry ./contracts.ts --out ./contract.json
-dotnet rivet --from contract.json --openapi openapi.json --output ./generated
+dotnet rivet --from contract.json --output .
 npx @stoplight/prism-cli mock openapi.json -h 127.0.0.1 -p 4010
 ```
 
@@ -565,7 +567,7 @@ stale compiled output.
 
 ## Related repos
 
-- [Rivet](https://github.com/maxanstey-meridian/rivet) — .NET core: contracts, generated client, OpenAPI, validators
+- [Rivet](https://github.com/maxanstey-meridian/rivet) — .NET core: contracts, runtime enforcement, OpenAPI 3.1
 - [rivet-php](https://github.com/maxanstey-meridian/rivet-php) — PHP contract frontend
 
 ## License

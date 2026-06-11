@@ -104,10 +104,14 @@ describe("vite plugin lifecycle", () => {
       "dir",
     );
 
-    // The fake binary mirrors the real tool's contract for WP-5a: `--from
-    // <contract.json> --output <dir> --openapi <path>` writes the OpenAPI spec
-    // the plugin then feeds to openapi-typescript.
+    // The fake binary mirrors the REAL tool's post-Phase-3 contract exactly:
+    // `rivet --from <contract.json> --output <dir>` writes <dir>/openapi.json
+    // and nothing else; `--openapi <path>` overrides the spec path (sole
+    // writer when given; relative resolves against --output, else cwd). The
+    // plugin invokes the headline form: --from + --output <clientOutDir>.
+    // It also records its argv so the test can pin the exact invocation.
     const fakeRivetBinaryPath = path.join(sampleRoot, "fake-rivet.mjs");
+    const fakeRivetArgsPath = path.join(sampleRoot, "fake-rivet-args.json");
     await fs.writeFile(
       fakeRivetBinaryPath,
       [
@@ -116,17 +120,22 @@ describe("vite plugin lifecycle", () => {
         'import path from "node:path";',
         "",
         "const args = process.argv.slice(2);",
-        'const openApiIndex = args.indexOf("--openapi");',
-        "if (openApiIndex === -1 || openApiIndex + 1 >= args.length) {",
-        '  throw new Error("Missing --openapi");',
-        "}",
+        `await fs.writeFile(${JSON.stringify(fakeRivetArgsPath)}, JSON.stringify(args));`,
         'const fromIndex = args.indexOf("--from");',
         "if (fromIndex === -1 || fromIndex + 1 >= args.length) {",
         '  throw new Error("Missing --from");',
         "}",
         "// The contract JSON must already exist when the binary runs.",
         "await fs.access(args[fromIndex + 1]);",
-        "const openApiPath = args[openApiIndex + 1];",
+        'const outputIndex = args.indexOf("--output");',
+        "const outputDir = outputIndex === -1 ? undefined : args[outputIndex + 1];",
+        'const openApiIndex = args.indexOf("--openapi");',
+        "const openApiOverride = openApiIndex === -1 ? undefined : args[openApiIndex + 1];",
+        "// Spec path resolution mirrors the real EmitPipeline: --openapi wins",
+        "// (relative against --output ?? cwd); otherwise <output>/openapi.json.",
+        "const openApiPath = openApiOverride",
+        "  ? path.resolve(outputDir ?? process.cwd(), openApiOverride)",
+        "  : path.join(outputDir, 'openapi.json');",
         "await fs.mkdir(path.dirname(openApiPath), { recursive: true });",
         "const spec = {",
         '  openapi: "3.1.0",',
@@ -236,6 +245,18 @@ describe("vite plugin lifecycle", () => {
       fs.stat(path.join(apiRoot, "generated", "api.contract.json")),
     ).resolves.toBeTruthy();
     await expect(fs.stat(path.join(clientRoot, "generated", "openapi.json"))).resolves.toBeTruthy();
+
+    // The plugin invokes the binary in its minimal headline form: --from
+    // <contract> --output <clientOutDir>. No --openapi override, and no
+    // legacy <clientOutDir>/rivet leg (the binary writes openapi.json only).
+    const recordedArgs = JSON.parse(await fs.readFile(fakeRivetArgsPath, "utf8")) as string[];
+    expect(recordedArgs).toEqual([
+      "--from",
+      path.join(apiRoot, "generated", "api.contract.json"),
+      "--output",
+      path.join(clientRoot, "generated"),
+    ]);
+    await expect(fs.stat(path.join(clientRoot, "generated", "rivet"))).rejects.toThrow();
     await expect(fs.stat(path.join(clientRoot, "generated", "schema.d.ts"))).resolves.toBeTruthy();
     await expect(fs.stat(path.join(clientRoot, "generated", "index.ts"))).resolves.toBeTruthy();
     await expect(fs.stat(path.join(sampleRoot, "dist", "index.html"))).resolves.toBeTruthy();

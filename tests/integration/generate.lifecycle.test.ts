@@ -96,7 +96,7 @@ describe("generate CLI", () => {
     ).resolves.toBe(1);
 
     expect(stderr.join("")).toContain("OpenAPI spec not found");
-    expect(stderr.join("")).toContain("--openapi");
+    expect(stderr.join("")).toContain("--output");
   });
 
   it("returns usage error when --generated-root is omitted", async () => {

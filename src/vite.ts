@@ -49,7 +49,6 @@ type NormalizedPluginOptions = {
   readonly tsconfigPath?: string;
   readonly runtimeContractPath: string;
   readonly clientOutDir: string;
-  readonly generatedRivetDir: string;
   readonly openApiPath: string;
   readonly binaryConfig?: RivetBinaryConfig;
 };
@@ -93,7 +92,6 @@ const normalizeOptions = (
     tsconfigPath: options.tsconfig ? resolveConfigPath(baseDir, options.tsconfig) : undefined,
     runtimeContractPath,
     clientOutDir,
-    generatedRivetDir: path.join(clientOutDir, "rivet"),
     openApiPath: path.join(clientOutDir, "openapi.json"),
     binaryConfig: options.rivet,
   };
@@ -133,19 +131,14 @@ const generateArtifacts = async (
   );
 
   // The binary is the sole OpenAPI emitter (Option B): contract JSON in,
-  // openapi.json out. The TypeScript client is then generated locally from the
-  // spec: openapi-typescript types + an openapi-fetch facade.
+  // `--output <dir>` writes <dir>/openapi.json and nothing else (post-Phase-3
+  // it emits no TS clients, types, or validators). The TypeScript client is
+  // then generated locally from the spec: openapi-typescript types + an
+  // openapi-fetch facade.
   const binary = await ensureRivetBinary(options.binaryConfig);
   await execFileAsync(
     binary.executablePath,
-    [
-      "--from",
-      options.runtimeContractPath,
-      "--output",
-      options.generatedRivetDir,
-      "--openapi",
-      options.openApiPath,
-    ],
+    ["--from", options.runtimeContractPath, "--output", options.clientOutDir],
     {
       cwd: options.apiRoot,
     },

@@ -87,7 +87,7 @@ export default defineConfig({
 
 `entry` is preferred. `contract` exists as a legacy alias. If `runtimeContractOut` is omitted, the plugin writes `<apiRoot>/generated/<api-root-name>.contract.json`. If `clientOutDir` is omitted, it writes under `<apiRoot>/generated`.
 
-The plugin runs the downstream Rivet binary with the reflected contract as `--from`, `<clientOutDir>/rivet` as `--output`, and `<clientOutDir>/openapi.json` as `--openapi`, then emits the same `schema.d.ts` + `index.ts` client package as `rivet-ts generate`.
+The plugin runs the downstream Rivet binary with the reflected contract as `--from` and `<clientOutDir>` as `--output` (the binary writes `<clientOutDir>/openapi.json` and nothing else), then emits the same `schema.d.ts` + `index.ts` client package as `rivet-ts generate`.
 
 ## UI imports
 
