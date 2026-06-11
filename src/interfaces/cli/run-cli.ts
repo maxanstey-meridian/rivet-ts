@@ -11,6 +11,7 @@ import { emitClientPackage } from "../../infrastructure/codegen/client-package-e
 import {
   EXAMPLE_CONTRACTS_SOURCE,
   emitExampleProject,
+  emitFrontendOnlyProject,
 } from "../../infrastructure/scaffold/example-project-emitter.js";
 import { FileSystemMockProjectEmitter } from "../../infrastructure/scaffold/mock-project-emitter.js";
 import { TypeScriptRivetContractLowerer } from "../../infrastructure/typescript/typescript-rivet-contract-lowerer.js";
@@ -29,7 +30,7 @@ const DEFAULT_IO: CliIO = {
 const USAGE = [
   "Usage:",
   "  rivet-ts --entry <path> [--out <file>]",
-  "  rivet-ts scaffold --out <dir> [--name <project-name>] [--force]",
+  "  rivet-ts scaffold --out <dir> [--name <project-name>] [--no-api] [--force]",
   "  rivet-ts scaffold-mock --entry <file> --out <dir> [--name <project-name>] [--tsconfig <file>] [--force]",
   "  rivet-ts generate --generated-root <dir>",
   "  rivet-ts rivet [--] <args passed to the Rivet binary>",
@@ -272,7 +273,7 @@ const lowerExampleEntry = async () => {
 };
 
 const runScaffold = async (args: readonly string[], io: CliIO): Promise<number> => {
-  const parsed = parseFlags(args, ["--out", "--name"], ["--force"]);
+  const parsed = parseFlags(args, ["--out", "--name"], ["--force", "--no-api"]);
 
   if (parsed.errors.length > 0) {
     reportUsageErrors(parsed.errors, io);
@@ -289,6 +290,18 @@ const runScaffold = async (args: readonly string[], io: CliIO): Promise<number> 
   const projectName = parsed.values.get("--name") ?? path.basename(path.resolve(outDir));
 
   try {
+    if (parsed.switches.has("--no-api")) {
+      await emitFrontendOnlyProject({
+        outDir,
+        projectName,
+        force: parsed.switches.has("--force"),
+      });
+
+      io.stdout(`Scaffolded ${projectName} (frontend-only) into ${outDir}.\n`);
+      io.stdout("Point task generate at your API, then: task install && task dev.\n");
+      return 0;
+    }
+
     const lowered = await lowerExampleEntry();
     reportDiagnostics(lowered.diagnostics, io);
 

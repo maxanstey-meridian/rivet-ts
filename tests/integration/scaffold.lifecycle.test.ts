@@ -6,6 +6,7 @@ import { emitGoldenConfigSources } from "../../src/infrastructure/scaffold/works
 import {
   PLUMB_EXECUTABLE,
   expectPlumbClean,
+  getProjectRoot,
   linkScaffoldDependencies,
   plumbAvailable,
   typecheckScaffoldedWorkspace,
@@ -193,3 +194,81 @@ describe("scaffold lifecycle", () => {
     expect(stderr.join("")).toContain("--force");
   });
 });
+
+/**
+ * `scaffold --no-api` — Nuxt ui + contracts only, for repos whose API lives
+ * elsewhere (`meridian init --dotnet-backend` composes golden's .NET api on
+ * top of exactly this variant).
+ */
+describe("scaffold --no-api lifecycle", () => {
+  let outputDirectory: string;
+
+  beforeAll(async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-noapi-"));
+    outputDirectory = path.join(tempDirectory, "fe-app");
+
+    const stderr: string[] = [];
+    const exitCode = await runCli(
+      ["scaffold", "--out", outputDirectory, "--name", "fe-demo", "--no-api"],
+      {
+        stdout: () => undefined,
+        stderr: (text) => stderr.push(text),
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toHaveLength(0);
+  }, 60000);
+
+  it("emits ui + contracts and no api app", async () => {
+    await expect(fs.stat(path.join(outputDirectory, "apps", "api"))).rejects.toThrow();
+    await expect(
+      fs.stat(path.join(outputDirectory, "apps", "ui", "nuxt.config.ts")),
+    ).resolves.toBeTruthy();
+    const generatedEntries = await fs.readdir(
+      path.join(outputDirectory, "packages", "contracts", "generated"),
+    );
+    expect(generatedEntries.sort()).toEqual(["openapi.json", "schema.d.ts"]);
+
+    const uiPackageJsonSource = await fs.readFile(
+      path.join(outputDirectory, "apps", "ui", "package.json"),
+      "utf8",
+    );
+    expect(uiPackageJsonSource).not.toContain("@fe-demo/api");
+    expect(uiPackageJsonSource).toContain("@fe-demo/contracts");
+
+    const pluginSource = await fs.readFile(
+      path.join(outputDirectory, "apps", "ui", "app", "plugins", "rivet.client.ts"),
+      "utf8",
+    );
+    expect(pluginSource).toContain("baseUrl");
+    expect(pluginSource).not.toContain("app.request");
+
+    const taskfileSource = await fs.readFile(path.join(outputDirectory, "Taskfile.yml"), "utf8");
+    expect(taskfileSource).not.toContain("api:run");
+    expect(taskfileSource).toContain("openapi-typescript ./generated/openapi.json");
+    expect(taskfileSource).toContain("plumb");
+  });
+
+  it("typechecks the contracts package", async () => {
+    await linkScaffoldDependencies(outputDirectory);
+    const tscPath = path.join(getProjectRoot(), "node_modules", ".bin", "tsc");
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    await promisify(execFile)(tscPath, [
+      "--noEmit",
+      "-p",
+      path.join(outputDirectory, "packages", "contracts", "tsconfig.json"),
+    ]);
+  }, 60000);
+
+  it("passes plumb with zero findings", async () => {
+    if (!(await plumbAvailable())) {
+      console.warn(`plumb not found at ${PLUMB_EXECUTABLE}; skipping the doctrine gate.`);
+      return;
+    }
+
+    await expectPlumbClean(outputDirectory);
+  }, 60000);
+});
+

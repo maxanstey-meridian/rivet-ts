@@ -30,6 +30,13 @@ import { toKebabCase } from "../codegen/kebab-case.js";
 export type WorkspaceConfig = {
   readonly outDir: string;
   readonly projectName: string;
+  /**
+   * "full" = Hono api + Nuxt ui + contracts (the default);
+   * "frontend-only" = Nuxt ui + contracts, for repos whose API lives
+   * elsewhere (e.g. a .NET backend — `meridian init --dotnet-backend`
+   * composes one on top of this variant).
+   */
+  readonly variant?: "full" | "frontend-only";
   /** e.g. `@myapp` */
   readonly packageScope: string;
   /** pinned `github:...#vX.Y.Z` dependency for the scaffolded project */
@@ -144,6 +151,36 @@ const emitTaskfile = (config: WorkspaceConfig): string => {
   const scope = config.packageScope;
   const entry = config.contractEntryRelativePath;
 
+  if (config.variant === "frontend-only") {
+    return [
+      'version: "3"',
+      "",
+      "tasks:",
+      "  install:",
+      "    desc: Install workspace dependencies",
+      "    cmds:",
+      "      - pnpm install",
+      "",
+      "  dev:",
+      "    desc: Run the Nuxt frontend",
+      "    cmds:",
+      `      - pnpm --filter ${scope}/ui dev`,
+      "",
+      "  generate:",
+      "    desc: Regenerate schema.d.ts from openapi.json (replace the first command with your API's spec emitter)",
+      "    cmds:",
+      '      # TODO: produce packages/contracts/generated/openapi.json from your API,',
+      '      # e.g. dotnet run --project <api.csproj path via Rivet.Tool> --output ./packages/contracts/generated',
+      `      - pnpm --filter ${scope}/contracts exec openapi-typescript ./generated/openapi.json -o ./generated/schema.d.ts`,
+      "",
+      "  plumb:",
+      "    desc: Check the repo against Meridian doctrine",
+      "    cmds:",
+      "      - ~/.meridian/plumb/plumb .",
+      "",
+    ].join("\n");
+  }
+
   return [
     'version: "3"',
     "",
@@ -188,8 +225,29 @@ const emitTaskfile = (config: WorkspaceConfig): string => {
   ].join("\n");
 };
 
-const emitReadme = (config: WorkspaceConfig): string =>
-  [
+const emitReadme = (config: WorkspaceConfig): string => {
+  if (config.variant === "frontend-only") {
+    return [
+      `# ${config.projectName}`,
+      "",
+      "Rivet-scaffolded frontend workspace. The API lives elsewhere;",
+      "`packages/contracts/generated/` holds its OpenAPI artifacts (read-only —",
+      "regenerate via `task generate` once its first command points at your API).",
+      "",
+      "| Command | What it does |",
+      "|---|---|",
+      "| `task install` | install workspace dependencies |",
+      "| `task dev` | Nuxt frontend |",
+      "| `task generate` | openapi.json → schema.d.ts |",
+      "| `task plumb` | Meridian doctrine check |",
+      "",
+      "The typed client base URL is configured in",
+      "`apps/ui/app/plugins/rivet.client.ts`.",
+      "",
+    ].join("\n");
+  }
+
+  return [
     `# ${config.projectName}`,
     "",
     "Rivet-scaffolded workspace. The API contract entry",
@@ -209,6 +267,7 @@ const emitReadme = (config: WorkspaceConfig): string =>
     "`apps/ui/app/plugins/rivet.client.ts`.",
     "",
   ].join("\n");
+};
 
 /* ─── contracts package ────────────────────────────────────────────────────── */
 
@@ -330,7 +389,9 @@ const emitUiPackageJson = (config: WorkspaceConfig): string =>
         postinstall: "nuxt prepare",
       },
       dependencies: {
-        [`${config.packageScope}/api`]: "workspace:*",
+        ...(config.variant === "frontend-only"
+          ? {}
+          : { [`${config.packageScope}/api`]: "workspace:*" }),
         [`${config.packageScope}/contracts`]: "workspace:*",
         nuxt: "^4.1.0",
         vue: "^3.5.0",
@@ -371,8 +432,21 @@ const emitUiEslintConfig = (): string =>
 const emitUiTsconfig = (): string =>
   `${JSON.stringify({ extends: "./.nuxt/tsconfig.json" }, null, 2)}\n`;
 
-const emitRivetClientPlugin = (config: WorkspaceConfig): string =>
-  [
+const emitRivetClientPlugin = (config: WorkspaceConfig): string => {
+  if (config.variant === "frontend-only") {
+    return [
+      `import { configureRivet } from "${config.packageScope}/contracts";`,
+      "",
+      "// Point the typed client at the API serving the contract in",
+      "// packages/contracts/generated/.",
+      "export default defineNuxtPlugin(() => {",
+      '  configureRivet({ baseUrl: "http://localhost:5000" });',
+      "});",
+      "",
+    ].join("\n");
+  }
+
+  return [
     `import { app } from "${config.packageScope}/api/local";`,
     `import { configureRivet } from "${config.packageScope}/contracts";`,
     "",
@@ -384,6 +458,7 @@ const emitRivetClientPlugin = (config: WorkspaceConfig): string =>
     "});",
     "",
   ].join("\n");
+};
 
 const emitAppVue = (config: WorkspaceConfig): string => {
   if (!config.demoCall) {
@@ -454,10 +529,15 @@ export const emitWorkspaceSkeleton = async (
   const uiRoot = path.join(out, "apps", "ui");
   const contractsRoot = path.join(out, "packages", "contracts");
   const contractsGeneratedRoot = path.join(contractsRoot, "generated");
+  const withApi = config.variant !== "frontend-only";
 
   await Promise.all([
-    fs.mkdir(apiSourceRoot, { recursive: true }),
-    fs.mkdir(path.join(apiRoot, "generated"), { recursive: true }),
+    ...(withApi
+      ? [
+          fs.mkdir(apiSourceRoot, { recursive: true }),
+          fs.mkdir(path.join(apiRoot, "generated"), { recursive: true }),
+        ]
+      : []),
     fs.mkdir(path.join(uiRoot, "app", "plugins"), { recursive: true }),
     fs.mkdir(contractsGeneratedRoot, { recursive: true }),
     fs.mkdir(path.join(contractsRoot, "src"), { recursive: true }),
@@ -476,12 +556,16 @@ export const emitWorkspaceSkeleton = async (
     fs.writeFile(path.join(contractsRoot, "package.json"), emitContractsPackageJson(config)),
     fs.writeFile(path.join(contractsRoot, "tsconfig.json"), emitContractsTsconfig()),
     fs.writeFile(path.join(contractsRoot, "src", "index.ts"), emitClientFacadeSource()),
-    fs.writeFile(path.join(apiRoot, "package.json"), emitApiPackageJson(config)),
-    fs.writeFile(path.join(apiRoot, "tsconfig.json"), emitApiTsconfig()),
-    fs.writeFile(path.join(apiSourceRoot, "contract.ts"), emitContractReExport(config)),
-    fs.writeFile(path.join(apiSourceRoot, "local.ts"), emitLocalSource()),
-    fs.writeFile(path.join(apiSourceRoot, "main.ts"), emitMainSource()),
-    fs.writeFile(path.join(apiRoot, "generated", "api.contract.json"), contractDocumentJson),
+    ...(withApi
+      ? [
+          fs.writeFile(path.join(apiRoot, "package.json"), emitApiPackageJson(config)),
+          fs.writeFile(path.join(apiRoot, "tsconfig.json"), emitApiTsconfig()),
+          fs.writeFile(path.join(apiSourceRoot, "contract.ts"), emitContractReExport(config)),
+          fs.writeFile(path.join(apiSourceRoot, "local.ts"), emitLocalSource()),
+          fs.writeFile(path.join(apiSourceRoot, "main.ts"), emitMainSource()),
+          fs.writeFile(path.join(apiRoot, "generated", "api.contract.json"), contractDocumentJson),
+        ]
+      : []),
     fs.writeFile(path.join(uiRoot, "package.json"), emitUiPackageJson(config)),
     fs.writeFile(path.join(uiRoot, "nuxt.config.ts"), emitNuxtConfig()),
     fs.writeFile(path.join(uiRoot, "eslint.config.mjs"), emitUiEslintConfig()),

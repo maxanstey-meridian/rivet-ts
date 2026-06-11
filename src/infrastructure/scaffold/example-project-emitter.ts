@@ -442,3 +442,42 @@ export const emitExampleProject = async (config: ExampleProjectConfig): Promise<
 
 /** The example contract entry, exposed so the scaffold use case can lower it. */
 export const EXAMPLE_CONTRACTS_SOURCE = CONTRACTS_SOURCE;
+
+export type FrontendProjectConfig = {
+  readonly outDir: string;
+  readonly projectName: string;
+  readonly force: boolean;
+};
+
+/**
+ * Frontend-only scaffold (`rivet-ts scaffold --no-api`): Nuxt ui + contracts
+ * package, no api app — for repos whose API lives elsewhere (a .NET backend,
+ * a separate repo). The bootstrap spec is an empty-but-valid document; `task
+ * generate`'s first command is a TODO pointing at the real API's emitter.
+ */
+export const emitFrontendOnlyProject = async (config: FrontendProjectConfig): Promise<void> => {
+  const safetyError = await checkOutDirSafety(config.outDir, config.force);
+  if (safetyError) {
+    throw new Error(safetyError);
+  }
+
+  const manifest = await readPackageManifest();
+
+  const workspaceConfig: WorkspaceConfig = {
+    outDir: config.outDir,
+    projectName: config.projectName,
+    variant: "frontend-only",
+    packageScope: toPackageScope(config.projectName),
+    rivetTsDependency: toRivetTsDependency(manifest),
+    versions: resolveWorkspaceVersions(manifest),
+    contractEntryRelativePath: "",
+    contractNames: [],
+    bootstrapOpenApiDocument: {
+      openapi: "3.1.0",
+      info: { title: config.projectName, version: "0.0.0" },
+      paths: {},
+    },
+  };
+
+  await emitWorkspaceSkeleton(workspaceConfig, "");
+};
