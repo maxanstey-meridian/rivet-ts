@@ -65,12 +65,33 @@ export type RivetTaggedUnionVariant = {
   type: RivetType;
 };
 
+/**
+ * JSON Schema validation keywords carried per property — mirrors the wire
+ * contract schema's `tsPropertyConstraints` (already legal on the wire; the
+ * C# emitter writes them into openapi.json from DataAnnotations). The TS
+ * lowerer never produces them today; they arrive via spec-side enrichment.
+ */
+export type RivetPropertyConstraints = {
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+  minimum?: number;
+  maximum?: number;
+  exclusiveMinimum?: number;
+  exclusiveMaximum?: number;
+  multipleOf?: number;
+  minItems?: number;
+  maxItems?: number;
+  uniqueItems?: boolean;
+};
+
 export type RivetPropertyDefinition = {
   name: string;
   type: RivetType;
   optional: boolean;
   readOnly?: boolean;
   writeOnly?: boolean;
+  constraints?: RivetPropertyConstraints;
 };
 
 export type RivetEndpointExampleValue =

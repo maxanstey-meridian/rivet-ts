@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { MockProjectEmitter } from "../../application/ports/mock-project-emitter.js";
 import { LowerTsContractsToRivetContract } from "../../application/use-cases/lower-ts-contracts-to-rivet-contract.js";
 import { ScaffoldMockProject } from "../../application/use-cases/scaffold-mock-project.js";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
@@ -14,6 +15,10 @@ import {
   emitFrontendOnlyProject,
 } from "../../infrastructure/scaffold/example-project-emitter.js";
 import { FileSystemMockProjectEmitter } from "../../infrastructure/scaffold/mock-project-emitter.js";
+import {
+  ConstraintEnrichingMockProjectEmitter,
+  readOpenApiConstraints,
+} from "../../infrastructure/scaffold/openapi-constraint-reader.js";
 import { TypeScriptRivetContractLowerer } from "../../infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { ensureRivetBinary } from "../../infrastructure/vite/rivet-binary.js";
 
@@ -31,7 +36,7 @@ const USAGE = [
   "Usage:",
   "  rivet-ts --entry <path> [--out <file>]",
   "  rivet-ts scaffold --out <dir> [--name <project-name>] [--no-api] [--force]",
-  "  rivet-ts scaffold-mock --entry <file> --out <dir> [--name <project-name>] [--tsconfig <file>] [--force]",
+  "  rivet-ts scaffold-mock --entry <file> --out <dir> [--name <project-name>] [--tsconfig <file>] [--spec <openapi.json>] [--force]",
   "  rivet-ts generate --generated-root <dir>",
   "  rivet-ts rivet [--] <args passed to the Rivet binary>",
   "",
@@ -182,7 +187,11 @@ export const runCli = async (args: readonly string[], io: CliIO = DEFAULT_IO): P
 };
 
 const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<number> => {
-  const parsed = parseFlags(args, ["--entry", "--out", "--name", "--tsconfig"], ["--force"]);
+  const parsed = parseFlags(
+    args,
+    ["--entry", "--out", "--name", "--tsconfig", "--spec"],
+    ["--force"],
+  );
 
   if (parsed.errors.length > 0) {
     reportUsageErrors(parsed.errors, io);
@@ -193,14 +202,30 @@ const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<numb
   const outDir = parsed.values.get("--out");
   const projectName = parsed.values.get("--name");
   const tsconfigPath = parsed.values.get("--tsconfig");
+  const specPath = parsed.values.get("--spec");
 
   if (!entryPath || !outDir) {
     io.stderr(USAGE);
     return 1;
   }
 
+  // Spec present → enrich the lowered document with the spec's JSON Schema
+  // constraints before Zod emission. No spec → plain emitter, a strict no-op
+  // (TS-flavor scaffolds have no constraint source today).
+  let emitter: MockProjectEmitter = new FileSystemMockProjectEmitter();
+  if (specPath) {
+    let spec: unknown;
+    try {
+      spec = JSON.parse(await fs.readFile(specPath, "utf8")) as unknown;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      io.stderr(`error: could not read OpenAPI spec at ${specPath}: ${message}\n`);
+      return 1;
+    }
+    emitter = new ConstraintEnrichingMockProjectEmitter(emitter, readOpenApiConstraints(spec));
+  }
+
   const lowerer = new TypeScriptRivetContractLowerer(tsconfigPath);
-  const emitter = new FileSystemMockProjectEmitter();
   const useCase = new ScaffoldMockProject(lowerer, emitter);
 
   try {

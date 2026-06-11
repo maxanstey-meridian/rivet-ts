@@ -42,11 +42,12 @@ That emits `schema.d.ts` — `openapi-typescript` types derived from the spec. T
 
 Be explicit about what is enforced where:
 
-- **Server, inbound**: the Hono adapter binds requests against the contract — missing required route/query params, number/boolean coercion failures, repeated single-valued query params, malformed JSON bodies, and missing multipart fields all produce structured `400 { code, message }` responses. JSON body _shape_ is not validated — a parseable body reaches the handler as-is.
+- **Server, inbound — adapter**: the Hono adapter binds requests against the contract — missing required route/query params, number/boolean coercion failures, repeated single-valued query params, malformed JSON bodies, and missing multipart fields all produce structured `400 { code, message }` responses. The adapter itself never validates JSON body shape — that is the scaffolded schemas' job.
+- **Server, inbound — body schemas**: scaffolded apps validate request body _shape_ at the edge through Zod schemas synthesized from the contract at scaffold time (`src/interface/validation/`) and owned by you afterwards. Violations produce a structured `422 { code: "validation_failed", errors }`. When the scaffold is given an OpenAPI spec (`scaffold-mock --spec <openapi.json>`), the spec's JSON Schema constraints — `minLength`/`maxLength`/`pattern`, `minimum`/`maximum`/exclusive bounds/`multipleOf`, `minItems`/`maxItems`/`uniqueItems` — are chained onto those schemas too, so DataAnnotations authored on the .NET side are enforced at the TypeScript edge. Without a spec there is no constraint source and the schemas carry shape only.
 - **Server, outbound**: response bodies are not validated. Whatever the handler returns is serialized; extra fields go to the wire.
 - **Client**: types-only by design. `openapi-typescript` + `openapi-fetch` give compile-time checking with no runtime validation layer.
 
-If you want runtime validation beyond that, the spec is accurate input for any OpenAPI-ecosystem validator — e.g. [`openapi-zod-client`](https://github.com/astahmer/openapi-zod-client) over `openapi.json`. The binary itself no longer emits Zod validators or JSON Schema.
+If you want runtime validation beyond that, the spec is accurate input for any OpenAPI-ecosystem validator. Zod 4 ships first-party JSON Schema interop (`z.toJSONSchema` / `z.fromJSONSchema`) — the maintained ecosystem option for spec consumers — and [`openapi-zod-client`](https://github.com/astahmer/openapi-zod-client) generates clients over `openapi.json`. The binary itself no longer emits Zod validators or JSON Schema.
 
 ## Examples
 

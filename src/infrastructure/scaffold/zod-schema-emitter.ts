@@ -1,5 +1,6 @@
 import type {
   RivetContractDocument,
+  RivetPropertyConstraints,
   RivetType,
   RivetTypeDefinition,
 } from "../../domain/rivet-contract.js";
@@ -36,15 +37,158 @@ const inexact = (todo: string): ZodSourceResult => ({
 const literalSource = (value: string | number): string =>
   typeof value === "string" ? `z.literal(${JSON.stringify(value)})` : `z.literal(${value})`;
 
+/**
+ * What a constrained property's type boils down to once refs-to-aliases,
+ * brands, and type parameters are peeled away — decides WHICH JSON Schema
+ * keywords may legally chain onto the synthesized source. Anything else
+ * (objects, enums, unions, nullable aliases, recursion) takes no chain:
+ * better to drop a constraint than emit source that cannot typecheck.
+ */
+type ConstrainableKind = "array" | "number" | "other" | "string";
+
+const resolveConstrainableKind = (
+  type: RivetType,
+  context: Context,
+  seen: ReadonlySet<string> = new Set(),
+): ConstrainableKind => {
+  switch (type.kind) {
+    case "primitive":
+      if (type.type === "string") {
+        return "string";
+      }
+      return type.type === "number" ? "number" : "other";
+    case "array":
+      return "array";
+    case "brand":
+      return resolveConstrainableKind(type.underlying, context, seen);
+    case "typeParam": {
+      const substitution = context.substitutions.get(type.name);
+      return substitution ? resolveConstrainableKind(substitution, context, seen) : "other";
+    }
+    case "ref": {
+      if (seen.has(type.name) || context.enumValues.has(type.name)) {
+        return "other";
+      }
+      const typeDef = context.typeDefinitions.get(type.name);
+      // Only plain aliases resolve through; an aliased `.nullable()` source
+      // would put the chain AFTER the wrapper, where .min()/.regex() do not
+      // exist, so nullable aliases stay unconstrained.
+      if (!typeDef?.type || typeDef.type.kind === "nullable") {
+        return "other";
+      }
+      return resolveConstrainableKind(typeDef.type, context, new Set([...seen, type.name]));
+    }
+    default:
+      return "other";
+  }
+};
+
+/**
+ * Chains JSON Schema validation keywords onto a synthesized Zod source.
+ * Every method here returns the same schema class in Zod 4 (.refine
+ * included), so the chain never changes the output TYPE — the `satisfies
+ * z.ZodType<T>` exactness lock is unaffected.
+ */
+const constraintChain = (
+  kind: ConstrainableKind,
+  constraints: RivetPropertyConstraints,
+): string => {
+  const parts: string[] = [];
+
+  if (kind === "string") {
+    if (constraints.minLength !== undefined) {
+      parts.push(`.min(${constraints.minLength})`);
+    }
+    if (constraints.maxLength !== undefined) {
+      parts.push(`.max(${constraints.maxLength})`);
+    }
+    if (constraints.pattern !== undefined) {
+      parts.push(`.regex(new RegExp(${JSON.stringify(constraints.pattern)}))`);
+    }
+  }
+
+  if (kind === "number") {
+    if (constraints.minimum !== undefined) {
+      parts.push(`.gte(${constraints.minimum})`);
+    }
+    if (constraints.maximum !== undefined) {
+      parts.push(`.lte(${constraints.maximum})`);
+    }
+    if (constraints.exclusiveMinimum !== undefined) {
+      parts.push(`.gt(${constraints.exclusiveMinimum})`);
+    }
+    if (constraints.exclusiveMaximum !== undefined) {
+      parts.push(`.lt(${constraints.exclusiveMaximum})`);
+    }
+    if (constraints.multipleOf !== undefined) {
+      parts.push(`.multipleOf(${constraints.multipleOf})`);
+    }
+  }
+
+  if (kind === "array") {
+    if (constraints.minItems !== undefined) {
+      parts.push(`.min(${constraints.minItems})`);
+    }
+    if (constraints.maxItems !== undefined) {
+      parts.push(`.max(${constraints.maxItems})`);
+    }
+    if (constraints.uniqueItems === true) {
+      parts.push(
+        ".refine((items) => new Set(items.map((item) => JSON.stringify(item))).size === items.length, " +
+          '"Array items must be unique.")',
+      );
+    }
+  }
+
+  return parts.join("");
+};
+
+/**
+ * Property-level synthesis: same as `synthesize`, but chains the property's
+ * contract constraints onto the source. Nullable/brand wrappers recurse so
+ * the chain lands on the INNER schema (`z.string().min(1).nullable()`, never
+ * `.nullable().min(1)`).
+ */
+const synthesizeConstrained = (
+  type: RivetType,
+  context: Context,
+  constraints: RivetPropertyConstraints | undefined,
+): ZodSourceResult => {
+  if (!constraints) {
+    return synthesize(type, context);
+  }
+
+  if (type.kind === "nullable") {
+    const inner = synthesizeConstrained(type.inner, context, constraints);
+    return { source: `${inner.source}.nullable()`, exact: inner.exact };
+  }
+
+  if (type.kind === "brand") {
+    const underlying = synthesizeConstrained(type.underlying, context, constraints);
+    return { source: underlying.source, exact: false };
+  }
+
+  const base = synthesize(type, context);
+  return {
+    source: `${base.source}${constraintChain(resolveConstrainableKind(type, context), constraints)}`,
+    exact: base.exact,
+  };
+};
+
 const synthesizeObject = (
-  properties: readonly { name: string; type: RivetType; optional?: boolean }[],
+  properties: readonly {
+    name: string;
+    type: RivetType;
+    optional?: boolean;
+    constraints?: RivetPropertyConstraints;
+  }[],
   context: Context,
 ): ZodSourceResult => {
   const parts: string[] = [];
   let exact = true;
 
   for (const property of properties) {
-    const value = synthesize(property.type, context);
+    const value = synthesizeConstrained(property.type, context, property.constraints);
     exact = exact && value.exact;
     const suffix = property.optional ? ".optional()" : "";
     parts.push(`${JSON.stringify(property.name)}: ${value.source}${suffix}`);

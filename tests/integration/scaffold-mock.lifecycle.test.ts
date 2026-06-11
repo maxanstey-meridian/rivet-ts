@@ -422,6 +422,155 @@ describe("scaffold-mock lifecycle", () => {
     ).resolves.toBeTruthy();
   }, 60000);
 
+  it("enriches scaffolded validators with spec constraints when --spec is passed", async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-spec-"));
+    const sourceDirectory = path.join(tempDirectory, "source");
+    const outputDirectory = path.join(tempDirectory, "mock-app");
+    await fs.mkdir(sourceDirectory, { recursive: true });
+
+    await fs.writeFile(
+      path.join(sourceDirectory, "contracts.ts"),
+      [
+        'import type { Contract, Endpoint } from "rivet-ts";',
+        "",
+        "export interface CreateWidgetRequest {",
+        "  name: string;",
+        "  quantity: number;",
+        "  tags: string[];",
+        "  nickname: string | null;",
+        "}",
+        "",
+        "export interface WidgetDto {",
+        "  id: string;",
+        "}",
+        "",
+        'export interface WidgetsContract extends Contract<"WidgetsContract"> {',
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/widgets";',
+        "    input: CreateWidgetRequest;",
+        "    response: WidgetDto;",
+        "    successStatus: 201;",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    // Shaped like the Rivet binary's real openapi.json: named components,
+    // constraints as sibling keywords on the property schemas.
+    const specPath = path.join(sourceDirectory, "openapi.json");
+    await fs.writeFile(
+      specPath,
+      JSON.stringify({
+        openapi: "3.1.0",
+        info: { title: "widgets", version: "0.0.0" },
+        paths: {},
+        components: {
+          schemas: {
+            CreateWidgetRequest: {
+              type: "object",
+              properties: {
+                name: { type: "string", minLength: 3, maxLength: 20 },
+                quantity: { type: "number", minimum: 1, maximum: 100 },
+                tags: {
+                  type: "array",
+                  items: { type: "string" },
+                  minItems: 1,
+                  maxItems: 3,
+                  uniqueItems: true,
+                },
+                nickname: { type: ["string", "null"], minLength: 2 },
+              },
+              required: ["name", "quantity", "tags", "nickname"],
+            },
+          },
+        },
+      }),
+    );
+
+    const stderr: string[] = [];
+    const exitCode = await runCli(
+      [
+        "scaffold-mock",
+        "--entry",
+        path.join(sourceDirectory, "contracts.ts"),
+        "--out",
+        outputDirectory,
+        "--name",
+        "widgets-mock",
+        "--spec",
+        specPath,
+      ],
+      {
+        stdout: () => undefined,
+        stderr: (text) => stderr.push(text),
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toHaveLength(0);
+
+    const validationPath = path.join(
+      outputDirectory,
+      "apps",
+      "api",
+      "src",
+      "interface",
+      "validation",
+      "widgets.ts",
+    );
+    const validationSource = await fs.readFile(validationPath, "utf8");
+
+    expect(validationSource).toContain('"name": z.string().min(3).max(20)');
+    expect(validationSource).toContain('"quantity": z.number().gte(1).lte(100)');
+    expect(validationSource).toContain('"tags": z.array(z.string()).min(1).max(3).refine(');
+    expect(validationSource).toContain('"nickname": z.string().min(2).nullable()');
+    // Constraint chains never change the output TYPE, so the exactness lock
+    // must survive the enrichment.
+    expect(validationSource).toContain(
+      'satisfies z.ZodType<RivetHandlerInput<WidgetsContract, "Create">["body"]>',
+    );
+
+    // The enriched constraints round-trip onto the wire contract JSON, which
+    // must stay wire-legal (tsPropertyConstraints is part of the schema).
+    const contractJson = JSON.parse(
+      await fs.readFile(
+        path.join(outputDirectory, "apps", "api", "generated", "api.contract.json"),
+        "utf8",
+      ),
+    ) as { types: Array<{ name: string; properties?: Array<Record<string, unknown>> }> };
+    const requestType = contractJson.types.find((type) => type.name === "CreateWidgetRequest");
+    expect(requestType?.properties?.find((property) => property.name === "name")).toMatchObject({
+      constraints: { minLength: 3, maxLength: 20 },
+    });
+
+    // The constrained validation file must COMPILE and the schema must
+    // actually enforce the constraints at runtime.
+    await typecheckScaffoldedWorkspace(outputDirectory);
+
+    const { createRequest } = (await import(validationPath)) as {
+      createRequest: { safeParse: (value: unknown) => { success: boolean } };
+    };
+    expect(
+      createRequest.safeParse({ name: "Widget", quantity: 10, tags: ["a"], nickname: null })
+        .success,
+    ).toBe(true);
+    expect(
+      createRequest.safeParse({ name: "ab", quantity: 10, tags: ["a"], nickname: null }).success,
+    ).toBe(false);
+    expect(
+      createRequest.safeParse({ name: "Widget", quantity: 0, tags: ["a"], nickname: null }).success,
+    ).toBe(false);
+    expect(
+      createRequest.safeParse({ name: "Widget", quantity: 10, tags: ["a", "a"], nickname: null })
+        .success,
+    ).toBe(false);
+    expect(
+      createRequest.safeParse({ name: "Widget", quantity: 10, tags: ["a"], nickname: "x" }).success,
+    ).toBe(false);
+  }, 120000);
+
   it("refuses to overwrite a non-empty output directory unless --force is passed (S6)", async () => {
     const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-rerun-"));
     const sourceDirectory = path.join(tempDirectory, "source");
