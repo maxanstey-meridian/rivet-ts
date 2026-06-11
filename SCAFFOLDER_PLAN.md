@@ -222,6 +222,44 @@ accessibility modifiers, csproj analyzer properties) — build + tests green.
 expects). Scaffolds pin `github:...#v0.11.0` — pushing that tag on merge is
 what makes real (non-symlinked) installs resolve the new runtime.
 
+## Proper-scaffold package (agreed 2026-06-11, building now)
+
+Bread-and-butter pseudo-backend capabilities. Versions mirror casebridge
+(zod ^4.3.6, @nuxt/ui ^4.5.1, nuxt ^4.3.1).
+
+1. **Zod edge validation** — scaffold-time emitted, owned thereafter, locked
+   with `satisfies z.ZodType<Input>` (drift = tsc error). Example module gets
+   rich rules (`interface/validation/quotes.ts`); scaffold-mock synthesizes
+   shape-level schemas from the IR (`zod-schema-emitter.ts`, body-carrying
+   endpoints only; lock applied only when synthesis is exact). Routes
+   safeParse → 422 `{code, message, errors}` (the golden ValidationFilter
+   envelope), declared in the example contract. NOT a generate-pipeline
+   artifact — the v2 types-only client decision is untouched (client-side
+   validation remains opt-in openapi-zod-client).
+2. **UI form reuse** — api package exports `"./validation"`; the example
+   app.vue becomes a Nuxt UI `UForm :schema` page (the casebridge pattern):
+   same schema validates the form and the server's front door.
+3. **Dexie persistence** — `dexie-quote-store.ts` (versioned schema =
+   migrations; populate event = seed). Forces the composition split: app.ts →
+   `createApp(useCases, options)`; `local.ts` (browser) wires Dexie;
+   `main.ts` (server) wires in-memory + logger + cors + serve.
+4. **users module** — `UsersContract { Me: GET /api/me }` with a
+   `current-user` port + stub adapter: gives identity a real home AND makes
+   the example multi-module (two groups registered).
+5. **logger/CORS** — hono/logger + hono/cors via createApp options, server
+   entry only (the in-browser path needs neither — itself a teaching moment).
+6. **Observability mini-ruling** — plumb contract §9 + backend-pa-vsa prose:
+   edge-only logging, domain/application stay silent; no mechanical rule
+   until an incident earns one.
+7. **Gates** — lifecycle suites extended (422 path, validation export,
+   Dexie presence, /api/me, plumb-zero, tsc, runtime); golden-meridian
+   showcase regenerated.
+
+Deferred deliberately: IR→Zod for the dotnet/no-api flavors (would emit only
+shape checks — the TS contract carries no constraints; openapi-zod-client is
+the documented opt-in). The interesting future version reads FluentValidation
+rules into the contract's constraints channel first — its own project.
+
 ## Sequencing & sizing
 
 Phase 0 → 1 → 2 → 3 strictly ordered (~5–7 working days of agent time);
