@@ -256,3 +256,57 @@ test("asRivetHandler rejects owners without a recognized method", () => {
     'asRivetHandler expected a "handle" or "invoke" method.',
   );
 });
+
+// -- H1 type-level half: bodyless-method `input` is the query, not a body. --
+// The lowerer turns `input` properties into query params for non-body methods
+// (BODY_HTTP_METHODS = POST/PUT/PATCH), and the Hono adapter delivers them
+// under `query` at runtime; the handler types must say the same thing.
+
+interface BodylessInputContract extends Contract<"BodylessInputContract"> {
+  ListMembers: Endpoint<{
+    method: "GET";
+    route: "/api/directory/members";
+    input: { readonly q?: string; readonly page: number };
+    response: DirectorySearchResponse;
+  }>;
+
+  PurgeMembers: Endpoint<{
+    method: "DELETE";
+    route: "/api/directory/members";
+    input: { readonly confirm: boolean };
+    response: void;
+  }>;
+}
+
+test("RivetHandler maps GET input to { query }, with no body key (H1)", async () => {
+  const list: RivetHandler<BodylessInputContract, "ListMembers"> = async (input) => {
+    expectTypeOf(input).toEqualTypeOf<{
+      readonly query: { readonly q?: string; readonly page: number };
+    }>();
+    expectTypeOf(input).not.toHaveProperty("body");
+    expectTypeOf(input.query).toEqualTypeOf<{ readonly q?: string; readonly page: number }>();
+
+    return {
+      items: [],
+      totalCount: input.query.page,
+    };
+  };
+
+  const result = await list({ query: { page: 3 } });
+  expectTypeOf(result).toEqualTypeOf<DirectorySearchResponse>();
+  expect(result.totalCount).toBe(3);
+});
+
+test("RivetHandler maps DELETE input to { query }, with no body key (H1)", () => {
+  type PurgeInput = Parameters<RivetHandler<BodylessInputContract, "PurgeMembers">>[0];
+
+  expectTypeOf<PurgeInput>().toEqualTypeOf<{ readonly query: { readonly confirm: boolean } }>();
+  expectTypeOf<PurgeInput>().not.toHaveProperty("body");
+});
+
+test("RivetHandler keeps body-method input mapped to { body } (H1 guard)", () => {
+  type SearchInput = Parameters<RivetHandler<DirectoryContract, "Search">>[0];
+
+  expectTypeOf<SearchInput>().toEqualTypeOf<{ readonly body: DirectorySearchRequest }>();
+  expectTypeOf<SearchInput>().not.toHaveProperty("query");
+});

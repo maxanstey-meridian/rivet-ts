@@ -7,9 +7,20 @@ import {
   type RivetHandlerOwnerWithInput,
 } from "./domain/handler-types.js";
 
+// Loose mirror of the lowered contract's RivetType shape — only the kinds the
+// runtime coerces are modelled; everything else passes through as a string.
+type ContractEndpointParamTypeJson = {
+  readonly kind: string;
+  readonly type?: string;
+  readonly inner?: ContractEndpointParamTypeJson;
+  readonly element?: ContractEndpointParamTypeJson;
+};
+
 type ContractEndpointParamJson = {
   readonly name: string;
   readonly source: string;
+  readonly type?: ContractEndpointParamTypeJson;
+  readonly isOptional?: boolean;
 };
 
 type ContractEndpointJson = {
@@ -161,6 +172,61 @@ const normalizeRouteEntry = <TContract, TKey extends ContractEndpointKey<TContra
   };
 };
 
+// Request-binding failures surface as structured 400s through the same
+// RivetHttpError path handlers use, so the error envelope is uniform:
+// { code, message } — matching the diagnostic vocabulary used elsewhere.
+const createBindingError = (code: string, message: string): RivetHttpError<unknown> =>
+  rivetHttpError(400, { code, message });
+
+const unwrapNullableParamType = (
+  type: ContractEndpointParamTypeJson | undefined,
+): ContractEndpointParamTypeJson | undefined =>
+  type?.kind === "nullable" ? unwrapNullableParamType(type.inner) : type;
+
+const isParamOptional = (param: ContractEndpointParamJson): boolean =>
+  param.isOptional === true || param.type?.kind === "nullable";
+
+// Coerces a raw string value to the contract-declared param type. Only
+// number/boolean primitives (and intUnion, which is numeric on the wire) are
+// coerced; strings, enums, and unknown kinds pass through unchanged.
+const coerceScalarParamValue = (
+  raw: string,
+  type: ContractEndpointParamTypeJson | undefined,
+  paramName: string,
+  source: string,
+): unknown => {
+  const resolved = unwrapNullableParamType(type);
+
+  if (
+    resolved?.kind === "intUnion" ||
+    (resolved?.kind === "primitive" && resolved.type === "number")
+  ) {
+    const value = raw.trim() === "" ? Number.NaN : Number(raw);
+    if (Number.isNaN(value)) {
+      throw createBindingError(
+        "INVALID_PARAMETER_VALUE",
+        `Expected a number for ${source} parameter "${paramName}" but received "${raw}".`,
+      );
+    }
+    return value;
+  }
+
+  if (resolved?.kind === "primitive" && resolved.type === "boolean") {
+    if (raw === "true") {
+      return true;
+    }
+    if (raw === "false") {
+      return false;
+    }
+    throw createBindingError(
+      "INVALID_PARAMETER_VALUE",
+      `Expected "true" or "false" for ${source} parameter "${paramName}" but received "${raw}".`,
+    );
+  }
+
+  return raw;
+};
+
 const buildHandlerInput = async (
   context: Context,
   endpoint: ContractEndpointJson,
@@ -182,25 +248,84 @@ const buildHandlerInput = async (
       if (fileParams.length > 0 || formFieldParams.length > 0) {
         const body: Record<string, unknown> = {};
         for (const param of [...fileParams, ...formFieldParams]) {
-          body[param.name] = parsedBody[param.name];
+          const value = parsedBody[param.name];
+          if (value === undefined) {
+            if (isParamOptional(param)) {
+              continue;
+            }
+            throw createBindingError(
+              "MISSING_MULTIPART_FIELD",
+              `Endpoint "${endpoint.name}" requires the multipart field "${param.name}" but it was absent from the request body.`,
+            );
+          }
+          body[param.name] = value;
         }
         input.body = body;
       } else {
         input.body = parsedBody;
       }
     } else {
-      input.body = await context.req.json();
+      try {
+        input.body = await context.req.json();
+      } catch {
+        throw createBindingError(
+          "INVALID_REQUEST_BODY",
+          `Endpoint "${endpoint.name}" expected a JSON request body, but it could not be parsed.`,
+        );
+      }
     }
   }
 
   if (routeParams.length > 0) {
-    input.params = context.req.param();
+    const routeValues = context.req.param() as Record<string, string | undefined>;
+    const params: Record<string, unknown> = {};
+    for (const param of routeParams) {
+      const raw = routeValues[param.name];
+      if (raw === undefined) {
+        if (isParamOptional(param)) {
+          continue;
+        }
+        throw createBindingError(
+          "MISSING_REQUIRED_PARAMETER",
+          `Endpoint "${endpoint.name}" requires the route parameter "${param.name}".`,
+        );
+      }
+      params[param.name] = coerceScalarParamValue(raw, param.type, param.name, "route");
+    }
+    input.params = params;
   }
 
   if (queryParams.length > 0) {
-    const query: Record<string, string | undefined> = {};
+    const query: Record<string, unknown> = {};
     for (const param of queryParams) {
-      query[param.name] = context.req.query(param.name);
+      const values = context.req.queries(param.name) ?? [];
+      const resolved = unwrapNullableParamType(param.type);
+
+      if (values.length === 0) {
+        if (isParamOptional(param)) {
+          continue;
+        }
+        throw createBindingError(
+          "MISSING_REQUIRED_PARAMETER",
+          `Endpoint "${endpoint.name}" requires the query parameter "${param.name}".`,
+        );
+      }
+
+      if (resolved?.kind === "array") {
+        query[param.name] = values.map((value) =>
+          coerceScalarParamValue(value, resolved.element, param.name, "query"),
+        );
+        continue;
+      }
+
+      if (values.length > 1) {
+        throw createBindingError(
+          "REPEATED_QUERY_PARAMETER",
+          `Query parameter "${param.name}" was supplied ${values.length} times but endpoint "${endpoint.name}" declares it as a single value.`,
+        );
+      }
+
+      query[param.name] = coerceScalarParamValue(values[0]!, param.type, param.name, "query");
     }
     input.query = query;
   }
@@ -294,6 +419,18 @@ export class RivetHttpError<TData = unknown> extends Error {
     headers?: RivetHeadersInit;
     message?: string;
   }) {
+    // 204/205/304 forbid response bodies; serializing data would emit an
+    // invalid response, so reject loudly at the call site instead of
+    // silently dropping the payload.
+    if (
+      (input.status === 204 || input.status === 205 || input.status === 304) &&
+      input.data !== undefined
+    ) {
+      throw new Error(
+        `RivetHttpError status ${input.status} must not carry a body. Pass undefined data for body-forbidding statuses.`,
+      );
+    }
+
     super(input.message ?? `Rivet HTTP error ${input.status}`);
     this.name = "RivetHttpError";
     this.status = input.status;
@@ -342,6 +479,7 @@ export const registerRivetHonoRoutes = <
 
   const handlerEntries = Object.entries(options.handlers as Record<string, unknown>);
   const usedHandlerKeys = new Set<string>();
+  const registeredRouteKeys = new Set<string>();
 
   for (const endpoint of selectedEndpoints) {
     const matchingEntries = handlerEntries.filter(
@@ -359,6 +497,15 @@ export const registerRivetHonoRoutes = <
     }
 
     const [matchedKey, routeEntry] = matchingEntries[0]!;
+
+    // Without a group filter, several contracts' endpoints can share a name;
+    // silently binding one handler to all of them hides real routing bugs.
+    if (usedHandlerKeys.has(matchedKey)) {
+      throw createHandlerResolutionError(
+        `Handler "${matchedKey}" matched multiple endpoints named "${endpoint.name}". Pass "group" to scope registration to a single contract.`,
+      );
+    }
+
     usedHandlerKeys.add(matchedKey);
 
     const { handlerEntry, middleware } = normalizeRouteEntry(
@@ -375,6 +522,14 @@ export const registerRivetHonoRoutes = <
     const method = endpoint.httpMethod.toLowerCase() as HttpMethod;
     const status = getSuccessStatus(endpoint);
     const honoRoute = toHonoRoute(endpoint.routeTemplate);
+
+    const routeKey = `${method} ${honoRoute}`;
+    if (registeredRouteKeys.has(routeKey)) {
+      throw createHandlerResolutionError(
+        `Duplicate route registration: ${endpoint.httpMethod.toUpperCase()} ${endpoint.routeTemplate} is declared by multiple selected endpoints.`,
+      );
+    }
+    registeredRouteKeys.add(routeKey);
     const routeHandlers: MiddlewareHandler[] = [
       ...middleware,
       async (context) => {

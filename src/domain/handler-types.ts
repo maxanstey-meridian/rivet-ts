@@ -13,8 +13,16 @@ type RivetHandlerSuccessResponse<TSpec> = TSpec extends { readonly fileResponse:
     ? TResponse
     : void;
 
+// Mirrors the lowerer's BODY_HTTP_METHODS gate: only these methods carry a
+// request body. For every other method (GET/DELETE), `input` properties are
+// lowered to query/route params and the Hono adapter delivers them under
+// `query`, so the handler types must present them the same way (H1).
+type BodyAuthoringHttpMethod = "PATCH" | "POST" | "PUT";
+
 type HandlerInputBag<TSpec> = (TSpec extends { readonly input: infer T }
-  ? { readonly body: T }
+  ? TSpec extends { readonly method: BodyAuthoringHttpMethod }
+    ? { readonly body: T }
+    : { readonly query: T }
   : unknown) &
   (TSpec extends { readonly params: infer T } ? { readonly params: T } : unknown) &
   (TSpec extends { readonly query: infer T } ? { readonly query: T } : unknown);
