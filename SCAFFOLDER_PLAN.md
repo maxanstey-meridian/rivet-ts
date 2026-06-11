@@ -179,6 +179,38 @@ Nuxt UI, plumb gate) move into the overlay that rivet-ts's commands and
 `meridian init` both apply. The plumb-zero-findings lifecycle test lives
 wherever the overlay lives.
 
+## Status — IMPLEMENTED 2026-06-11 (branch `scaffolder`)
+
+All four phases shipped same-day:
+
+- **Phase 0/1** — triage table actioned: generate-127 (rivet-ts `rivet --`
+  passthrough via the cached binary), enum/`Format<>`/example mocks (format
+  table + `needsCast` → `as <Output>`), S4 (entry-derived references), S6
+  (`--force` + reserved-name guard), S7 (parseExample try/catch, `{}`
+  dictionaries), H1 (method-aware input patterns), vite debounce + watch-set
+  swap, B1 lazy rid, B2 atomic staged binary install.
+- **Phase 2** — golden-shape emitters (`workspace-emitter.ts` shared by both
+  commands): apps/api + apps/ui (Nuxt SPA, @nuxt/eslint) + packages/contracts
+  (facade in `src/`, artifact dir = openapi.json + schema.d.ts only), Taskfile
+  incl. `task plumb`, embedded plumb golden configs, suffix-free naming, no
+  dependency-cruiser. `scaffold` (worked quotes example, entry lowered through
+  the real pipeline) + `scaffold-mock` (contract-driven mocks). The D3 package
+  split was implemented as a clean module boundary inside rivet-ts
+  (`src/infrastructure/scaffold/`) rather than a separate repo — extraction to
+  a standalone hono-scaffolder package is mechanical whenever wanted.
+- **Phase 3** — gates live in `tests/integration/scaffold.lifecycle.test.ts`:
+  shape → tsc (api + contracts) → runtime behavior (list/add/declared-409/
+  structured-500) → **plumb zero findings** → embedded-configs-sync-with-plumb.
+  scaffold-mock suite rewritten for the new shape (all S-intents preserved).
+  CI workflow added (lint + check + test). Suite: 16 files / 177 tests green.
+- **Phase 4** — `~/.meridian/bin/meridian` (`meridian init <dir> [--name]
+  [--ts-backend] [--force]`): rivet-ts scaffold → git init + first commit →
+  plumb self-test. Verified end-to-end (`/tmp/init-demo`, plumb 0/0/0).
+
+**The release act:** version bumped to 0.11.0 (the v2 cutoff plumb RV-026
+expects). Scaffolds pin `github:...#v0.11.0` — pushing that tag on merge is
+what makes real (non-symlinked) installs resolve the new runtime.
+
 ## Sequencing & sizing
 
 Phase 0 → 1 → 2 → 3 strictly ordered (~5–7 working days of agent time);
