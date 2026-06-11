@@ -222,7 +222,7 @@ accessibility modifiers, csproj analyzer properties) — build + tests green.
 expects). Scaffolds pin `github:...#v0.11.0` — pushing that tag on merge is
 what makes real (non-symlinked) installs resolve the new runtime.
 
-## Proper-scaffold package (agreed 2026-06-11, building now)
+## Proper-scaffold package (agreed 2026-06-11 — SHIPPED same day, commit 81ba30e)
 
 Bread-and-butter pseudo-backend capabilities. Versions mirror casebridge
 (zod ^4.3.6, @nuxt/ui ^4.5.1, nuxt ^4.3.1).
