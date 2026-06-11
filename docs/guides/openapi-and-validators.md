@@ -1,55 +1,52 @@
 # OpenAPI and Generated Clients
 
-`rivet-ts` does not emit OpenAPI itself. It reflects TypeScript contracts into Rivet contract JSON, then downstream Rivet turns that JSON into a single artifact: an OpenAPI 3.1 document. Everything downstream of the spec — typed clients, docs UIs, mocks, validators — is the OpenAPI ecosystem's job.
+`rivet-ts` does not emit OpenAPI itself. It reflects TypeScript contracts into contract JSON (an internal IR), then the version-pinned Rivet binary turns that JSON into a single public artifact: an OpenAPI 3.1 document. Everything downstream of the spec — typed clients, docs UIs, mocks, validators — is the OpenAPI ecosystem's job.
 
 Responsibilities are split as follows:
 
 - `rivet-ts` owns TypeScript authoring, the scaffold workflow, and deriving the typed client from the spec
-- Rivet owns OpenAPI emission and .NET-side interop
+- the Rivet binary owns OpenAPI emission (and .NET-side interop)
 
 ## Reflect the contract
 
 ```bash
-pnpm exec rivet-reflect-ts --entry ./contracts.ts --out ./contract.json
+pnpm exec rivet-ts --entry ./contracts.ts --out ./contract.json
 ```
 
 ## Generate OpenAPI
 
+The `rivet-ts rivet --` passthrough resolves the cached binary (auto-installing the pinned version on first use) and forwards the arguments:
+
 ```bash
 # Writes ./generated/openapi.json
-dotnet rivet --from ./contract.json --output ./generated
+pnpm exec rivet-ts rivet -- --from ./contract.json --output ./generated
 ```
 
-`--openapi <path>` overrides the spec path (relative paths resolve against `--output`):
+`--openapi <path>` overrides the spec path (relative paths resolve against `--output`), and `--security <spec>` sets a default security scheme (e.g. `bearer`, `bearer:jwt`, `cookie:name`, `apikey:in:name`):
 
 ```bash
-dotnet rivet --from ./contract.json --openapi ./openapi.json
-```
-
-Security schemes in OpenAPI:
-
-```bash
-dotnet rivet --from ./contract.json --output ./generated --security admin:bearer
+pnpm exec rivet-ts rivet -- --from ./contract.json --output ./generated --security admin:bearer
 ```
 
 ## Generate the typed client
 
-`rivet-ts generate` derives the client package from `openapi.json` in the generated root:
+`rivet-ts generate` derives the types from `openapi.json` in the generated root:
 
 ```bash
 pnpm exec rivet-ts generate --generated-root ./generated
 ```
 
-That emits:
-
-- `schema.d.ts` — `openapi-typescript` types derived from the spec
-- `index.ts` — a typed `openapi-fetch` client facade (`createClient`, `configureRivet`, `client`)
+That emits `schema.d.ts` — `openapi-typescript` types derived from the spec. The `openapi-fetch` client facade is not generated here: it is emitted once at scaffold time into `packages/contracts/src/index.ts` and is hand-owned afterwards. The generated directory holds exactly `openapi.json` + `schema.d.ts` and stays read-only.
 
 ## Validation
 
-Runtime request validation is the Hono adapter's job on the server: query/route coercion, missing-required and malformed-body checks, structured `400` responses.
+Be explicit about what is enforced where:
 
-If you also want client-side runtime validation, run [`openapi-zod-client`](https://github.com/astahmer/openapi-zod-client) over `openapi.json` — the binary no longer emits Zod validators or JSON Schema.
+- **Server, inbound**: the Hono adapter binds requests against the contract — missing required route/query params, number/boolean coercion failures, repeated single-valued query params, malformed JSON bodies, and missing multipart fields all produce structured `400 { code, message }` responses. JSON body _shape_ is not validated — a parseable body reaches the handler as-is.
+- **Server, outbound**: response bodies are not validated. Whatever the handler returns is serialized; extra fields go to the wire.
+- **Client**: types-only by design. `openapi-typescript` + `openapi-fetch` give compile-time checking with no runtime validation layer.
+
+If you want runtime validation beyond that, the spec is accurate input for any OpenAPI-ecosystem validator — e.g. [`openapi-zod-client`](https://github.com/astahmer/openapi-zod-client) over `openapi.json`. The binary itself no longer emits Zod validators or JSON Schema.
 
 ## Examples
 
@@ -57,8 +54,6 @@ Examples authored in the TypeScript contract flow through to downstream artifact
 
 - OpenAPI `examples`
 - scaffolded happy-path handlers
-
-Example:
 
 ```ts
 export const createMemberRequest = {
@@ -87,4 +82,4 @@ export interface MembersContract extends Contract<"MembersContract"> {
 ## Product boundary
 
 - `rivet-ts` handles authoring, scaffolding, and the spec-derived client
-- Rivet handles OpenAPI emission; the OpenAPI ecosystem handles everything else
+- the Rivet binary handles OpenAPI emission; the OpenAPI ecosystem handles everything else

@@ -8,7 +8,7 @@
 ## 1. Install
 
 ```bash
-pnpm add -D github:maxanstey-meridian/rivet-ts#v0.10.0
+pnpm add -D github:maxanstey-meridian/rivet-ts#v0.11.0
 ```
 
 The Rivet binary (the OpenAPI emitter) is downloaded and cached automatically

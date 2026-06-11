@@ -6,16 +6,18 @@ When the backend moves to `.NET`, the frontend can continue using the generated 
 
 For the frontend:
 
-- you still use the generated Rivet client
+- you still use the typed `openapi-fetch` client from `@myapp/contracts`
 - you still call `configureRivet(...)`
 - your client call sites do not need a new abstraction
 
 ```ts
-import { configureRivet, users } from "@myapp/client";
+import { client, configureRivet } from "@myapp/contracts";
 
 configureRivet({ baseUrl: "https://api.example.com" });
 
-const user = await users.getUser({ params: { id: "usr_123" } });
+const { data, error } = await client.GET("/users/{id}", {
+  params: { path: { id: "usr_123" } },
+});
 ```
 
 ## What changes
@@ -36,7 +38,7 @@ That is part of main Rivet:
 
 - C# contracts
 - `.Route` and `.Invoke(...)`
-- server-side OpenAPI and client generation from the C# side
+- the same binary emits OpenAPI 3.1 from the C# side, so the client keeps coming from the same `openapi-typescript` + `openapi-fetch` pipeline
 
 ## Practical handoff model
 

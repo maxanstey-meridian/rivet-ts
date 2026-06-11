@@ -3,7 +3,7 @@ layout: home
 hero:
   name: rivet-ts
   text: TypeScript contracts to working APIs
-  tagline: Write a contract, scaffold an app, point the UI at the generated client, and let Vite keep local artifacts up to date.
+  tagline: Write a contract, scaffold a workspace, point the UI at the typed client, and regenerate artifacts with one command.
   actions:
     - theme: brand
       text: Get Started
@@ -16,25 +16,26 @@ features:
     title: Contract first
     details: Write one TypeScript contract that captures routes, inputs, outputs, status codes, errors, examples, and security metadata.
   - icon: "⚡"
-    title: Scaffold the full app
-    details: Generate a runnable root app with `ui/`, `packages/api`, plain async handlers, and local transport wiring already in place.
+    title: Scaffold the workspace
+    details: Generate a runnable pnpm workspace — Hono API under `apps/api`, Nuxt SPA under `apps/ui`, typed client package under `packages/contracts`.
   - icon: "📦"
-    title: Plugin-managed local artifacts
-    details: Use the Vite plugin to keep the reflected contract JSON plus generated client/runtime artifacts updated as contracts change during dev and build.
+    title: OpenAPI 3.1 as the public artifact
+    details: The Rivet binary emits openapi.json from the reflected contract; openapi-typescript and openapi-fetch derive the typed client from the spec.
   - icon: "🚀"
     title: Promote later
-    details: Keep the contract and client shape stable while moving from browser-local Hono to Bun, then to .NET.
+    details: The API runs in-browser during dev via in-process dispatch, becomes a real server with one task, and the contract story carries over to .NET.
 ---
 
 <div class="vp-doc" style="max-width: 860px; margin: 0 auto; padding: 0 1.5rem 2rem;">
 
 ## Overview
 
-1. write a TypeScript contract
-2. scaffold the full app once
-3. open `ui/src/main.ts`
-4. run Vite
-5. promote to a real server when the browser runtime stops being enough
+1. write a TypeScript contract (or let `scaffold` give you a worked example)
+2. scaffold the workspace once
+3. run `task install && task dev`
+4. consume the typed client from `apps/ui/app/app.vue`
+5. run `task generate` after contract changes
+6. promote to a real server (`task api:run`) when the browser runtime stops being enough
 
 ## Contract shape
 
@@ -66,32 +67,29 @@ Scaffold the app:
 ```bash
 pnpm exec rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp
 cd ./myapp
-pnpm install
-pnpm --dir packages/api run generate
+task install
+task dev
 ```
 
-Then use the generated client from `ui/src/main.ts`:
+Then use the typed client (an `openapi-fetch` instance checked against the generated `schema.d.ts`):
 
 ```ts
-import { users } from "@myapp/client";
-import { configureLocalRivet } from "../rivet-local";
+import { client } from "@myapp/contracts";
 
-configureLocalRivet();
-
-const user = await users.getUser({ params: { id: "usr_123" } });
-console.log(user.name);
+const { data, error } = await client.GET("/users/{id}", {
+  params: { path: { id: "usr_123" } },
+});
 ```
 
-`scaffold-mock` creates the project shape. `pnpm --dir packages/api run generate` creates the initial generated contract/client artifacts, including `packages/client/generated/index.ts` via `rivet-ts`. After that, the scaffolded Vite plugin keeps them current during `vite dev`.
+`scaffold-mock` emits the workspace with bootstrap artifacts already in place. After contract changes, `task generate` re-runs the pipeline: contract entry → `api.contract.json` (internal IR) → `openapi.json` (Rivet binary) → `schema.d.ts` (openapi-typescript).
 
 ## Pages
 
 - [Getting Started](/getting-started)
 - [Hono](/guides/hono)
 - [Vite Plugin](/guides/vite-plugin)
-- [Sample App](/guides/sample-app)
 - [Zero to API in 5 Minutes](/guides/tutorial)
-- [Local Now, Bun Later](/guides/local-now-server-later)
+- [Local Now, Server Later](/guides/local-now-server-later)
 - [.NET Handoff](/guides/dotnet-handoff)
 
 </div>

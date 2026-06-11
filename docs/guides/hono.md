@@ -1,6 +1,6 @@
 # Hono
 
-Use `rivet-ts/hono` when you want to mount contract-typed handlers onto a Hono app yourself instead of relying on the scaffolded `packages/api/src/app.ts`.
+Use `rivet-ts/hono` when you want to mount contract-typed handlers onto a Hono app yourself instead of relying on the scaffolded `apps/api/src/app.ts`.
 
 ## What it does
 
@@ -68,6 +68,26 @@ Handler input is derived from the endpoint spec:
 - `fileResponse: true` handlers are typed as returning a `Blob`
 
 At runtime, JSON bodies use Hono request JSON parsing. `formEncoded` endpoints and multipart endpoints use Hono body parsing. Multipart endpoints pass the selected `File`/`Blob` and form fields under `body`, with route params under `params`.
+
+## What is and isn't enforced at runtime
+
+The contract and generated types make wrong code fail to compile; the runtime enforces only inbound request binding.
+
+Enforced (each failure is a structured `400` with a `{ code, message }` body, and the handler is never invoked):
+
+- missing required route or query parameters → `MISSING_REQUIRED_PARAMETER`
+- route/query values that fail number or boolean coercion against the contract-declared type → `INVALID_PARAMETER_VALUE`
+- a repeated query parameter the contract declares as single-valued → `REPEATED_QUERY_PARAMETER`
+- a JSON request body that fails to parse → `INVALID_REQUEST_BODY`
+- missing required multipart fields → `MISSING_MULTIPART_FIELD`
+
+Array-typed query params collect repeated values (a single value arrives as a one-element array), with element-level coercion.
+
+Not enforced:
+
+- **Request body shape.** The body is parsed, not schema-validated; a parseable body with missing, extra, or wrongly-typed fields reaches the handler as-is.
+- **Response bodies.** The runtime serializes whatever the handler returns — extra fields on returned objects go to the wire. `RivetHandler` types are the only guard.
+- String parameters beyond number/boolean coercion (e.g. enum-typed query params) pass through as raw strings.
 
 ## Handler forms
 
@@ -152,4 +172,4 @@ Do not use it when:
 - `scaffold-mock` already gives you the shape you want
 - you do not need custom app wiring
 
-In the scaffolded flow, `packages/api/src/app.ts` already uses this integration for you.
+In the scaffolded flow, `apps/api/src/app.ts` and the per-module `src/interface/http/<module>-routes.ts` files already use this integration for you.

@@ -96,8 +96,8 @@ Multipart endpoints use `acceptsFile: true` and an object-like `input` with exac
 The current local runtime shape is:
 
 - Hono transport via [`rivet-ts/hono`](/guides/hono)
-- generated Rivet client
-- in-process dispatch via `configureLocalRivet()`
-- later Bun or other Hono-compatible server entry
+- a typed `openapi-fetch` client derived from the OpenAPI spec
+- in-process dispatch wired once in the scaffolded UI plugin (`configureRivet({ fetch: (request) => app.request(request) })`)
+- later a real server entry (`task api:run` uses `@hono/node-server`; any Hono-compatible runtime works)
 
 That is the default path the docs assume.

@@ -1,52 +1,22 @@
 # Vite Plugin
 
-The Vite plugin is the primary browser-local workflow.
+`rivet-ts/vite` regenerates the contract artifacts on dev-server start, on build, and whenever the contract entry (or one of its local imports) changes.
 
-`scaffold-mock` now emits the root Vite config for this by default. This page describes the generated integration and the lower-level plugin behavior.
+The scaffolded workspace does not use it — its `task generate` runs the same pipeline as explicit CLI steps. The plugin exists for Vite-based projects that want regeneration wired into the dev loop.
 
 ## What it does
 
-`rivet-ts/vite` manages generated local artifacts for a scaffolded API package.
+Given a contract entrypoint, each regeneration:
 
-Given:
-
-- a contract entrypoint
-- a scaffolded API package
-
-the plugin:
-
-- reflects the contract to `generated/*.contract.json`
-- runs the downstream Rivet binary to emit `packages/client/generated/openapi.json`
-- runs `openapi-typescript` over that spec to emit `packages/client/generated/schema.d.ts`
-- emits `packages/client/generated/index.ts`, a typed `openapi-fetch` client facade
-- watches contract changes during `vite dev` and regenerates those artifacts
+- reflects the contract to contract JSON (the internal IR)
+- runs the Rivet binary (`--from <contract.json> --output <clientOutDir>`), which writes `<clientOutDir>/openapi.json` and nothing else
+- runs `openapi-typescript` over that spec to emit `<clientOutDir>/schema.d.ts`
 
 It does not:
 
-- scaffold handlers
-- create new routes in `packages/api/src/app.ts`
-- create handler files for new endpoints
+- emit a client facade (`index.ts` is scaffold-time and hand-owned; the artifact directory holds exactly `openapi.json` + `schema.d.ts`)
+- scaffold handlers or routes
 - guarantee the authored API implementation matches the contract
-
-## Recommended structure
-
-```text
-myapp/
-├── package.json
-├── vite.config.ts
-├── packages/
-│   ├── api/
-│   │   ├── generated/
-│   │   └── src/
-│   └── client/
-│       └── generated/
-└── ui/
-    ├── index.html
-    ├── rivet-local.ts
-    └── src/main.ts
-```
-
-`packages/api` is scaffolded once. `ui/` is the Vite app root. The default scaffold already emits this shape.
 
 ## Usage
 
@@ -55,16 +25,11 @@ import { defineConfig } from "vite";
 import { rivetTs } from "rivet-ts/vite";
 
 export default defineConfig({
-  root: "./ui",
   plugins: [
     rivetTs({
-      entry: "./packages/api/src/app/contracts.ts",
-      apiRoot: "./packages/api",
-      runtimeContractOut: "./packages/api/generated/api.contract.json",
-      clientOutDir: "./packages/client/generated",
-      rivet: {
-        version: "0.34.0",
-      },
+      entry: "./apps/api/src/contracts.ts",
+      apiRoot: "./apps/api",
+      clientOutDir: "./packages/contracts/generated",
     }),
   ],
 });
@@ -72,43 +37,32 @@ export default defineConfig({
 
 ## Options
 
-| Option               | Description                                              |
-| -------------------- | -------------------------------------------------------- |
-| `entry`              | Contract entrypoint path                                 |
-| `contract`           | Legacy alias for `entry`                                 |
-| `apiRoot`            | Root of the scaffolded API package                       |
-| `runtimeContractOut` | Optional reflected contract JSON output path             |
-| `clientOutDir`       | Optional generated client package output directory       |
-| `tsconfig`           | Optional TypeScript project file                         |
-| `rivet.version`      | Pinned downstream Rivet version                          |
-| `rivet.autoInstall`  | Auto-download the Rivet binary when missing              |
-| `rivet.binaryPath`   | Use an explicit Rivet binary instead of auto-install     |
-| `rivet.cacheDir`     | Override the auto-installed Rivet binary cache directory |
+| Option               | Description                                                                                   |
+| -------------------- | --------------------------------------------------------------------------------------------- |
+| `entry`              | Contract entrypoint path (`contract` is a legacy alias; one of the two is required)           |
+| `apiRoot`            | Root of the API package (required)                                                            |
+| `runtimeContractOut` | Contract JSON output path. Default: `<apiRoot>/generated/<kebab-cased-api-dir>.contract.json` |
+| `clientOutDir`       | Artifact directory for `openapi.json` + `schema.d.ts`. Default: `<apiRoot>/generated`         |
+| `tsconfig`           | Optional TypeScript project file for reflection                                               |
+| `rivet.version`      | Rivet binary version to download (default `0.34.0`)                                           |
+| `rivet.autoInstall`  | Auto-download the binary when missing (default `true`)                                        |
+| `rivet.binaryPath`   | Use an explicit Rivet binary instead of auto-install                                          |
+| `rivet.cacheDir`     | Override the auto-installed binary cache directory                                            |
 
-`entry` is preferred. `contract` exists as a legacy alias. If `runtimeContractOut` is omitted, the plugin writes `<apiRoot>/generated/<api-root-name>.contract.json`. If `clientOutDir` is omitted, it writes under `<apiRoot>/generated`.
+Relative option paths resolve against the directory the Vite config file lives in (falling back to the resolved root), never `process.cwd()` — `vite -c myapp/vite.config.ts` from a parent directory works.
 
-The plugin runs the downstream Rivet binary with the reflected contract as `--from` and `<clientOutDir>` as `--output` (the binary writes `<clientOutDir>/openapi.json` and nothing else), then emits the same `schema.d.ts` + `index.ts` client package as `rivet-ts generate`.
+## Failure behavior
 
-## UI imports
+Failures are loud, and last-good artifacts survive:
 
-```ts
-import { client } from "@myapp/client";
-import { configureLocalRivet } from "../rivet-local";
+- `vite build` hard-errors on reflection error diagnostics, on a binary failure, or when the binary exits 0 without writing `openapi.json`.
+- The dev server logs the error, stays up, and keeps watching the entry so a fix triggers recovery.
+- Before each binary run the previous `openapi.json` is moved aside; on any failure it is restored and `schema.d.ts` is left untouched. A stale or missing spec is never silently fed back into the generated types.
 
-configureLocalRivet();
+## Watching
 
-const all = await client.GET("/api/members");
-```
+The entry's local import graph is watched and re-collected after each regeneration; the entry itself stays watched even when reflection fails. Editor double-save bursts are debounced (~50 ms). A successful regeneration triggers a full browser reload so the UI picks up the new client surface.
 
-During `vite dev`, contract changes regenerate the local client/runtime artifacts and Vite reloads the UI with the updated client surface.
+## Binary install
 
-## Contract changes
-
-When a contract file changes, the plugin regenerates:
-
-- `generated/*.contract.json`
-- `packages/client/generated/openapi.json`
-- `packages/client/generated/schema.d.ts`
-- `packages/client/generated/index.ts`
-
-The plugin does not add handlers or route registrations for new endpoints. If a new endpoint is added to a selected contract group, the generated client updates immediately, but the scaffolded API can fail during route registration/import until that group has exactly one handler for each endpoint and no unused handlers.
+The binary downloads from GitHub releases into a per-OS cache (macOS: `~/Library/Caches/rivet-ts`; Linux: `$XDG_CACHE_HOME/rivet-ts` or `~/.cache/rivet-ts`; Windows: `%LOCALAPPDATA%\rivet-ts`), verifying the release's sha256 digest when one is published and installing atomically. Supported auto-install platforms: macOS arm64/x64, Linux x64, Windows x64. Elsewhere, build the binary yourself and pass `rivet.binaryPath`.

@@ -1,104 +1,100 @@
 # CLI
 
-`rivet-ts` currently exposes two package binaries:
+The package exposes two identical binaries — `rivet-ts` and the legacy alias `rivet-reflect-ts` — plus these subpath exports:
 
-- `rivet-reflect-ts`
-- `rivet-ts`
-
-The browser-local Vite workflow also exposes a plugin entry:
-
-```ts
-import { rivetTs } from "rivet-ts/vite";
-```
-
-The public package subpaths are:
-
-- `rivet-ts`
-- `rivet-ts/vite`
-- `rivet-ts/hono`
-- `rivet-ts/local`
+- `rivet-ts` — authoring types, handler types, the reflection pipeline
+- `rivet-ts/vite` — the Vite plugin
+- `rivet-ts/hono` — the Hono server runtime
+- `rivet-ts/local` — in-process dispatch helpers for the typed client
 - `rivet-ts/package.json`
 
-## `rivet-reflect-ts`
+Usage (from `rivet-ts --help`):
 
-Reflect a TypeScript contract entrypoint into Rivet contract JSON.
-
-```bash
-rivet-reflect-ts --entry <path> [--out <file>]
+```text
+rivet-ts --entry <path> [--out <file>]
+rivet-ts scaffold --out <dir> [--name <project-name>] [--no-api] [--force]
+rivet-ts scaffold-mock --entry <file> --out <dir> [--name <project-name>] [--tsconfig <file>] [--force]
+rivet-ts generate --generated-root <dir>
+rivet-ts rivet [--] <args passed to the Rivet binary>
 ```
 
-Example:
+`--help`/`-h` prints usage; `--version` prints the package version. Unknown flags and valued flags missing their value are loud errors, never silently ignored.
+
+## Reflect (bare form)
+
+Reflect a TypeScript contract entry into contract JSON — the internal IR consumed by the Rivet binary and the Hono runtime.
 
 ```bash
-pnpm exec rivet-reflect-ts --entry ./contracts.ts --out ./contract.json
+pnpm exec rivet-ts --entry ./contracts.ts --out ./contract.json
 ```
 
-If `--out` is omitted, JSON is written to stdout.
+- If `--out` is omitted, JSON is written to stdout.
+- `--out` creates missing parent directories.
+- An entry containing zero contracts produces an `ENTRY_NO_CONTRACTS` warning instead of silently emitting an empty document.
+- Exit code is 1 when any error diagnostic was produced.
+
+## `rivet-ts scaffold`
+
+Scaffold a fresh workspace with a worked example module (`quotes`):
+
+```bash
+pnpm exec rivet-ts scaffold --out ./myapp --name myapp
+```
+
+Options:
+
+- `--out`: output directory (required)
+- `--name`: project name; defaults to the output directory's basename
+- `--no-api`: emit only `apps/ui` + `packages/contracts`, for repos whose API lives elsewhere
+- `--force`: scaffold into a non-empty directory (refused otherwise)
+
+The command lowers its own example contract through the real reflection pipeline before emitting, so the bootstrap `api.contract.json` matches the emitted `contracts.ts` by construction.
 
 ## `rivet-ts scaffold-mock`
 
-Scaffold a working Hono plus Vite mock app from a TypeScript contract.
-
-```bash
-rivet-ts scaffold-mock --entry <file> --out <dir> [--name <project-name>] [--tsconfig <file>]
-```
-
-Example:
+Scaffold the same workspace shape from an existing contract entry; api modules return synthesized mock values until you replace them.
 
 ```bash
 pnpm exec rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp
 cd ./myapp
-pnpm install
-pnpm --dir packages/api run generate
+task install
+task dev
 ```
-
-`scaffold-mock` creates the project shape and authored source files. It does not itself produce `packages/api/generated/*`; that comes from the API package `generate` step.
 
 Options:
 
-- `--entry`: TypeScript contract entrypoint
-- `--out`: output directory for the scaffolded app
-- `--name`: optional package name for the scaffold
-- `--tsconfig`: optional explicit TypeScript project file
+- `--entry`: TypeScript contract entrypoint (required)
+- `--out`: output directory (required)
+- `--name`: optional project name
+- `--tsconfig`: optional explicit TypeScript project file for reflection
+- `--force`: scaffold into a non-empty directory (refused otherwise)
+
+The entry and its local imports are copied into `apps/api/src/` preserving their relative layout. A copied file that would collide with a scaffold-emitted file (`contract.ts`, `local.ts`, `main.ts`, `app.ts`) is an error, not a silent overwrite.
 
 ## `rivet-ts generate`
 
-Derive the app-facing client package from the OpenAPI spec the Rivet binary wrote (`rivet --from <contract.json> --output <dir>` writes `<dir>/openapi.json`).
+Derive `schema.d.ts` from the OpenAPI spec the Rivet binary wrote:
 
 ```bash
-rivet-ts generate --generated-root <dir>
+pnpm exec rivet-ts generate --generated-root ./packages/contracts/generated
 ```
 
-Example:
+This reads `<generated-root>/openapi.json` and writes `<generated-root>/schema.d.ts` (openapi-typescript). It fails loudly when `openapi.json` is missing. It does **not** write a client facade — the facade is emitted once at scaffold time into `packages/contracts/src/index.ts` and is hand-owned afterwards; the generated directory holds exactly `openapi.json` + `schema.d.ts`. (A stale pre-facade `index.ts` left in the generated directory by an older scaffold is removed.)
+
+## `rivet-ts rivet`
+
+Resolve the cached Rivet binary — auto-installing on first use, exactly as the Vite plugin does — and pass the remaining arguments through verbatim:
 
 ```bash
-pnpm exec rivet-ts generate --generated-root ./packages/client/generated
+pnpm exec rivet-ts rivet -- --from ./contract.json --output ./packages/contracts/generated
 ```
 
-This reads `<generated-root>/openapi.json` and writes:
-
-- `<generated-root>/schema.d.ts` — `openapi-typescript` types derived from the spec
-- `<generated-root>/index.ts` — a typed `openapi-fetch` client facade exporting `paths`, `createClient`, `configureRivet`, and the configured `client`
-
-It fails loudly when `openapi.json` is missing.
+The `RIVET_VERSION` environment variable overrides the pinned default version. Scaffolded `task generate` pipelines call this instead of a bare `rivet` that is never on `PATH`.
 
 ## Diagnostics
 
-Diagnostics are written to stderr.
-
-Behavioral rules:
+Diagnostics are written to stderr as `severity: [CODE] file:line:col message`.
 
 - unsupported constructs produce explicit errors or warnings
-- the reflector does not silently widen complex unsupported TS types into fake JSON shapes
+- the reflector does not silently widen unsupported TS types into fake JSON shapes
 - scaffold generation prefers visible TODO stubs over lying handlers
-
-## Working directory note
-
-When using `pnpm exec` inside this repo, command resolution may still run with the workspace root as `cwd`. In practice, the safest form is:
-
-```bash
-cd /path/to/rivet-ts
-pnpm exec rivet-ts scaffold-mock --entry poc1/contracts.ts --out poc1
-```
-
-Or use absolute/fully-qualified relative paths when running from nested directories.

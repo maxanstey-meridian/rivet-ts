@@ -1,11 +1,11 @@
 # Zero to API in 5 Minutes
 
-Build a contract-first local app from scratch:
+Build a contract-first workspace from scratch:
 
 1. define a TypeScript contract
-2. scaffold the full app around it
-3. open the generated UI entrypoint
-4. call the generated client locally
+2. scaffold the workspace around it
+3. run the dev loop
+4. consume the typed client from the UI
 
 ## 1. Create a contract
 
@@ -62,157 +62,105 @@ export interface TodoContract extends Contract<"TodoContract"> {
 }
 ```
 
-## 2. Scaffold the app
+## 2. Scaffold the workspace
 
 ```bash
 pnpm exec rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp
 cd ./myapp
-pnpm install
-pnpm --dir packages/api run generate
+task install
 ```
 
-The scaffold emits the project shape, and the API `generate` step produces the generated client/runtime artifacts:
+The scaffold emits a pnpm workspace with bootstrap artifacts already in place:
 
 ```text
 myapp/
-├── package.json
-├── vite.config.ts
-├── packages/
+├── Taskfile.yml
+├── package.json / pnpm-workspace.yaml
+├── .oxlintrc.json / .oxfmtrc.json / .editorconfig / .gitignore
+├── apps/
 │   ├── api/
-│   │   ├── generated/
-│   │   ├── package.json
+│   │   ├── generated/api.contract.json      ← internal IR
+│   │   ├── package.json / tsconfig.json
 │   │   └── src/
-│   │       ├── app.ts
-│   │       ├── app/
-│   │       └── modules/
-│   └── client/
-│       ├── generated/
-│       └── package.json
-└── ui/
-    ├── index.html
-    ├── rivet-local.ts
-    └── src/main.ts
+│   │       ├── contracts.ts                 ← your entry, copied in
+│   │       ├── app.ts / contract.ts / local.ts / main.ts
+│   │       ├── interface/http/todo-routes.ts
+│   │       └── modules/todo/application/
+│   │           ├── list-todos.ts
+│   │           ├── get-todo.ts
+│   │           └── create-todo.ts
+│   └── ui/                                  ← Nuxt SPA (ssr: false)
+│       ├── app/app.vue
+│       └── app/plugins/rivet.client.ts      ← in-browser transport wiring
+└── packages/contracts/
+    ├── generated/openapi.json + schema.d.ts ← read-only
+    └── src/index.ts                         ← hand-owned typed client facade
 ```
 
-The important boundary is that the UI consumes `@myapp/client`. Local browser transport is wired once in `ui/rivet-local.ts` through `@myapp/api/local`, and the UI does not reach into API source files or generated implementation paths directly.
+The UI consumes `@myapp/contracts` only; feature code never imports `apps/api/src/*` or generated internals directly.
 
-## 3. Inspect the scaffolded handler shape
+## 3. Inspect a scaffolded handler
 
-`scaffold-mock` creates the authored source layer under `packages/api/src`.
-
-`pnpm --dir packages/api run generate` creates:
-
-- `packages/api/generated/api.contract.json`
-- `packages/client/generated/openapi.json`
-- `packages/client/generated/schema.d.ts`
-- `packages/client/generated/index.ts`
-
-Example scaffolded handler:
+`scaffold-mock` synthesizes mock values from the contract (preferring authored examples when present):
 
 ```ts
-import type { RivetHandler } from "rivet-ts";
+import type { RivetHandlerInput, RivetHandlerResult } from "rivet-ts";
 import type { TodoContract } from "#contract";
 
-export const getTodo: RivetHandler<TodoContract, "GetTodo"> = async ({ params }) => {
+type GetTodoInput = RivetHandlerInput<TodoContract, "GetTodo">;
+type GetTodoOutput = RivetHandlerResult<TodoContract, "GetTodo">;
+
+export const getTodo = async (_input: GetTodoInput): Promise<GetTodoOutput> => {
   return {
     id: "example",
     title: "example",
     done: false,
-  };
+  } as GetTodoOutput;
 };
 ```
 
-Replace those stubs with application logic as needed.
+Replace those stubs with application logic as needed. Shapes the generator cannot synthesize get a TODO stub that throws rather than fabricating an invalid response.
 
-Example frontend consumption:
+## 4. Consume the typed client
 
-The scaffolded app starts in local mode. In `ui/src/main.ts`:
+`apps/ui/app/app.vue` already demonstrates a call. The client is a typed `openapi-fetch` instance — it never throws on HTTP errors, so always handle `{ data, error }`:
 
 ```ts
-import { todo } from "@myapp/client";
-import { configureLocalRivet } from "../rivet-local";
+import { client } from "@myapp/contracts";
 
-configureLocalRivet();
-
-const created = await todo.createTodo({
-  body: {
-    title: "Ship docs",
-  },
+const { data, error } = await client.POST("/todos", {
+  body: { title: "Ship docs" },
 });
-
-console.log(created.title);
 ```
-
-That is the intended decoupling: write the UI against `@myapp/client`, and let `ui/rivet-local.ts` decide whether that surface is currently backed by local `app.request(...)` transport or a remote server.
-
-## 4. Open the generated UI entrypoint
-
-Scaffolded `ui/src/main.ts`:
-
-```ts
-import { todo } from "@myapp/client";
-import { configureLocalRivet } from "../rivet-local";
-
-const render = async (): Promise<void> => {
-  configureLocalRivet();
-
-  const output = document.getElementById("output");
-  if (!output) {
-    return;
-  }
-
-  const result = await todo.listTodos();
-
-  output.textContent = [
-    "todo.listTodos()",
-    JSON.stringify(result, null, 2),
-    "",
-    "Open ui/src/main.ts and keep consuming @myapp/client.",
-  ].join("\n");
-};
-
-void render();
-```
-
-This is the place to start consuming the API from the frontend.
 
 ## 5. See how local transport is wired
 
-Scaffolded `ui/rivet-local.ts`:
+Scaffolded `apps/ui/app/plugins/rivet.client.ts`:
 
 ```ts
-import { configureRivet, type RivetConfig } from "@myapp/client";
 import { app } from "@myapp/api/local";
-import { configureLocalRivet as configureRivetLocalRuntime } from "rivet-ts/local";
+import { configureRivet } from "@myapp/contracts";
 
-type LocalRivetConfig = Omit<RivetConfig, "fetch" | "baseUrl"> & {
-  readonly baseUrl?: string;
-};
-
-// Local browser mode. Replace this file with normal configureRivet({ baseUrl })
-// wiring when the API is hosted remotely.
-export const configureLocalRivet = (config: LocalRivetConfig = {}) => {
-  configureRivetLocalRuntime({
-    ...config,
-    configureRivet,
-    dispatch: (input, init) => app.request(input as string, init),
-  });
-};
+// Local-now: the whole API runs in the browser, dispatched through
+// app.request. When you promote it to a real server (task api:run), swap
+// the fetch dispatch for { baseUrl: "http://localhost:5180" }.
+export default defineNuxtPlugin(() => {
+  configureRivet({ fetch: (request) => app.request(request) });
+});
 ```
 
-The UI does not call `app.request(...)` directly. It calls `configureLocalRivet()` once and then uses the generated Rivet client.
+The UI never calls `app.request(...)` directly — it configures the client once and uses the typed surface. Promotion to a real server is a one-line transport change, not a client rewrite.
 
-That separation is deliberate. The frontend depends on the API surface, not the transport mechanics, so promotion to a real server later is a hosting/configuration change rather than a client rewrite.
-
-## 6. Run the app
+## 6. Run the dev loop
 
 ```bash
-pnpm run dev
+task dev        # Nuxt frontend; the API runs in the browser
+task generate   # after contract changes: entry → contract JSON → openapi.json → schema.d.ts
+task api:run    # promote the API to a real server (port 5180)
+task api:test   # typecheck + vitest
 ```
-
-The app runs in the browser runtime until it is exposed through a server entry.
 
 ## Next
 
-- Read [Local Now, Bun Later](/guides/local-now-server-later)
+- Read [Local Now, Server Later](/guides/local-now-server-later)
 - Read [OpenAPI and Generated Clients](/guides/openapi-and-validators)

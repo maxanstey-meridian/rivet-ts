@@ -1,81 +1,42 @@
 # Sample App
 
-[`samples/myapp`](https://github.com/maxanstey-meridian/rivet-ts/tree/runtime/samples/myapp) is the reference browser-local app shape.
+`samples/myapp` in this repository is a **legacy** sample: it was produced by an earlier `scaffold-mock` and keeps the pre-v2 workspace shape (root Vite app with `ui/`, `packages/api`, `packages/client`, `ui/rivet-local.ts`). It is kept for reference but no longer matches what the scaffold commands emit.
 
-It was produced by:
-
-1. writing a TypeScript contract
-2. running `rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp`
-3. generating the local contract/client artifacts with the API `generate` script or the Vite plugin
-4. opening `ui/src/main.ts` and continuing from there
-
-The committed sample keeps the scaffolded authored shape. Generated artifacts under `packages/api/generated` and `packages/client/generated` are produced locally by `pnpm --dir packages/api run generate` or during Vite dev/build.
-
-## Structure
+The current scaffold output looks like this instead:
 
 ```text
-samples/myapp/
-├── package.json
-├── pnpm-workspace.yaml
-├── tsconfig.json
-├── .dependency-cruiser.cjs
-├── vite.config.ts
-├── packages/
-│   ├── api/
-│   │   ├── generated/
-│   │   ├── package.json
-│   │   ├── tsconfig.json
-│   │   └── src/
-│   └── client/
-│       ├── generated/
-│       ├── tsconfig.json
-│       └── package.json
-└── ui/
-    ├── index.html
-    ├── rivet-local.ts
-    └── src/main.ts
+myapp/
+├── Taskfile.yml
+├── apps/
+│   ├── api/          ← Hono backend (contract entry, modules, routes)
+│   └── ui/           ← Nuxt SPA (ssr: false)
+└── packages/contracts/
+    ├── generated/    ← read-only: openapi.json + schema.d.ts
+    └── src/index.ts  ← hand-owned typed client facade
 ```
 
-## What is scaffolded once
+To produce a current reference app, run either scaffold command yourself:
 
-- root `package.json`
-- root `pnpm-workspace.yaml`
-- root `tsconfig.json`
-- root `.dependency-cruiser.cjs`
-- root `vite.config.ts`
-- `ui/index.html`
-- `ui/rivet-local.ts`
-- `ui/src/main.ts`
-- `packages/api/src/app.ts`
-- `packages/api/src/app/composition.ts`
-- `packages/api/src/app/contract.ts`
-- `packages/api/src/app/local.ts`
-- `packages/api/src/app/map-contract-error.ts`
-- `packages/api/package.json`
-- `packages/api/tsconfig.json`
-- `packages/client/package.json`
-- `packages/client/tsconfig.json`
-- module skeletons under `packages/api/src/modules/*`
-- scaffolded handler and use-case source files under each module
-- common module placeholders
-- copied contract source under `packages/api/src/app`
+```bash
+# Worked example module (quotes)
+pnpm exec rivet-ts scaffold --out ./myapp --name myapp
 
-## What the Vite plugin keeps generated
+# Or from your own contract
+pnpm exec rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp
+```
 
-- `packages/api/generated/*.contract.json`
-- `packages/client/generated/openapi.json`
-- `packages/client/generated/schema.d.ts`
-- `packages/client/generated/index.ts`
+See [Getting Started](/getting-started) for the emitted shape and the dev loop, and the [5 minute tutorial](/guides/tutorial) for a walkthrough.
 
-During `vite dev`, contract changes regenerate those artifacts and Vite reloads the UI with the updated client surface.
+## What is scaffolded once (hand-owned afterwards)
 
-## What stays authored
+- the workspace skeleton: root `package.json`, `pnpm-workspace.yaml`, `Taskfile.yml`, lint/format configs
+- everything under `apps/api/src/` and `apps/ui/`
+- `packages/contracts/src/index.ts` — the client facade
 
-- `packages/api/src/app/contracts.ts`
-- any copied sibling contract source files under `packages/api/src/app`
-- `packages/api/src/modules/*`
-- route registration in `packages/api/src/app.ts`
-- `ui/src/main.ts`
-- any other UI code
+## What `task generate` keeps regenerated (read-only)
 
-If a new endpoint is added to the contract, the generated client updates immediately. The scaffolded API can then fail during route registration/import until the selected contract group has exactly one handler for each endpoint and no unused handlers.
+- `apps/api/generated/api.contract.json` — the internal IR
+- `packages/contracts/generated/openapi.json` — the OpenAPI 3.1 spec from the Rivet binary
+- `packages/contracts/generated/schema.d.ts` — `openapi-typescript` types
+
+If a new endpoint is added to the contract, the generated client surface updates on the next `task generate`. The API then fails loudly at route registration until the selected contract group has exactly one handler per endpoint and no unused handlers.

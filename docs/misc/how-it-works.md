@@ -20,43 +20,29 @@ That contract is the source of truth for:
 - examples
 - security metadata
 
-## 2. Reflect to Rivet JSON
+## 2. Reflect to contract JSON
 
-`rivet-reflect-ts` reads the TypeScript contract graph and lowers it into Rivet's intermediate contract document.
+`rivet-ts --entry <path>` reads the TypeScript contract graph with the compiler API and lowers it into a contract JSON document. That document is an internal IR — the bridge between the TS authoring world, the scaffold workflow, the Hono runtime's route registration, and the Rivet binary. OpenAPI 3.1 is the public format; the IR is plumbing.
 
-That document is the bridge between:
+## 3. Scaffold a workspace
 
-- the TS authoring world
-- the scaffold workflow
-- downstream Rivet codegen
+`rivet-ts scaffold` (worked example) and `rivet-ts scaffold-mock` (from your contract) emit the same pnpm workspace:
 
-## 3. Scaffold a local Hono app
-
-`rivet-ts scaffold-mock` uses the lowered contract to emit:
-
-- a root app shell with `ui/`
-- a Hono API package under `packages/api`
-- plain async handlers
-- local transport wiring through `configureLocalRivet()`
-- a root Vite config with the plugin preconfigured
-- copied contract source
-
-The handlers are plain TypeScript functions typed against the contract surface with `RivetHandler<...>`.
+- a Hono API under `apps/api` with one module per contract and handlers typed via `RivetHandler<...>`
+- a Nuxt SPA under `apps/ui` with in-browser transport wired once in `app/plugins/rivet.client.ts`
+- a contracts package: read-only `generated/{openapi.json, schema.d.ts}` plus a hand-owned `src/index.ts` client facade
+- a Taskfile (`install` / `dev` / `generate` / `api:run` / `api:test` / `plumb`)
 
 ## 4. Generate downstream artifacts
 
-Main Rivet consumes the reflected contract JSON and emits one artifact: an OpenAPI 3.1 document (`openapi.json`).
-
-Everything downstream of the spec comes from the OpenAPI ecosystem. `rivet-ts generate` derives the app-facing client package from it — `openapi-typescript` types (`schema.d.ts`) plus a typed `openapi-fetch` facade (`index.ts`), such as `packages/client/generated/index.ts`. Runtime request validation is the Hono adapter's job on the server; client-side runtime validation, if wanted, is `openapi-zod-client` over the same spec.
+The version-pinned Rivet binary consumes the contract JSON and emits one artifact: an OpenAPI 3.1 document (`openapi.json`). Everything downstream of the spec comes from the OpenAPI ecosystem: `rivet-ts generate` runs `openapi-typescript` over it to produce `schema.d.ts`, and the scaffold-time facade wraps `openapi-fetch` with those types. Inbound request binding (structured 400s) is the Hono adapter's job on the server; the client is types-only with no runtime validation.
 
 ## 5. Promote transport later
 
-Locally, the generated client talks to Hono in-process.
-
-Later, the same app can be exposed over HTTP and the generated client can switch to:
+Locally, the typed client talks to Hono in-process via `app.request`. Later, the same app runs as a real server (`task api:run`) and the client switches to:
 
 ```ts
 configureRivet({ baseUrl: "https://api.example.com" });
 ```
 
-The generated client can then be reconfigured to target a deployed API.
+Same contract, same client surface — only the transport configuration changes.

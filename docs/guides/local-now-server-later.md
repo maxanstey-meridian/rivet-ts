@@ -1,73 +1,54 @@
-# Local Now, Bun Later
+# Local Now, Server Later
 
-Local mode uses the generated `openapi-fetch` client against a Hono app in-process.
-
-Server mode uses the same generated client against a deployed HTTP endpoint.
-
-The key boundary is that normal UI call sites depend on `@myapp/client`, not on API internals. Local browser transport is wired once in `ui/rivet-local.ts`; only that local adapter imports `@myapp/api/local` and dispatches to `app.request(...)`.
+Local mode uses the typed `openapi-fetch` client against the Hono app in-process, in the browser. Server mode uses the same client against an HTTP endpoint. Either way, UI call sites depend on `@myapp/contracts`, not on API internals.
 
 ## Local mode
 
-The scaffold starts here:
+The scaffold starts here. `apps/ui/app/plugins/rivet.client.ts` configures the client once with a custom `fetch` that dispatches each built `Request` straight into the Hono app:
 
 ```ts
-import { configureLocalRivet } from "../rivet-local";
+import { app } from "@myapp/api/local";
+import { configureRivet } from "@myapp/contracts";
 
-configureLocalRivet();
-```
-
-That makes the generated client call the local Hono app in-process: `configureLocalRivet` configures the `openapi-fetch` client with a custom `fetch` that dispatches each built `Request` to `app.request(...)`.
-
-From feature UI code, that detail is hidden behind the generated client plus `ui/rivet-local.ts`.
-
-This mode does not provide server-side infrastructure concerns such as persistent storage, secrets, background jobs, or external integrations.
-
-## Promotion to Bun
-
-If the handlers are already server-safe, promotion mainly consists of exposing the existing Hono app over HTTP.
-
-Keep:
-
-- the contract
-- the generated client
-- the handler signatures
-- `packages/api/src/app.ts`
-
-Add a real server entry:
-
-```ts
-import { app } from "./packages/api/src/app.js";
-
-// Expose the same Hono app over HTTP so it can use real server-side concerns
-// like databases, secrets, queues, and file storage without changing the
-// contract, client shape, or handler surface.
-Bun.serve({
-  fetch: app.fetch,
+export default defineNuxtPlugin(() => {
+  configureRivet({ fetch: (request) => app.request(request) });
 });
 ```
 
-Then switch the client config:
+Only this plugin imports `@myapp/api/local` (which re-exports the Hono `app`). Feature code sees the typed client and nothing else.
+
+This mode does not provide server-side infrastructure concerns such as persistent storage, secrets, background jobs, or external integrations.
+
+## Promotion to a real server
+
+The scaffolded API already has a server entry — `apps/api/src/main.ts`:
 
 ```ts
-import { configureRivet } from "@myapp/client";
+import { serve } from "@hono/node-server";
+import { app } from "./app.js";
 
-configureRivet({ baseUrl: "https://api.example.com" });
+serve({ fetch: app.fetch, port: 5180 }, (info) => {
+  console.log(`api listening on http://localhost:${info.port}`);
+});
 ```
 
-The following remain unchanged:
+Run it with `task api:run`, then switch the UI plugin's transport:
 
-- same generated client
-- same client calls
-- same contract
-- same handler surface
+```ts
+import { configureRivet } from "@myapp/contracts";
 
-That is the point of the setup: the frontend is decoupled from whether the API is bundled locally or served remotely later.
+export default defineNuxtPlugin(() => {
+  configureRivet({ baseUrl: "http://localhost:5180" });
+});
+```
 
-The main configuration change on the client side is the `baseUrl`.
+Keep: the contract, the generated client, the handler signatures, `apps/api/src/app.ts`. Change: one line of transport config. The same Hono app can be served by any Hono-compatible runtime (`@hono/node-server` is what the scaffold wires; Bun's `Bun.serve({ fetch: app.fetch })` also works).
+
+Error behavior stays identical across both modes by construction: the scaffolded `app.onError` turns unhandled handler errors into the same structured 500 envelope whether the app runs in-browser or as a server.
 
 ## Additional server concerns
 
-Moving from browser-local runtime to a deployed API usually adds:
+Moving from browser-local runtime to a deployed API usually adds the real work:
 
 - database access
 - secrets and environment configuration
@@ -77,7 +58,4 @@ Moving from browser-local runtime to a deployed API usually adds:
 - webhooks and email
 - logging, monitoring, and rate limiting
 
-This promotion typically requires:
-
-- exposing the Hono app over HTTP
-- deployment and process management
+Transport promotion is trivial; infrastructure promotion is the actual project.
