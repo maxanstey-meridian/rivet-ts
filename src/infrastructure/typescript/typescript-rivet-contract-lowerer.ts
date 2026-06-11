@@ -1,10 +1,16 @@
-import path from "node:path";
 import ts from "typescript";
 import { RivetContractLowerer } from "../../application/ports/rivet-contract-lowerer.js";
-import { ContractBundle } from "../../domain/contract-bundle.js";
-import { EndpointExampleSpec, type ResponseExamplesSpec } from "../../domain/contract.js";
+import {
+  EndpointExampleSpec,
+  type EndpointExampleValue,
+  ResponseExamplesSpec,
+  type HttpMethod,
+} from "../../domain/contract.js";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
-import { RivetContractLoweringResult } from "../../domain/rivet-contract-lowering-result.js";
+import {
+  type DiscoveredContract,
+  RivetContractLoweringResult,
+} from "../../domain/rivet-contract-lowering-result.js";
 import {
   RivetContractDocument,
   type RivetContractEnum,
@@ -18,11 +24,29 @@ import {
   RivetTypeDefinition,
   type RivetPropertyDefinition,
 } from "../../domain/rivet-contract.js";
-import { resolveTypeScriptProject } from "./typescript-project.js";
+import { mapTypeScriptDiagnostics, resolveTypeScriptProject } from "./typescript-project.js";
 
 type SupportedDeclaration = ts.EnumDeclaration | ts.InterfaceDeclaration | ts.TypeAliasDeclaration;
 
-type ContractIndex = Map<string, Map<string, ts.TypeNode>>;
+type DiscoveredEndpointSpec = {
+  name: string;
+  specNode: ts.TypeNode;
+  method: HttpMethod;
+  route: string;
+  formEncoded: boolean;
+  acceptsFile: boolean;
+  hasInput: boolean;
+  hasParams: boolean;
+  hasQuery: boolean;
+  requestExamples: readonly EndpointExampleSpec[];
+  responseExamples: readonly ResponseExamplesSpec[];
+};
+
+type DiscoveredContractSpec = {
+  name: string;
+  sourceFilePath: string;
+  endpoints: readonly DiscoveredEndpointSpec[];
+};
 
 type EndpointContext = {
   contractName: string;
@@ -45,21 +69,9 @@ type TaggedUnionMemberDescriptor = {
   properties: readonly PropertyDescriptor[];
 };
 
-const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
-  target: ts.ScriptTarget.ES2023,
-  module: ts.ModuleKind.NodeNext,
-  moduleResolution: ts.ModuleResolutionKind.NodeNext,
-  strict: true,
-  skipLibCheck: true,
-  allowJs: false,
-  noEmit: true,
-  resolveJsonModule: true,
-  esModuleInterop: true,
-  verbatimModuleSyntax: true,
-};
-
 const EMPTY_DOCUMENT = new RivetContractDocument({});
 
+const HTTP_METHODS = new Set<HttpMethod>(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 const BODY_HTTP_METHODS = new Set(["PATCH", "POST", "PUT"]);
 const ROUTE_PARAM_PATTERN = /\{([^}]+)\}/g;
 const AUTHORING_HELPER_TYPE_NAMES = new Set([
@@ -68,17 +80,19 @@ const AUTHORING_HELPER_TYPE_NAMES = new Set([
   "EndpointSecurityAuthoringSpec",
 ]);
 const BUILTIN_TYPE_NAMES = new Set(["Array", "ReadonlyArray"]);
+// Example-list containers accept a broader builtin set than the type lowering
+// path does (inherited from the contract frontend this pass absorbed).
+const EXAMPLE_CONTAINER_TYPE_NAMES = new Set([
+  "Array",
+  "Record",
+  "ReadonlyArray",
+  "String",
+  "Number",
+  "Boolean",
+  "Promise",
+]);
 const MULTIPART_FILE_TYPE_NAMES = new Set(["Blob", "File"]);
 const DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE = "application/json";
-
-const buildProgram = (entryPath: string, tsconfigPath?: string): ts.Program => {
-  const project = resolveTypeScriptProject(entryPath, tsconfigPath);
-
-  return ts.createProgram([project.absoluteEntryPath], {
-    ...DEFAULT_COMPILER_OPTIONS,
-    ...project.compilerOptions,
-  });
-};
 
 const parseRouteParamNames = (route: string): string[] => {
   const matches = route.matchAll(ROUTE_PARAM_PATTERN);
@@ -193,60 +207,6 @@ const getContractName = (node: ts.InterfaceDeclaration, checker: ts.TypeChecker)
   return null;
 };
 
-const getEndpointSpecNode = (member: ts.TypeElement): ts.TypeNode | null => {
-  if (!ts.isPropertySignature(member) || !member.type) {
-    return null;
-  }
-
-  const sourceFile = getNodeSourceFile(member);
-  if (
-    !ts.isTypeReferenceNode(member.type) ||
-    member.type.typeName.getText(sourceFile) !== "Endpoint"
-  ) {
-    return null;
-  }
-
-  const [argument] = member.type.typeArguments ?? [];
-  return argument ?? null;
-};
-
-const indexContractEndpointSpecs = (
-  sourceFile: ts.SourceFile,
-  checker: ts.TypeChecker,
-): ContractIndex => {
-  const contracts: ContractIndex = new Map();
-
-  for (const statement of sourceFile.statements) {
-    if (!ts.isInterfaceDeclaration(statement) || !isContractInterface(statement, checker)) {
-      continue;
-    }
-
-    const contractName = getContractName(statement, checker);
-    if (!contractName) {
-      continue;
-    }
-
-    const endpoints = new Map<string, ts.TypeNode>();
-    for (const member of statement.members) {
-      if (!ts.isPropertySignature(member) || !member.name) {
-        continue;
-      }
-
-      const endpointName = getPropertyName(member.name);
-      const specNode = getEndpointSpecNode(member);
-      if (!endpointName || !specNode) {
-        continue;
-      }
-
-      endpoints.set(endpointName, specNode);
-    }
-
-    contracts.set(contractName, endpoints);
-  }
-
-  return contracts;
-};
-
 const indexDeclarations = (
   program: ts.Program,
   checker: ts.TypeChecker,
@@ -341,23 +301,31 @@ export class TypeScriptRivetContractLowerer extends RivetContractLowerer {
     super();
   }
 
-  public async lower(bundle: ContractBundle): Promise<RivetContractLoweringResult> {
-    const diagnostics = [...bundle.diagnostics];
-    const program = buildProgram(bundle.entryPath, this.tsconfigPath);
-    const sourceFile = program.getSourceFile(path.resolve(bundle.entryPath));
+  /**
+   * Single AST→document pass (X13 collapse): one tsconfig parse, one
+   * ts.Program, one semantic check. Contract discovery (formerly the
+   * TypeScript contract frontend) and lowering share the same checker.
+   */
+  public async lower(entryPath: string): Promise<RivetContractLoweringResult> {
+    const project = resolveTypeScriptProject(entryPath, this.tsconfigPath);
+    const absoluteEntryPath = project.absoluteEntryPath;
+    const program = ts.createProgram([absoluteEntryPath], project.compilerOptions);
+    const checker = program.getTypeChecker();
+    const sourceFile = program.getSourceFile(absoluteEntryPath);
+    const diagnostics = [
+      ...mapTypeScriptDiagnostics(project.configDiagnostics, absoluteEntryPath),
+      ...mapTypeScriptDiagnostics(ts.getPreEmitDiagnostics(program), absoluteEntryPath),
+    ];
 
     if (!sourceFile) {
-      // The frontend usually reported this already; don't report it twice (C4/V3).
-      if (!diagnostics.some((diagnostic) => diagnostic.code === "ENTRY_NOT_FOUND")) {
-        diagnostics.push(
-          new ExtractionDiagnostic({
-            severity: "error",
-            code: "ENTRY_NOT_FOUND",
-            message: `Could not load entry file: ${path.resolve(bundle.entryPath)}`,
-            filePath: path.resolve(bundle.entryPath),
-          }),
-        );
-      }
+      diagnostics.push(
+        new ExtractionDiagnostic({
+          severity: "error",
+          code: "ENTRY_NOT_FOUND",
+          message: `Could not load entry file: ${absoluteEntryPath}`,
+          filePath: absoluteEntryPath,
+        }),
+      );
 
       return new RivetContractLoweringResult({
         document: EMPTY_DOCUMENT,
@@ -365,44 +333,17 @@ export class TypeScriptRivetContractLowerer extends RivetContractLowerer {
       });
     }
 
-    const checker = program.getTypeChecker();
     const declarations = indexDeclarations(program, checker, diagnostics);
-    const contractIndex = indexContractEndpointSpecs(sourceFile, checker);
     const typeDefinitions = new Map<string, RivetTypeDefinition>();
     const enums = new Map<string, RivetContractEnum>();
     const endpoints: RivetEndpointDefinition[] = [];
     const referencedTypeNames = new Set<string>();
     const emissionContext = new TypeEmissionContext(checker, declarations, diagnostics);
+    const contracts = emissionContext.discoverContracts(sourceFile);
 
-    for (const contract of bundle.contracts) {
-      const endpointSpecs = contractIndex.get(contract.name);
-      if (!endpointSpecs) {
-        diagnostics.push(
-          new ExtractionDiagnostic({
-            severity: "error",
-            code: "CONTRACT_NOT_FOUND",
-            message: `Could not locate extracted contract "${contract.name}" during lowering.`,
-            filePath: contract.sourceFilePath,
-          }),
-        );
-        continue;
-      }
-
+    for (const contract of contracts) {
       for (const endpoint of contract.endpoints) {
-        const specLiteral = endpointSpecs.get(endpoint.name);
-        if (!specLiteral) {
-          diagnostics.push(
-            new ExtractionDiagnostic({
-              severity: "error",
-              code: "ENDPOINT_SPEC_NOT_FOUND",
-              message: `Could not locate endpoint "${contract.name}.${endpoint.name}" during lowering.`,
-              filePath: contract.sourceFilePath,
-            }),
-          );
-          continue;
-        }
-
-        const loweredEndpoint = emissionContext.lowerEndpoint(specLiteral, {
+        const loweredEndpoint = emissionContext.lowerEndpoint(endpoint.specNode, {
           contractName: contract.name,
           endpointName: endpoint.name,
           httpMethod: endpoint.method,
@@ -473,9 +414,23 @@ export class TypeScriptRivetContractLowerer extends RivetContractLowerer {
     return new RivetContractLoweringResult({
       document,
       diagnostics,
+      contracts: contracts.map(toDiscoveredContract),
     });
   }
 }
+
+const toDiscoveredContract = (contract: DiscoveredContractSpec): DiscoveredContract => ({
+  name: contract.name,
+  sourceFilePath: contract.sourceFilePath,
+  endpoints: contract.endpoints.map((endpoint) => ({
+    name: endpoint.name,
+    method: endpoint.method,
+    route: endpoint.route,
+    hasInput: endpoint.hasInput,
+    hasParams: endpoint.hasParams,
+    hasQuery: endpoint.hasQuery,
+  })),
+});
 
 class TypeEmissionContext {
   private readonly checker: ts.TypeChecker;
@@ -490,6 +445,1093 @@ class TypeEmissionContext {
     this.checker = checker;
     this.declarations = declarations;
     this.diagnostics = diagnostics;
+  }
+
+  // ------------------------------------------------------------------
+  // Contract discovery (absorbed from the deleted TypeScript contract
+  // frontend). X6/X23: an interface that opted into the Contract DSL must
+  // either yield a usable contract or fail loudly — never vanish silently.
+  // ------------------------------------------------------------------
+
+  public discoverContracts(sourceFile: ts.SourceFile): DiscoveredContractSpec[] {
+    const contracts: DiscoveredContractSpec[] = [];
+
+    for (const statement of sourceFile.statements) {
+      if (!ts.isInterfaceDeclaration(statement)) {
+        continue;
+      }
+
+      const contractHeritage = getContractHeritageType(statement, this.checker);
+      if (!contractHeritage) {
+        continue;
+      }
+
+      const contractName = getContractName(statement, this.checker);
+      if (contractName === null) {
+        this.diagnostics.push(
+          createNodeDiagnostic(
+            contractHeritage,
+            "INVALID_CONTRACT_NAME",
+            `Interface "${statement.name.text}" must declare Contract<"Name"> with a non-empty string literal name.`,
+          ),
+        );
+        continue;
+      }
+
+      const endpoints: DiscoveredEndpointSpec[] = [];
+      for (const member of statement.members) {
+        if (!ts.isPropertySignature(member) || !member.type || !member.name) {
+          continue;
+        }
+
+        const endpointName = this.getEndpointMemberName(member.name);
+        if (!endpointName) {
+          this.diagnostics.push(
+            createNodeDiagnostic(
+              member,
+              "UNSUPPORTED_ENDPOINT_NAME",
+              "Only identifier endpoint names are supported.",
+            ),
+          );
+          continue;
+        }
+
+        const endpoint = this.discoverEndpoint(member.type, endpointName);
+        if (endpoint) {
+          endpoints.push(endpoint);
+        }
+      }
+
+      contracts.push({
+        name: contractName,
+        sourceFilePath: sourceFile.fileName,
+        endpoints,
+      });
+    }
+
+    return contracts;
+  }
+
+  private getEndpointMemberName(name: ts.PropertyName): string | null {
+    if (ts.isIdentifier(name) || ts.isStringLiteral(name)) {
+      return name.text;
+    }
+
+    return null;
+  }
+
+  private discoverEndpoint(
+    typeNode: ts.TypeNode,
+    endpointName: string,
+  ): DiscoveredEndpointSpec | null {
+    if (
+      !ts.isTypeReferenceNode(typeNode) ||
+      typeNode.typeName.getText(getNodeSourceFile(typeNode)) !== "Endpoint"
+    ) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          typeNode,
+          "UNSUPPORTED_ENDPOINT_TYPE",
+          `Endpoint "${endpointName}" must use Endpoint<{ ... }>.`,
+        ),
+      );
+      return null;
+    }
+
+    const [specNode] = typeNode.typeArguments ?? [];
+    if (!specNode) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          typeNode,
+          "INVALID_ENDPOINT_SPEC",
+          `Endpoint "${endpointName}" must declare an endpoint authoring spec.`,
+        ),
+      );
+      return null;
+    }
+
+    // X2: generic spec aliases (Endpoint<CrudSpec<T>>) would lower the
+    // declaration's unsubstituted type parameters; reject them loudly until
+    // the pipeline can instantiate type arguments.
+    if (ts.isTypeReferenceNode(specNode) && (specNode.typeArguments?.length ?? 0) > 0) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          specNode,
+          "UNSUPPORTED_GENERIC_ENDPOINT_SPEC",
+          `Endpoint "${endpointName}" uses a generic endpoint spec alias; generic spec aliases are not supported. Inline the spec or use a non-generic alias.`,
+        ),
+      );
+      return null;
+    }
+
+    const propertyMap = this.createPropertyMap(specNode);
+    if (!propertyMap) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          typeNode,
+          "INVALID_ENDPOINT_SPEC",
+          `Endpoint "${endpointName}" must use a type literal spec or a type alias that resolves to one.`,
+        ),
+      );
+      return null;
+    }
+
+    const method = this.parseHttpMethod(propertyMap.get("method"), endpointName);
+    const route = this.readStringLiteral(propertyMap.get("route"));
+
+    if (!method || !route) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          specNode,
+          "INCOMPLETE_ENDPOINT",
+          `Endpoint "${endpointName}" must declare both method and route.`,
+        ),
+      );
+      return null;
+    }
+
+    const successStatus = this.readNumericLiteral(propertyMap.get("successStatus"));
+    const requestExamples = this.parseRequestExamples(
+      propertyMap.get("requestExamples"),
+      propertyMap.get("requestExample"),
+      propertyMap.get("input"),
+      endpointName,
+    );
+    const responseExamples = this.parseResponseExamples(
+      propertyMap.get("responseExamples"),
+      propertyMap.get("successResponseExample"),
+      propertyMap.get("response"),
+      method,
+      successStatus,
+      endpointName,
+    );
+
+    return {
+      name: endpointName,
+      specNode,
+      method,
+      route,
+      formEncoded: this.readBooleanLiteral(propertyMap.get("formEncoded")) ?? false,
+      acceptsFile: this.readBooleanLiteral(propertyMap.get("acceptsFile")) ?? false,
+      hasInput: propertyMap.has("input"),
+      hasParams: propertyMap.has("params"),
+      hasQuery: propertyMap.has("query"),
+      requestExamples,
+      responseExamples,
+    };
+  }
+
+  private parseHttpMethod(node: ts.TypeNode | undefined, endpointName: string): HttpMethod | null {
+    const method = this.readStringLiteral(node);
+    if (!method) {
+      return null;
+    }
+
+    if (!HTTP_METHODS.has(method as HttpMethod)) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          node!,
+          "UNSUPPORTED_HTTP_METHOD",
+          `Endpoint "${endpointName}" uses unsupported HTTP method "${method}".`,
+        ),
+      );
+      return null;
+    }
+
+    return method as HttpMethod;
+  }
+
+  // ------------------------------------------------------------------
+  // Endpoint example extraction (absorbed from the deleted frontend).
+  // Examples are parsed at discovery time because they read const
+  // initializers and run type-assignability checks against the checker.
+  // ------------------------------------------------------------------
+
+  private parseRequestExamples(
+    pluralNode: ts.TypeNode | undefined,
+    singularNode: ts.TypeNode | undefined,
+    targetNode: ts.TypeNode | undefined,
+    endpointName: string,
+  ): EndpointExampleSpec[] {
+    if (pluralNode && singularNode) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          pluralNode,
+          "CONFLICTING_REQUEST_EXAMPLE_SPEC",
+          `Endpoint "${endpointName}" cannot declare both requestExample and requestExamples.`,
+        ),
+      );
+      return [];
+    }
+
+    if (pluralNode) {
+      const entryNodes = this.getExampleEntryNodes(pluralNode);
+      if (!entryNodes) {
+        this.diagnostics.push(
+          createNodeDiagnostic(
+            pluralNode,
+            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+            `Endpoint "${endpointName}" must declare requestExamples as an array of typeof exportedConst entries or { json: typeof exportedConst } descriptors.`,
+          ),
+        );
+        return [];
+      }
+
+      const examples: EndpointExampleSpec[] = [];
+      for (const entryNode of entryNodes) {
+        const example = this.parseRequestExampleEntry(entryNode, targetNode, endpointName);
+        if (example) {
+          examples.push(example);
+        }
+      }
+
+      return examples;
+    }
+
+    const requestExample = this.parseEndpointExample(
+      singularNode,
+      targetNode,
+      "requestExample",
+      "input",
+      endpointName,
+    );
+
+    return requestExample ? [requestExample] : [];
+  }
+
+  private parseResponseExamples(
+    pluralNode: ts.TypeNode | undefined,
+    legacySingularNode: ts.TypeNode | undefined,
+    targetNode: ts.TypeNode | undefined,
+    method: HttpMethod,
+    successStatus: number | null,
+    endpointName: string,
+  ): ResponseExamplesSpec[] {
+    if (pluralNode && legacySingularNode) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          pluralNode,
+          "CONFLICTING_RESPONSE_EXAMPLE_SPEC",
+          `Endpoint "${endpointName}" cannot declare both successResponseExample and responseExamples.`,
+        ),
+      );
+      return [];
+    }
+
+    if (pluralNode) {
+      const entryNodes = this.getExampleEntryNodes(pluralNode);
+      if (!entryNodes) {
+        this.diagnostics.push(
+          createNodeDiagnostic(
+            pluralNode,
+            "INVALID_RESPONSE_EXAMPLES_SPEC",
+            `Endpoint "${endpointName}" must declare responseExamples as an array of { status; examples } entries.`,
+          ),
+        );
+        return [];
+      }
+
+      const result: ResponseExamplesSpec[] = [];
+      for (const entryNode of entryNodes) {
+        const parsed = this.parseResponseExamplesEntry(entryNode, targetNode, endpointName);
+        if (parsed) {
+          result.push(parsed);
+        }
+      }
+
+      return result;
+    }
+
+    if (legacySingularNode) {
+      const legacyExample = this.parseEndpointExample(
+        legacySingularNode,
+        targetNode,
+        "successResponseExample",
+        "response",
+        endpointName,
+      );
+
+      if (!legacyExample) {
+        return [];
+      }
+
+      const resolvedStatus =
+        successStatus ??
+        this.getDefaultSuccessStatus(
+          method,
+          targetNode !== undefined && targetNode.kind !== ts.SyntaxKind.VoidKeyword,
+        );
+      return [new ResponseExamplesSpec({ status: resolvedStatus, examples: [legacyExample] })];
+    }
+
+    return [];
+  }
+
+  private parseResponseExamplesEntry(
+    node: ts.TypeNode,
+    targetNode: ts.TypeNode | undefined,
+    endpointName: string,
+  ): ResponseExamplesSpec | null {
+    const propertyMap = this.createPropertyMap(node);
+    if (!propertyMap) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          node,
+          "INVALID_RESPONSE_EXAMPLES_ENTRY",
+          `Endpoint "${endpointName}" responseExamples entries must be { status; examples } objects.`,
+        ),
+      );
+      return null;
+    }
+
+    const status = this.readNumericLiteral(propertyMap.get("status"));
+    if (status === null) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          node,
+          "MISSING_RESPONSE_EXAMPLE_STATUS",
+          `Endpoint "${endpointName}" responseExamples entry must declare a numeric status.`,
+        ),
+      );
+      return null;
+    }
+
+    const examplesNode = propertyMap.get("examples");
+    if (!examplesNode) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          node,
+          "MISSING_RESPONSE_EXAMPLES",
+          `Endpoint "${endpointName}" responseExamples entry for status ${status} must declare an examples array.`,
+        ),
+      );
+      return null;
+    }
+
+    const exampleEntryNodes = this.getExampleEntryNodes(examplesNode);
+    if (!exampleEntryNodes) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          examplesNode,
+          "INVALID_RESPONSE_EXAMPLES",
+          `Endpoint "${endpointName}" responseExamples entry for status ${status} must declare examples as an array of typeof exportedConst entries.`,
+        ),
+      );
+      return null;
+    }
+
+    const examples: EndpointExampleSpec[] = [];
+    for (const exampleNode of exampleEntryNodes) {
+      const example = this.parseResponseExampleEntry(
+        exampleNode,
+        `responseExamples[${status}].examples entries`,
+        endpointName,
+      );
+      if (example) {
+        examples.push(example);
+      }
+    }
+
+    return new ResponseExamplesSpec({ status, examples });
+  }
+
+  private parseResponseExampleEntry(
+    node: ts.TypeNode,
+    propertyName: string,
+    endpointName: string,
+  ): EndpointExampleSpec | null {
+    if (ts.isTypeQueryNode(node)) {
+      const declaration = this.resolveExampleDeclaration(node.exprName);
+      if (
+        !declaration ||
+        !declaration.initializer ||
+        !this.isConstVariableDeclaration(declaration) ||
+        !this.isExportedVariableDeclaration(declaration)
+      ) {
+        this.diagnostics.push(
+          createNodeDiagnostic(
+            node,
+            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+            `Endpoint "${endpointName}" must declare ${propertyName} as typeof an exported const with an initializer.`,
+          ),
+        );
+        return null;
+      }
+
+      const data = this.parseExampleValue(declaration.initializer);
+      if (data === undefined) {
+        this.diagnostics.push(
+          createNodeDiagnostic(
+            declaration.initializer,
+            "UNSUPPORTED_ENDPOINT_EXAMPLE_VALUE",
+            `Endpoint "${endpointName}" ${propertyName} must resolve to a JSON-like const initializer.`,
+          ),
+        );
+        return null;
+      }
+
+      return new EndpointExampleSpec({ data });
+    }
+
+    const propertyMap = this.createPropertyMap(node);
+    if (!propertyMap) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          node,
+          "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+          `Endpoint "${endpointName}" ${propertyName} must be typeof exportedConst or a supported descriptor object.`,
+        ),
+      );
+      return null;
+    }
+
+    const name = this.parseExampleDescriptorStringLiteral(
+      propertyMap.get("name"),
+      "name",
+      endpointName,
+    );
+    const mediaType = this.parseExampleDescriptorStringLiteral(
+      propertyMap.get("mediaType"),
+      "mediaType",
+      endpointName,
+    );
+
+    if (name === null || mediaType === null) {
+      return null;
+    }
+
+    const jsonNode = propertyMap.get("json");
+    const componentExampleIdNode = propertyMap.get("componentExampleId");
+    const resolvedJsonNode = propertyMap.get("resolvedJson");
+
+    if (jsonNode) {
+      if (componentExampleIdNode || resolvedJsonNode) {
+        this.diagnostics.push(
+          createNodeDiagnostic(
+            node,
+            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+            `Endpoint "${endpointName}" ${propertyName} must use either inline json or ref-backed componentExampleId/resolvedJson fields, not both.`,
+          ),
+        );
+        return null;
+      }
+
+      const data = this.parseResponseExampleData(jsonNode, `${propertyName}.json`, endpointName);
+      if (data === null) {
+        return null;
+      }
+
+      return new EndpointExampleSpec({
+        data,
+        name: name ?? undefined,
+        mediaType: mediaType ?? undefined,
+      });
+    }
+
+    if (componentExampleIdNode || resolvedJsonNode) {
+      if (!componentExampleIdNode || !resolvedJsonNode) {
+        this.diagnostics.push(
+          createNodeDiagnostic(
+            node,
+            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+            `Endpoint "${endpointName}" ref-backed ${propertyName} must declare both componentExampleId and resolvedJson.`,
+          ),
+        );
+        return null;
+      }
+
+      const componentExampleId = this.readStringLiteral(componentExampleIdNode);
+      if (!componentExampleId) {
+        this.diagnostics.push(
+          createNodeDiagnostic(
+            componentExampleIdNode,
+            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+            `Endpoint "${endpointName}" ${propertyName} must declare componentExampleId as a string literal.`,
+          ),
+        );
+        return null;
+      }
+
+      const resolvedJson = this.parseResponseExampleData(
+        resolvedJsonNode,
+        `${propertyName}.resolvedJson`,
+        endpointName,
+      );
+      if (resolvedJson === null) {
+        return null;
+      }
+
+      return new EndpointExampleSpec({
+        componentExampleId,
+        resolvedJson,
+        name: name ?? undefined,
+        mediaType: mediaType ?? undefined,
+      });
+    }
+
+    this.diagnostics.push(
+      createNodeDiagnostic(
+        node,
+        "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+        `Endpoint "${endpointName}" ${propertyName} descriptor must declare json or componentExampleId/resolvedJson.`,
+      ),
+    );
+    return null;
+  }
+
+  private parseResponseExampleData(
+    node: ts.TypeNode,
+    propertyName: string,
+    endpointName: string,
+  ): EndpointExampleValue | null {
+    if (!ts.isTypeQueryNode(node)) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          node,
+          "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+          `Endpoint "${endpointName}" must declare ${propertyName} as typeof exportedConst.`,
+        ),
+      );
+      return null;
+    }
+
+    const declaration = this.resolveExampleDeclaration(node.exprName);
+    if (
+      !declaration ||
+      !declaration.initializer ||
+      !this.isConstVariableDeclaration(declaration) ||
+      !this.isExportedVariableDeclaration(declaration)
+    ) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          node,
+          "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+          `Endpoint "${endpointName}" must declare ${propertyName} as typeof an exported const with an initializer.`,
+        ),
+      );
+      return null;
+    }
+
+    const data = this.parseExampleValue(declaration.initializer);
+    if (data === undefined) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          declaration.initializer,
+          "UNSUPPORTED_ENDPOINT_EXAMPLE_VALUE",
+          `Endpoint "${endpointName}" ${propertyName} must resolve to a JSON-like const initializer.`,
+        ),
+      );
+      return null;
+    }
+
+    return data;
+  }
+
+  private parseRequestExampleEntry(
+    node: ts.TypeNode,
+    targetNode: ts.TypeNode | undefined,
+    endpointName: string,
+  ): EndpointExampleSpec | null {
+    if (ts.isTypeQueryNode(node)) {
+      return this.parseEndpointExample(
+        node,
+        targetNode,
+        "requestExamples entries",
+        "input",
+        endpointName,
+      );
+    }
+
+    const propertyMap = this.createPropertyMap(node);
+    if (!propertyMap) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          node,
+          "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+          `Endpoint "${endpointName}" requestExamples entries must be typeof exportedConst or a supported descriptor object.`,
+        ),
+      );
+      return null;
+    }
+
+    const name = this.parseExampleDescriptorStringLiteral(
+      propertyMap.get("name"),
+      "name",
+      endpointName,
+    );
+    const mediaType = this.parseExampleDescriptorStringLiteral(
+      propertyMap.get("mediaType"),
+      "mediaType",
+      endpointName,
+    );
+
+    if (name === null || mediaType === null) {
+      return null;
+    }
+
+    const jsonNode = propertyMap.get("json");
+    const componentExampleIdNode = propertyMap.get("componentExampleId");
+    const resolvedJsonNode = propertyMap.get("resolvedJson");
+
+    if (jsonNode) {
+      if (componentExampleIdNode || resolvedJsonNode) {
+        this.diagnostics.push(
+          createNodeDiagnostic(
+            node,
+            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+            `Endpoint "${endpointName}" requestExamples entries must use either inline json or ref-backed componentExampleId/resolvedJson fields, not both.`,
+          ),
+        );
+        return null;
+      }
+
+      const data = this.parseEndpointExampleData(
+        jsonNode,
+        targetNode,
+        "requestExamples entries.json",
+        "input",
+        endpointName,
+      );
+      if (data === null) {
+        return null;
+      }
+
+      return new EndpointExampleSpec({
+        data,
+        name: name ?? undefined,
+        mediaType: mediaType ?? undefined,
+      });
+    }
+
+    if (componentExampleIdNode || resolvedJsonNode) {
+      if (!componentExampleIdNode || !resolvedJsonNode) {
+        this.diagnostics.push(
+          createNodeDiagnostic(
+            node,
+            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+            `Endpoint "${endpointName}" ref-backed requestExamples entries must declare both componentExampleId and resolvedJson.`,
+          ),
+        );
+        return null;
+      }
+
+      const componentExampleId = this.readStringLiteral(componentExampleIdNode);
+      if (!componentExampleId) {
+        this.diagnostics.push(
+          createNodeDiagnostic(
+            componentExampleIdNode,
+            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+            `Endpoint "${endpointName}" requestExamples entries must declare componentExampleId as a string literal.`,
+          ),
+        );
+        return null;
+      }
+
+      const resolvedJson = this.parseEndpointExampleData(
+        resolvedJsonNode,
+        targetNode,
+        "requestExamples entries.resolvedJson",
+        "input",
+        endpointName,
+      );
+      if (resolvedJson === null) {
+        return null;
+      }
+
+      return new EndpointExampleSpec({
+        componentExampleId,
+        resolvedJson,
+        name: name ?? undefined,
+        mediaType: mediaType ?? undefined,
+      });
+    }
+
+    this.diagnostics.push(
+      createNodeDiagnostic(
+        node,
+        "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+        `Endpoint "${endpointName}" requestExamples entries must be typeof exportedConst, { json: typeof exportedConst }, or { componentExampleId: "..."; resolvedJson: typeof exportedConst }.`,
+      ),
+    );
+    return null;
+  }
+
+  private parseEndpointExample(
+    node: ts.TypeNode | undefined,
+    targetNode: ts.TypeNode | undefined,
+    propertyName: string,
+    targetPropertyName: "input" | "response",
+    endpointName: string,
+  ): EndpointExampleSpec | null {
+    const data = this.parseEndpointExampleData(
+      node,
+      targetNode,
+      propertyName,
+      targetPropertyName,
+      endpointName,
+    );
+
+    return data === null ? null : new EndpointExampleSpec({ data });
+  }
+
+  private parseEndpointExampleData(
+    node: ts.TypeNode | undefined,
+    targetNode: ts.TypeNode | undefined,
+    propertyName: string,
+    targetPropertyName: "input" | "response",
+    endpointName: string,
+  ): EndpointExampleValue | null {
+    if (!node) {
+      return null;
+    }
+
+    if (!ts.isTypeQueryNode(node)) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          node,
+          "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+          `Endpoint "${endpointName}" must declare ${propertyName} as typeof exportedConst.`,
+        ),
+      );
+      return null;
+    }
+
+    const declaration = this.resolveExampleDeclaration(node.exprName);
+    if (
+      !declaration ||
+      !declaration.initializer ||
+      !this.isConstVariableDeclaration(declaration) ||
+      !this.isExportedVariableDeclaration(declaration)
+    ) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          node,
+          "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+          `Endpoint "${endpointName}" must declare ${propertyName} as typeof an exported const with an initializer.`,
+        ),
+      );
+      return null;
+    }
+
+    if (!targetNode) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          node,
+          "INVALID_ENDPOINT_EXAMPLE_TYPE",
+          `Endpoint "${endpointName}" ${propertyName} requires the corresponding endpoint ${targetPropertyName} type.`,
+        ),
+      );
+      return null;
+    }
+
+    const data = this.parseExampleValue(declaration.initializer);
+    if (data === undefined) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          declaration.initializer,
+          "UNSUPPORTED_ENDPOINT_EXAMPLE_VALUE",
+          `Endpoint "${endpointName}" ${propertyName} must resolve to a JSON-like const initializer.`,
+        ),
+      );
+      return null;
+    }
+
+    const exampleType = this.checker.getTypeFromTypeNode(node);
+    const targetType = this.checker.getTypeFromTypeNode(targetNode);
+    if (!this.checker.isTypeAssignableTo(exampleType, targetType)) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          node,
+          "INVALID_ENDPOINT_EXAMPLE_TYPE",
+          `Endpoint "${endpointName}" ${propertyName} must be assignable to the endpoint ${targetPropertyName} type.`,
+        ),
+      );
+      return null;
+    }
+
+    return data;
+  }
+
+  private parseExampleDescriptorStringLiteral(
+    node: ts.TypeNode | undefined,
+    propertyName: "name" | "mediaType",
+    endpointName: string,
+  ): string | null | undefined {
+    if (!node) {
+      return undefined;
+    }
+
+    const value = this.readStringLiteral(node);
+    if (value !== null) {
+      return value;
+    }
+
+    this.diagnostics.push(
+      createNodeDiagnostic(
+        node,
+        "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+        `Endpoint "${endpointName}" requestExamples entries must declare ${propertyName} as a string literal when provided.`,
+      ),
+    );
+    return null;
+  }
+
+  private getExampleEntryNodes(node: ts.TypeNode): ts.TypeNode[] | null {
+    if (ts.isParenthesizedTypeNode(node)) {
+      return this.getExampleEntryNodes(node.type);
+    }
+
+    if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) {
+      return this.getExampleEntryNodes(node.type);
+    }
+
+    if (ts.isTupleTypeNode(node)) {
+      return [...node.elements];
+    }
+
+    if (ts.isArrayTypeNode(node)) {
+      return [node.elementType];
+    }
+
+    if (
+      ts.isTypeReferenceNode(node) &&
+      ts.isIdentifier(node.typeName) &&
+      EXAMPLE_CONTAINER_TYPE_NAMES.has(node.typeName.text)
+    ) {
+      const [elementType] = node.typeArguments ?? [];
+      return elementType ? [elementType] : null;
+    }
+
+    const resolvedNode = this.resolveAliasedTypeNode(node);
+    return resolvedNode ? this.getExampleEntryNodes(resolvedNode) : null;
+  }
+
+  private resolveExampleDeclaration(entityName: ts.EntityName): ts.VariableDeclaration | null {
+    const symbol = this.checker.getSymbolAtLocation(entityName);
+    if (!symbol) {
+      return null;
+    }
+
+    const resolvedSymbol =
+      (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? this.checker.getAliasedSymbol(symbol) : symbol;
+
+    for (const declaration of resolvedSymbol.getDeclarations() ?? []) {
+      if (ts.isVariableDeclaration(declaration)) {
+        return declaration;
+      }
+    }
+
+    return null;
+  }
+
+  private isConstVariableDeclaration(declaration: ts.VariableDeclaration): boolean {
+    return (
+      ts.isVariableDeclarationList(declaration.parent) &&
+      (declaration.parent.flags & ts.NodeFlags.Const) !== 0
+    );
+  }
+
+  private isExportedVariableDeclaration(declaration: ts.VariableDeclaration): boolean {
+    return (
+      ts.isVariableDeclarationList(declaration.parent) &&
+      ts.isVariableStatement(declaration.parent.parent) &&
+      (declaration.parent.parent.modifiers?.some(
+        (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+      ) ??
+        false)
+    );
+  }
+
+  private parseExampleValue(expression: ts.Expression): EndpointExampleValue | undefined {
+    const unwrapped = this.unwrapExampleExpression(expression);
+
+    if (ts.isStringLiteral(unwrapped) || ts.isNoSubstitutionTemplateLiteral(unwrapped)) {
+      return unwrapped.text;
+    }
+
+    if (ts.isNumericLiteral(unwrapped)) {
+      return Number(unwrapped.text);
+    }
+
+    if (unwrapped.kind === ts.SyntaxKind.TrueKeyword) {
+      return true;
+    }
+
+    if (unwrapped.kind === ts.SyntaxKind.FalseKeyword) {
+      return false;
+    }
+
+    if (unwrapped.kind === ts.SyntaxKind.NullKeyword) {
+      return null;
+    }
+
+    if (ts.isPrefixUnaryExpression(unwrapped)) {
+      const operand = this.parseExampleValue(unwrapped.operand);
+      if (typeof operand !== "number") {
+        return undefined;
+      }
+
+      if (unwrapped.operator === ts.SyntaxKind.MinusToken) {
+        return -operand;
+      }
+
+      if (unwrapped.operator === ts.SyntaxKind.PlusToken) {
+        return operand;
+      }
+
+      return undefined;
+    }
+
+    if (ts.isArrayLiteralExpression(unwrapped)) {
+      const values: EndpointExampleValue[] = [];
+      for (const element of unwrapped.elements) {
+        if (ts.isSpreadElement(element)) {
+          return undefined;
+        }
+
+        const value = this.parseExampleValue(element);
+        if (value === undefined) {
+          return undefined;
+        }
+
+        values.push(value);
+      }
+
+      return values;
+    }
+
+    if (ts.isObjectLiteralExpression(unwrapped)) {
+      const value: Record<string, EndpointExampleValue> = {};
+      for (const property of unwrapped.properties) {
+        const entry = this.parseExampleObjectProperty(property);
+        if (!entry) {
+          return undefined;
+        }
+
+        value[entry.name] = entry.value;
+      }
+
+      return value;
+    }
+
+    if (ts.isIdentifier(unwrapped)) {
+      return this.resolveIdentifierExampleValue(unwrapped);
+    }
+
+    if (
+      ts.isBinaryExpression(unwrapped) &&
+      unwrapped.operatorToken.kind === ts.SyntaxKind.PlusToken
+    ) {
+      const left = this.parseExampleValue(unwrapped.left);
+      const right = this.parseExampleValue(unwrapped.right);
+      if (typeof left === "string" && typeof right === "string") {
+        return left + right;
+      }
+
+      return undefined;
+    }
+
+    return this.parseLiteralValueFromType(unwrapped);
+  }
+
+  private resolveIdentifierExampleValue(
+    identifier: ts.Identifier,
+  ): EndpointExampleValue | undefined {
+    const symbol = this.checker.getSymbolAtLocation(identifier);
+    if (!symbol) {
+      return undefined;
+    }
+
+    const resolvedSymbol =
+      (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? this.checker.getAliasedSymbol(symbol) : symbol;
+
+    for (const declaration of resolvedSymbol.getDeclarations() ?? []) {
+      if (ts.isVariableDeclaration(declaration) && declaration.initializer) {
+        return this.parseExampleValue(declaration.initializer);
+      }
+    }
+
+    return undefined;
+  }
+
+  private parseExampleObjectProperty(
+    property: ts.ObjectLiteralElementLike,
+  ): { name: string; value: EndpointExampleValue } | null {
+    if (ts.isPropertyAssignment(property)) {
+      const propertyName = getPropertyName(property.name);
+      if (!propertyName) {
+        return null;
+      }
+
+      const propertyValue = this.parseExampleValue(property.initializer);
+      return propertyValue === undefined ? null : { name: propertyName, value: propertyValue };
+    }
+
+    if (ts.isShorthandPropertyAssignment(property)) {
+      const propertyValue = this.parseShorthandExampleValue(property);
+      return propertyValue === undefined
+        ? null
+        : { name: property.name.text, value: propertyValue };
+    }
+
+    return null;
+  }
+
+  private parseShorthandExampleValue(
+    property: ts.ShorthandPropertyAssignment,
+  ): EndpointExampleValue | undefined {
+    const symbol = this.checker.getShorthandAssignmentValueSymbol(property);
+    if (!symbol) {
+      return undefined;
+    }
+
+    const resolvedSymbol =
+      (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? this.checker.getAliasedSymbol(symbol) : symbol;
+
+    for (const declaration of resolvedSymbol.getDeclarations() ?? []) {
+      if (ts.isVariableDeclaration(declaration) && declaration.initializer) {
+        return this.parseExampleValue(declaration.initializer);
+      }
+    }
+
+    return this.parseLiteralValueFromTsType(
+      this.checker.getTypeOfSymbolAtLocation(resolvedSymbol, property.name),
+    );
+  }
+
+  private unwrapExampleExpression(expression: ts.Expression): ts.Expression {
+    if (
+      ts.isParenthesizedExpression(expression) ||
+      ts.isAsExpression(expression) ||
+      ts.isSatisfiesExpression(expression) ||
+      ts.isTypeAssertionExpression(expression)
+    ) {
+      return this.unwrapExampleExpression(expression.expression);
+    }
+
+    return expression;
+  }
+
+  private parseLiteralValueFromType(
+    expression: ts.Expression,
+  ): string | number | boolean | undefined {
+    return this.parseLiteralValueFromTsType(this.checker.getTypeAtLocation(expression));
+  }
+
+  private parseLiteralValueFromTsType(type: ts.Type): string | number | boolean | undefined {
+    if ((type.flags & ts.TypeFlags.StringLiteral) !== 0) {
+      return (type as ts.StringLiteralType).value;
+    }
+
+    if ((type.flags & ts.TypeFlags.NumberLiteral) !== 0) {
+      return (type as ts.NumberLiteralType).value;
+    }
+
+    if ((type.flags & ts.TypeFlags.BooleanLiteral) !== 0) {
+      return this.checker.typeToString(type) === "true";
+    }
+
+    return undefined;
   }
 
   public lowerEndpoint(

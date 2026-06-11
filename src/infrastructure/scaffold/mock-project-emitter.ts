@@ -116,7 +116,7 @@ const toRivetTsDependency = (manifest: PackageManifest): string => {
 };
 
 const buildContractGroups = (config: MockProjectEmitterConfig): readonly ContractGroup[] =>
-  config.bundle.contracts.map((contract) => {
+  config.contracts.map((contract) => {
     const contractBaseName = deriveContractBaseName(contract.name);
 
     return {
@@ -142,7 +142,7 @@ const buildHandlerDescriptors = (
   const descriptors: HandlerDescriptor[] = [];
 
   const specByName = new Map(
-    config.bundle.contracts.flatMap((contract) =>
+    config.contracts.flatMap((contract) =>
       contract.endpoints.map(
         (endpoint) => [`${contract.name}:${endpoint.name}`, endpoint] as const,
       ),
@@ -168,9 +168,9 @@ const buildHandlerDescriptors = (
       // handler's input type, so keying off the document made handlers with
       // route params fail to compile.
       const patternParts = [
-        spec?.input ? "body" : null,
-        spec?.params ? "params" : null,
-        spec?.query ? "query" : null,
+        spec?.hasInput ? "body" : null,
+        spec?.hasParams ? "params" : null,
+        spec?.hasQuery ? "query" : null,
       ].filter((part): part is string => part !== null);
       const pattern = patternParts.length === 0 ? "" : `{ ${patternParts.join(", ")} }`;
 

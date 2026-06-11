@@ -1,13 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { ExtractTsContracts } from "../../application/use-cases/extract-ts-contracts.js";
-import { LowerContractBundleToRivetContract } from "../../application/use-cases/lower-contract-bundle-to-rivet-contract.js";
+import { LowerTsContractsToRivetContract } from "../../application/use-cases/lower-ts-contracts-to-rivet-contract.js";
 import { ScaffoldMockProject } from "../../application/use-cases/scaffold-mock-project.js";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import { ScaffoldMockConfig } from "../../domain/scaffold-mock-config.js";
 import { emitClientPackage } from "../../infrastructure/codegen/client-package-emitter.js";
 import { FileSystemMockProjectEmitter } from "../../infrastructure/scaffold/mock-project-emitter.js";
-import { TypeScriptContractFrontend } from "../../infrastructure/typescript/typescript-contract-frontend.js";
 import { TypeScriptRivetContractLowerer } from "../../infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 
 type CliIO = {
@@ -119,18 +117,15 @@ export const runCli = async (args: readonly string[], io: CliIO = DEFAULT_IO): P
     return 1;
   }
 
-  const frontend = new TypeScriptContractFrontend();
   const lowerer = new TypeScriptRivetContractLowerer();
-  const useCase = new ExtractTsContracts(frontend);
-  const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
-  const bundle = await useCase.execute({ entryPath });
-  const lowered = await lowerUseCase.execute({ bundle });
+  const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
+  const lowered = await lowerUseCase.execute({ entryPath });
 
   const diagnostics = [...lowered.diagnostics];
 
   // C4: an entry with zero contracts almost always means a wrong --entry;
   // produce a loud warning instead of silently emitting an empty document.
-  if (!bundle.hasErrors && !lowered.hasErrors && bundle.contracts.length === 0) {
+  if (!lowered.hasErrors && lowered.contracts.length === 0) {
     diagnostics.push(
       new ExtractionDiagnostic({
         severity: "warning",
@@ -174,10 +169,9 @@ const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<numb
     return 1;
   }
 
-  const frontend = new TypeScriptContractFrontend(tsconfigPath);
   const lowerer = new TypeScriptRivetContractLowerer(tsconfigPath);
   const emitter = new FileSystemMockProjectEmitter();
-  const useCase = new ScaffoldMockProject(frontend, lowerer, emitter);
+  const useCase = new ScaffoldMockProject(lowerer, emitter);
 
   const result = await useCase.execute(
     new ScaffoldMockConfig({

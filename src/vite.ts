@@ -6,7 +6,6 @@ import type { Plugin, ResolvedConfig } from "vite";
 import { emitClientPackage } from "./infrastructure/codegen/client-package-emitter.js";
 import { toKebabCase } from "./infrastructure/codegen/kebab-case.js";
 import { collectLocalDependencies } from "./infrastructure/typescript/local-source-dependencies.js";
-import { TypeScriptContractFrontend } from "./infrastructure/typescript/typescript-contract-frontend.js";
 import { TypeScriptRivetContractLowerer } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { ensureRivetBinary, type RivetBinaryConfig } from "./infrastructure/vite/rivet-binary.js";
 
@@ -102,12 +101,10 @@ const generateArtifacts = async (
   options: NormalizedPluginOptions,
   config: ResolvedConfig,
 ): Promise<readonly string[]> => {
-  const frontend = new TypeScriptContractFrontend(options.tsconfigPath);
+  // Single AST→document pass (X13): one ts.Program per regeneration, and the
+  // result carries every diagnostic exactly once (V3).
   const lowerer = new TypeScriptRivetContractLowerer(options.tsconfigPath);
-  const bundle = await frontend.extract(options.entryPath);
-  const lowered = await lowerer.lower(bundle);
-  // The lowerer already seeds its result with the bundle diagnostics;
-  // concatenating both reported every frontend diagnostic twice (V3).
+  const lowered = await lowerer.lower(options.entryPath);
   const diagnostics = lowered.diagnostics;
 
   if (diagnostics.length > 0) {
@@ -119,7 +116,7 @@ const generateArtifacts = async (
       }
     }
 
-    if (lowered.hasErrors || bundle.hasErrors) {
+    if (lowered.hasErrors) {
       throw new Error("rivet-ts/vite failed to reflect the contract.");
     }
 

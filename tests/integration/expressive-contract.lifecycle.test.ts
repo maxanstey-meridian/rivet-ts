@@ -1,8 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ExtractTsContracts } from "../../src/application/use-cases/extract-ts-contracts.js";
-import { LowerContractBundleToRivetContract } from "../../src/application/use-cases/lower-contract-bundle-to-rivet-contract.js";
-import { TypeScriptContractFrontend } from "../../src/infrastructure/typescript/typescript-contract-frontend.js";
+import { LowerTsContractsToRivetContract } from "../../src/application/use-cases/lower-ts-contracts-to-rivet-contract.js";
 import { TypeScriptRivetContractLowerer } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { expectValidContractDocument } from "../contract-schema.js";
 
@@ -13,17 +11,13 @@ const getFixturePath = (relativePath: string): string => {
 
 describe("Expressive contract lifecycle", () => {
   it("lowers a broader supported DSL surface into Rivet JSON", async () => {
-    const frontend = new TypeScriptContractFrontend();
     const lowerer = new TypeScriptRivetContractLowerer();
-    const extractUseCase = new ExtractTsContracts(frontend);
-    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
 
-    const bundle = await extractUseCase.execute({
+    const lowered = await lowerUseCase.execute({
       entryPath: getFixturePath(path.join("expressive-contract", "contracts.ts")),
     });
-    const lowered = await lowerUseCase.execute({ bundle });
 
-    expect(bundle.hasErrors).toBe(false);
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
 

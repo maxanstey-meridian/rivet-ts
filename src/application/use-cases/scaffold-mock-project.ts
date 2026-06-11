@@ -1,43 +1,21 @@
 import path from "node:path";
-import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
-import { RivetContractDocument } from "../../domain/rivet-contract.js";
 import { ScaffoldMockConfig } from "../../domain/scaffold-mock-config.js";
 import { ScaffoldMockResult } from "../../domain/scaffold-mock-result.js";
 import { MockProjectEmitter } from "../ports/mock-project-emitter.js";
 import { RivetContractLowerer } from "../ports/rivet-contract-lowerer.js";
-import { TsContractFrontend } from "../ports/ts-contract-frontend.js";
-
-const EMPTY_DOCUMENT = new RivetContractDocument({});
 
 export class ScaffoldMockProject {
-  private readonly contractFrontend: TsContractFrontend;
   private readonly lowerer: RivetContractLowerer;
   private readonly emitter: MockProjectEmitter;
 
-  public constructor(
-    contractFrontend: TsContractFrontend,
-    lowerer: RivetContractLowerer,
-    emitter: MockProjectEmitter,
-  ) {
-    this.contractFrontend = contractFrontend;
+  public constructor(lowerer: RivetContractLowerer, emitter: MockProjectEmitter) {
     this.lowerer = lowerer;
     this.emitter = emitter;
   }
 
   public async execute(config: ScaffoldMockConfig): Promise<ScaffoldMockResult> {
-    const diagnostics: ExtractionDiagnostic[] = [];
-    const bundle = await this.contractFrontend.extract(config.entryPath);
-    diagnostics.push(...bundle.diagnostics);
-
-    if (bundle.hasErrors) {
-      return new ScaffoldMockResult({
-        document: EMPTY_DOCUMENT,
-        diagnostics,
-      });
-    }
-
-    const lowered = await this.lowerer.lower(bundle);
-    diagnostics.push(...lowered.diagnostics);
+    const lowered = await this.lowerer.lower(config.entryPath);
+    const diagnostics = [...lowered.diagnostics];
 
     if (lowered.hasErrors) {
       return new ScaffoldMockResult({
@@ -54,7 +32,7 @@ export class ScaffoldMockProject {
       projectName,
       entryPath: config.entryPath,
       contractJsonFileName,
-      bundle,
+      contracts: lowered.contracts,
       document: lowered.document,
     });
 

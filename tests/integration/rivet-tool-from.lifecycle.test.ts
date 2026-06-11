@@ -5,9 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { ExtractTsContracts } from "../../src/application/use-cases/extract-ts-contracts.js";
-import { LowerContractBundleToRivetContract } from "../../src/application/use-cases/lower-contract-bundle-to-rivet-contract.js";
-import { TypeScriptContractFrontend } from "../../src/infrastructure/typescript/typescript-contract-frontend.js";
+import { LowerTsContractsToRivetContract } from "../../src/application/use-cases/lower-ts-contracts-to-rivet-contract.js";
 import { TypeScriptRivetContractLowerer } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 
 const execFileAsync = promisify(execFile);
@@ -72,17 +70,13 @@ type OpenApiDoc = {
 
 describe.skipIf(!rivetToolAvailable)("Rivet.Tool --from OpenAPI smoke", () => {
   it("generates valid OpenAPI from TS-authored Rivet contract JSON", async () => {
-    const frontend = new TypeScriptContractFrontend();
     const lowerer = new TypeScriptRivetContractLowerer();
-    const extractUseCase = new ExtractTsContracts(frontend);
-    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
 
-    const bundle = await extractUseCase.execute({
+    const lowered = await lowerUseCase.execute({
       entryPath: getFixturePath(path.join("openapi-smoke-contract", "contracts.ts")),
     });
-    const lowered = await lowerUseCase.execute({ bundle });
 
-    expect(bundle.hasErrors).toBe(false);
     expect(lowered.hasErrors).toBe(false);
 
     const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-openapi-smoke-"));

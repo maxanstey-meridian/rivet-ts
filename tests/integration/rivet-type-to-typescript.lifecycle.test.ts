@@ -418,24 +418,17 @@ describe("round-trip: golden fixture to TS source validates with tsc", () => {
   it("emits tagged union contract as valid TypeScript", async () => {
     // The tagged-union fixture doesn't have a golden JSON file,
     // so we extract and lower it to get the RivetContractDocument
-    const { TypeScriptContractFrontend } =
-      await import("../../src/infrastructure/typescript/typescript-contract-frontend.js");
     const { TypeScriptRivetContractLowerer } =
       await import("../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js");
-    const { ExtractTsContracts } =
-      await import("../../src/application/use-cases/extract-ts-contracts.js");
-    const { LowerContractBundleToRivetContract } =
-      await import("../../src/application/use-cases/lower-contract-bundle-to-rivet-contract.js");
+    const { LowerTsContractsToRivetContract } =
+      await import("../../src/application/use-cases/lower-ts-contracts-to-rivet-contract.js");
 
-    const frontend = new TypeScriptContractFrontend();
     const lowerer = new TypeScriptRivetContractLowerer();
-    const extractUseCase = new ExtractTsContracts(frontend);
-    const lowerUseCase = new LowerContractBundleToRivetContract(lowerer);
+    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
 
-    const bundle = await extractUseCase.execute({
+    const lowered = await lowerUseCase.execute({
       entryPath: getFixturePath(path.join("tagged-union-contract", "contracts.ts")),
     });
-    const lowered = await lowerUseCase.execute({ bundle });
     expect(lowered.hasErrors).toBe(false);
 
     const doc = JSON.parse(lowered.toJson()) as {

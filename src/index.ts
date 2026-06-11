@@ -33,17 +33,13 @@ export {
   type RivetResult,
   type RivetSuccessResult,
 } from "./domain/runtime-types.js";
-export { ContractBundle } from "./domain/contract-bundle.js";
 export {
-  ContractSpec,
-  EndpointSpec,
-  ErrorResponseSpec,
+  EndpointExampleSpec,
   ResponseExamplesSpec,
-  SecuritySpec,
+  type EndpointExampleValue,
   type HttpMethod,
 } from "./domain/contract.js";
 export { ExtractionDiagnostic, type DiagnosticSeverity } from "./domain/diagnostic.js";
-export { TypeExpression } from "./domain/type-expression.js";
 export {
   RivetContractDocument,
   type RivetContractEnum,
@@ -59,12 +55,19 @@ export {
   RivetTypeDefinition,
   type RivetPropertyDefinition,
 } from "./domain/rivet-contract.js";
-export { RivetContractLoweringResult } from "./domain/rivet-contract-lowering-result.js";
-export { TsContractFrontend } from "./application/ports/ts-contract-frontend.js";
+export {
+  RivetContractLoweringResult,
+  type DiscoveredContract,
+  type DiscoveredEndpoint,
+} from "./domain/rivet-contract-lowering-result.js";
 export { RivetContractLowerer } from "./application/ports/rivet-contract-lowerer.js";
-export { ExtractTsContracts } from "./application/use-cases/extract-ts-contracts.js";
-export { LowerContractBundleToRivetContract } from "./application/use-cases/lower-contract-bundle-to-rivet-contract.js";
-export { TypeScriptContractFrontend } from "./infrastructure/typescript/typescript-contract-frontend.js";
+export { LowerTsContractsToRivetContract } from "./application/use-cases/lower-ts-contracts-to-rivet-contract.js";
+/**
+ * @deprecated The frontend/lowerer split was collapsed into a single pass
+ * (X13); lowering now starts from the entry path. Use
+ * {@link LowerTsContractsToRivetContract} — `execute({ entryPath })`.
+ */
+export { LowerTsContractsToRivetContract as LowerContractBundleToRivetContract } from "./application/use-cases/lower-ts-contracts-to-rivet-contract.js";
 export { TypeScriptRivetContractLowerer } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 export { runCli } from "./interfaces/cli/run-cli.js";
 export { rivetTs, type RivetTsVitePluginOptions } from "./vite.js";

@@ -6,9 +6,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ExtractTsContracts } from "../../src/application/use-cases/extract-ts-contracts.js";
-import { LowerContractBundleToRivetContract } from "../../src/application/use-cases/lower-contract-bundle-to-rivet-contract.js";
-import { TypeScriptContractFrontend } from "../../src/infrastructure/typescript/typescript-contract-frontend.js";
+import { LowerTsContractsToRivetContract } from "../../src/application/use-cases/lower-ts-contracts-to-rivet-contract.js";
 import { TypeScriptRivetContractLowerer } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { expectValidContractDocument } from "../contract-schema.js";
 
@@ -68,11 +66,9 @@ const writeFixtureProject = async (
 };
 
 const extractAndLower = async (entryPath: string) => {
-  const frontend = new TypeScriptContractFrontend();
   const lowerer = new TypeScriptRivetContractLowerer();
-  const bundle = await new ExtractTsContracts(frontend).execute({ entryPath });
-  const lowered = await new LowerContractBundleToRivetContract(lowerer).execute({ bundle });
-  return { bundle, lowered };
+  const lowered = await new LowerTsContractsToRivetContract(lowerer).execute({ entryPath });
+  return { lowered };
 };
 
 describe("X-section extraction pipeline fixtures", () => {
@@ -104,15 +100,10 @@ describe("X-section extraction pipeline fixtures", () => {
       ],
     });
 
-    const { bundle, lowered } = await extractAndLower(entryPath);
-
-    expect(bundle.hasErrors).toBe(false);
-    expect(bundle.diagnostics).toEqual([]);
-    const [endpoint] = bundle.contracts[0]?.endpoints ?? [];
-    expect(endpoint?.response?.text).toBe("UserDto[]");
-    expect(endpoint?.successStatus).toBe(202);
+    const { lowered } = await extractAndLower(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
+    expect(lowered.diagnostics).toEqual([]);
     const payload = JSON.parse(lowered.toJson()) as DocumentPayload;
     expectValidContractDocument(payload);
     expect(payload.endpoints[0]?.responses.map((response) => response.statusCode)).toEqual([202]);
@@ -142,10 +133,10 @@ describe("X-section extraction pipeline fixtures", () => {
       ],
     });
 
-    const { bundle, lowered } = await extractAndLower(entryPath);
+    const { lowered } = await extractAndLower(entryPath);
 
-    expect(bundle.hasErrors).toBe(true);
-    expect(bundle.diagnostics).toEqual(
+    expect(lowered.hasErrors).toBe(true);
+    expect(lowered.diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           code: "UNSUPPORTED_GENERIC_ENDPOINT_SPEC",
@@ -154,8 +145,7 @@ describe("X-section extraction pipeline fixtures", () => {
         }),
       ]),
     );
-    // The endpoint must not survive into the bundle or the document.
-    expect(bundle.contracts[0]?.endpoints ?? []).toEqual([]);
+    // The endpoint must not survive into the document.
     const payload = JSON.parse(lowered.toJson()) as DocumentPayload;
     expect(payload.endpoints).toEqual([]);
     expect(JSON.stringify(payload)).not.toContain('"T"');
@@ -185,9 +175,8 @@ describe("X-section extraction pipeline fixtures", () => {
       ],
     });
 
-    const { bundle, lowered } = await extractAndLower(entryPath);
+    const { lowered } = await extractAndLower(entryPath);
 
-    expect(bundle.hasErrors).toBe(false);
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
 
@@ -233,9 +222,8 @@ describe("X-section extraction pipeline fixtures", () => {
       ],
     });
 
-    const { bundle, lowered } = await extractAndLower(entryPath);
+    const { lowered } = await extractAndLower(entryPath);
 
-    expect(bundle.hasErrors).toBe(false);
     expect(lowered.hasErrors).toBe(false);
 
     const payload = JSON.parse(lowered.toJson()) as DocumentPayload;
@@ -430,14 +418,12 @@ describe("X-section extraction pipeline fixtures", () => {
       ],
     });
 
-    const { bundle, lowered } = await extractAndLower(entryPath);
-
-    expect(bundle.hasErrors).toBe(false);
-    expect(bundle.diagnostics).toEqual([]);
-    expect(bundle.contracts).toHaveLength(1);
-    expect(bundle.contracts[0]?.name).toBe("UsersContract");
+    const { lowered } = await extractAndLower(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
+    expect(lowered.diagnostics).toEqual([]);
+    expect(lowered.contracts).toHaveLength(1);
+    expect(lowered.contracts[0]?.name).toBe("UsersContract");
     const payload = JSON.parse(lowered.toJson()) as DocumentPayload;
     expect(payload.endpoints.map((endpoint) => endpoint.name)).toEqual(["ping"]);
   });
@@ -462,11 +448,10 @@ describe("X-section extraction pipeline fixtures", () => {
       ],
     });
 
-    const frontend = new TypeScriptContractFrontend();
-    const bundle = await new ExtractTsContracts(frontend).execute({ entryPath });
+    const { lowered } = await extractAndLower(entryPath);
 
-    expect(bundle.hasErrors).toBe(true);
-    expect(bundle.diagnostics).toEqual(
+    expect(lowered.hasErrors).toBe(true);
+    expect(lowered.diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           code: "INVALID_CONTRACT_NAME",
@@ -697,11 +682,10 @@ describe("X-section extraction pipeline fixtures", () => {
       ],
     });
 
-    const frontend = new TypeScriptContractFrontend();
-    const bundle = await new ExtractTsContracts(frontend).execute({ entryPath });
+    const { lowered } = await extractAndLower(entryPath);
 
-    expect(bundle.hasErrors).toBe(true);
-    expect(bundle.diagnostics).toEqual(
+    expect(lowered.hasErrors).toBe(true);
+    expect(lowered.diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           code: "INVALID_CONTRACT_NAME",
@@ -710,6 +694,6 @@ describe("X-section extraction pipeline fixtures", () => {
         }),
       ]),
     );
-    expect(bundle.contracts).toEqual([]);
+    expect(lowered.contracts).toEqual([]);
   });
 });

@@ -1,8 +1,11 @@
-import { ContractBundle } from "../../domain/contract-bundle.js";
 import { RivetContractLoweringResult } from "../../domain/rivet-contract-lowering-result.js";
 
 export abstract class RivetContractLowerer {
   protected constructor() {}
 
-  public abstract lower(bundle: ContractBundle): Promise<RivetContractLoweringResult>;
+  /**
+   * Single pass from a TypeScript entry file to the lowered Rivet contract
+   * document, including contract discovery and its diagnostics (X13).
+   */
+  public abstract lower(entryPath: string): Promise<RivetContractLoweringResult>;
 }

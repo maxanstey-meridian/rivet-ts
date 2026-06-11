@@ -1,4 +1,4 @@
-import { ContractBundle } from "../../domain/contract-bundle.js";
+import type { DiscoveredContract } from "../../domain/rivet-contract-lowering-result.js";
 import { RivetContractDocument } from "../../domain/rivet-contract.js";
 
 export type MockProjectEmitterConfig = {
@@ -6,7 +6,7 @@ export type MockProjectEmitterConfig = {
   projectName: string;
   entryPath: string;
   contractJsonFileName: string;
-  bundle: ContractBundle;
+  contracts: readonly DiscoveredContract[];
   document: RivetContractDocument;
 };
 
