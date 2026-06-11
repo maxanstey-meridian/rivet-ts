@@ -207,6 +207,17 @@ All four phases shipped same-day:
   [--ts-backend] [--force]`): rivet-ts scaffold → git init + first commit →
   plumb self-test. Verified end-to-end (`/tmp/init-demo`, plumb 0/0/0).
 
+**Flavors (2026-06-11, same day):** `meridian init` grew the backend selector —
+`--ts-backend` (default, full Hono workspace), `--no-api` (Nuxt ui + contracts
+only; `rivet-ts scaffold --no-api` underneath), and `--dotnet-backend`
+(`--no-api` + golden's `apps/api`/`apps/api.tests` copied as a renamed template
++ `global.json` + plumb's canonical dotnet `.editorconfig` + CSharpier tool
+manifest + a dotnet Taskfile mirroring golden's). Verified end-to-end: the
+renamed .NET project builds with analyzers on and passes its tests; plumb
+shows only the expected RV-026 version-lag warn (clears at Rivet 0.35).
+Golden's api was fixed at source to satisfy its own analyzers (braces,
+accessibility modifiers, csproj analyzer properties) — build + tests green.
+
 **The release act:** version bumped to 0.11.0 (the v2 cutoff plumb RV-026
 expects). Scaffolds pin `github:...#v0.11.0` — pushing that tag on merge is
 what makes real (non-symlinked) installs resolve the new runtime.
