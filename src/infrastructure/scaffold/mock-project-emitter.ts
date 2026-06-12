@@ -26,6 +26,8 @@ import {
 
 type ContractGroup = {
   readonly contractName: string;
+  /** Exported interface identifier — the only name valid in `import type` positions. */
+  readonly contractExportName: string;
   readonly contractBaseName: string;
   readonly group: string;
   readonly moduleDirectoryName: string;
@@ -39,6 +41,7 @@ type HandlerDescriptor = {
   readonly routeTemplate: string;
   readonly group: string;
   readonly contractName: string;
+  readonly contractExportName: string;
   readonly moduleDirectoryName: string;
   readonly fileBaseName: string;
   readonly useCaseExportName: string;
@@ -134,6 +137,7 @@ const buildContractGroups = (config: MockProjectEmitterConfig): readonly Contrac
 
     return {
       contractName: contract.name,
+      contractExportName: contract.exportedName,
       contractBaseName,
       group: deriveGroupName(contract.name),
       moduleDirectoryName: toKebabCase(contractBaseName),
@@ -233,6 +237,7 @@ const buildHandlerDescriptors = (
         routeTemplate: endpoint.routeTemplate,
         group: group.group,
         contractName: group.contractName,
+        contractExportName: group.contractExportName,
         moduleDirectoryName: group.moduleDirectoryName,
         fileBaseName: toKebabCase(endpointName),
         useCaseExportName: toCamelCase(endpointName),
@@ -276,10 +281,10 @@ const emitUseCaseSource = (descriptor: HandlerDescriptor): string => {
 
   return [
     'import type { RivetHandlerInput, RivetHandlerResult } from "rivet-ts";',
-    `import type { ${descriptor.contractName} } from "#contract";`,
+    `import type { ${descriptor.contractExportName} } from "#contract";`,
     "",
-    `type ${inputTypeName} = RivetHandlerInput<${descriptor.contractName}, "${descriptor.endpointName}">;`,
-    `type ${outputTypeName} = RivetHandlerResult<${descriptor.contractName}, "${descriptor.endpointName}">;`,
+    `type ${inputTypeName} = RivetHandlerInput<${descriptor.contractExportName}, "${descriptor.endpointName}">;`,
+    `type ${outputTypeName} = RivetHandlerResult<${descriptor.contractExportName}, "${descriptor.endpointName}">;`,
     "",
     `export const ${descriptor.useCaseExportName} = async (_input: ${inputTypeName}): Promise<${outputTypeName}> => {`,
     descriptor.body,
@@ -310,7 +315,7 @@ const emitValidationSource = (
   const lines = ['import { z } from "zod";'];
   if (anyExact) {
     lines.push('import type { RivetHandlerInput } from "rivet-ts";');
-    lines.push(`import type { ${group.contractName} } from "#contract";`);
+    lines.push(`import type { ${group.contractExportName} } from "#contract";`);
   }
   lines.push("");
   lines.push("// Synthesized from the contract at scaffold time — owned by you now. Add");
@@ -319,7 +324,7 @@ const emitValidationSource = (
 
   for (const { handler, schema } of schemas) {
     const lock = schema.exact
-      ? ` satisfies z.ZodType<RivetHandlerInput<${group.contractName}, ${JSON.stringify(handler.endpointName)}>["body"]>`
+      ? ` satisfies z.ZodType<RivetHandlerInput<${group.contractExportName}, ${JSON.stringify(handler.endpointName)}>["body"]>`
       : "";
     lines.push(`export const ${schemaExportName(handler)} = ${schema.source}${lock};`);
     lines.push("");
@@ -352,7 +357,7 @@ const emitRoutesSource = (
   } else {
     lines.push('import { type ContractJson, registerRivetHonoRoutes } from "rivet-ts/hono";');
   }
-  lines.push(`import type { ${group.contractName} } from "#contract";`);
+  lines.push(`import type { ${group.contractExportName} } from "#contract";`);
 
   for (const handler of handlers) {
     lines.push(
@@ -369,7 +374,7 @@ const emitRoutesSource = (
 
   lines.push("");
   lines.push(`export const ${registrationName} = (app: Hono, contract: ContractJson): void => {`);
-  lines.push(`  registerRivetHonoRoutes<${group.contractName}>(app, contract, {`);
+  lines.push(`  registerRivetHonoRoutes<${group.contractExportName}>(app, contract, {`);
   lines.push(`    group: ${JSON.stringify(group.group)},`);
   lines.push("    handlers: {");
   for (const handler of handlers) {
@@ -519,7 +524,9 @@ export class FileSystemMockProjectEmitter extends MockProjectEmitter {
       rivetTsDependency: toRivetTsDependency(manifest),
       versions: resolveWorkspaceVersions(manifest),
       contractEntryRelativePath: entryRelativePath,
-      contractNames: groups.map((group) => group.contractName),
+      // The facade re-exports TYPE identifiers, so it needs the exported
+      // interface names — the brand strings do not resolve.
+      contractNames: groups.map((group) => group.contractExportName),
       bootstrapOpenApiDocument: buildBootstrapOpenApiDocument(config),
       demoCall: selectDemoClientCall(groups, handlers),
     };

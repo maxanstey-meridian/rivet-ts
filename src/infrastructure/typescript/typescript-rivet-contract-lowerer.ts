@@ -44,6 +44,7 @@ type DiscoveredEndpointSpec = {
 
 type DiscoveredContractSpec = {
   name: string;
+  exportedName: string;
   sourceFilePath: string;
   endpoints: readonly DiscoveredEndpointSpec[];
 };
@@ -421,6 +422,7 @@ export class TypeScriptRivetContractLowerer extends RivetContractLowerer {
 
 const toDiscoveredContract = (contract: DiscoveredContractSpec): DiscoveredContract => ({
   name: contract.name,
+  exportedName: contract.exportedName,
   sourceFilePath: contract.sourceFilePath,
   endpoints: contract.endpoints.map((endpoint) => ({
     name: endpoint.name,
@@ -504,6 +506,7 @@ class TypeEmissionContext {
 
       contracts.push({
         name: contractName,
+        exportedName: statement.name.text,
         sourceFilePath: sourceFile.fileName,
         endpoints,
       });

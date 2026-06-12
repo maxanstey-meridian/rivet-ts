@@ -18,7 +18,14 @@ export type DiscoveredEndpoint = Readonly<{
 }>;
 
 export type DiscoveredContract = Readonly<{
+  /** Contract brand name — the `Contract<"Name">` string literal; matches the lowered document. */
   name: string;
+  /**
+   * Exported interface identifier (e.g. `TicketsContract` for
+   * `Contract<"Tickets">`) — the only name that resolves in emitted
+   * `import type { ... }` positions.
+   */
+  exportedName: string;
   sourceFilePath: string;
   endpoints: readonly DiscoveredEndpoint[];
 }>;
