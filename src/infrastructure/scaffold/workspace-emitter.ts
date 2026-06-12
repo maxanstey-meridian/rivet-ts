@@ -143,22 +143,25 @@ const emitRootPackageJson = (config: WorkspaceConfig): string =>
       private: true,
       type: "module",
       packageManager: "pnpm@10.24.0",
-      pnpm: {
-        peerDependencyRules: {
-          allowedVersions: {
-            // openapi-typescript 7 declares typescript@^5 but runs fine on 6
-            // (the scaffold's tsc + generate gates prove it); drop this rule
-            // when openapi-typescript widens its peer range.
-            "openapi-typescript>typescript": "6",
-          },
-        },
-      },
     },
     null,
     2,
   )}\n`;
 
-const emitPnpmWorkspace = (): string => ['packages:', '  - "apps/*"', '  - "packages/*"', ""].join("\n");
+const emitPnpmWorkspace = (): string =>
+  [
+    "packages:",
+    '  - "apps/*"',
+    '  - "packages/*"',
+    "",
+    "# openapi-typescript 7 declares typescript@^5 but runs fine on 6 (the",
+    "# scaffold's tsc + generate gates prove it); drop this rule when upstream",
+    "# widens its peer range.",
+    "peerDependencyRules:",
+    "  allowedVersions:",
+    '    "openapi-typescript>typescript": "6"',
+    "",
+  ].join("\n");
 
 const emitTaskfile = (config: WorkspaceConfig): string => {
   const scope = config.packageScope;
