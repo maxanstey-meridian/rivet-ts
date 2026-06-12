@@ -58,4 +58,4 @@ On unsupported scaffold shapes, the generator:
 
 Contracts can absolutely describe error responses.
 
-What is not automatic today is full mock error behavior. Scaffolded handlers are success-first. Error paths remain typed in the contract and generated client, but the mock scaffold does not try to simulate full domain error behavior for you.
+What is not automatic today is full mock error behavior. Scaffolded handlers are success-first — the one automatic error path is request-body validation: body-carrying endpoints reject invalid bodies with `422 { code: "validation_failed" }` through the emitted Zod schemas. Other error paths remain typed in the contract and generated client, but the mock scaffold does not try to simulate full domain error behavior for you.

@@ -40,8 +40,9 @@ myapp/
 │   │   └── src/
 │   │       ├── contracts.ts ← the contract entry (source of truth)
 │   │       ├── app.ts / composition.ts / main.ts / local.ts
-│   │       ├── interface/http/quotes-routes.ts
-│   │       └── modules/quotes/{domain,application,infrastructure}/
+│   │       ├── interface/http/{quotes,users}-routes.ts
+│   │       ├── interface/validation/quotes.ts ← user-owned Zod edge schemas
+│   │       └── modules/{quotes,users}/{domain,application,infrastructure}/
 │   └── ui/                  ← Nuxt SPA (ssr: false)
 │       └── app/plugins/rivet.client.ts   ← local in-browser transport
 └── packages/contracts/
@@ -60,7 +61,9 @@ schemas via `@myapp/api/validation`), Dexie persistence in the browser
 in-memory adapter instead), a `current-user` port with a dev stub behind
 `GET /api/me`, and request logging + CORS on the server entry only.
 `scaffold-mock` synthesizes shape-level Zod schemas from your contract the
-same way — owned by you after emission; tighten them with real rules.
+same way — owned by you after emission; tighten them with real rules, or pass
+`--spec <openapi.json>` to chain the spec's JSON Schema constraints (lengths,
+bounds, patterns, item counts) onto them at scaffold time.
 
 ## 2b. Or scaffold mocks from an existing contract
 
@@ -148,6 +151,6 @@ pnpm exec rivet-ts generate --generated-root ./generated
 - Read [Sample App](/guides/sample-app)
 - Read [Vite Plugin](/guides/vite-plugin)
 - Follow the [5 minute tutorial](/guides/tutorial)
-- Read [Local Now, Bun Later](/guides/local-now-server-later)
+- Read [Local Now, Server Later](/guides/local-now-server-later)
 - Read [OpenAPI and Generated Clients](/guides/openapi-and-validators)
 - Read [.NET Handoff](/guides/dotnet-handoff)

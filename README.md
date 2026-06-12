@@ -2,7 +2,7 @@
 
 TypeScript side of the [Rivet](https://github.com/maxanstey-meridian/rivet) contract-first API framework.
 
-You author an API contract as plain TypeScript types. rivet-ts reflects it, hands it to the Rivet binary to emit an OpenAPI 3.1 spec, and derives a typed client from that spec with ecosystem tools (`openapi-typescript` + `openapi-fetch`). It also ships a Hono server runtime that registers routes from the contract, a Vite plugin that keeps the artifacts current, and scaffolding commands that emit a runnable pnpm workspace.
+You author an API contract as plain TypeScript types. rivet-ts reflects it, hands it to the Rivet binary to emit an OpenAPI 3.1 spec, and derives a typed client from that spec with ecosystem tools (`openapi-typescript` + `openapi-fetch`). It also ships a Hono server runtime that registers routes from the contract, a Vite plugin that keeps the artifacts current, and scaffolding commands that emit a runnable pnpm workspace — including user-owned Zod validation at the route edge (shared with the UI's forms) and Dexie persistence for the in-browser dev runtime.
 
 OpenAPI 3.1 is the sole public artifact format. The intermediate contract JSON (`*.contract.json`) is an internal IR: the TypeScript reflector produces it, the version-pinned Rivet .NET binary consumes it, and the Hono runtime reads it for route registration. Treat it as generated plumbing, not a public format.
 
@@ -89,6 +89,7 @@ myapp/
 │   │       ├── contracts.ts                ← the contract entry (source of truth)
 │   │       ├── app.ts / contract.ts / local.ts / main.ts
 │   │       ├── interface/http/<module>-routes.ts
+│   │       ├── interface/validation/<module>.ts   ← user-owned Zod edge schemas
 │   │       └── modules/<module>/...
 │   └── ui/                  ← Nuxt SPA (ssr: false)
 │       └── app/plugins/rivet.client.ts     ← in-browser transport wiring
@@ -102,8 +103,10 @@ Notes on what the scaffold actually does:
 - It refuses to write into a non-empty directory unless you pass `--force`.
 - It pins `rivet-ts` in the generated `apps/api/package.json` as `github:maxanstey-meridian/rivet-ts#v<version>` — the exact version of the CLI that ran (`v0.11.0` for this release).
 - `scaffold` lowers its own example contract through the real reflection pipeline before emitting, so the bootstrap `api.contract.json` cannot drift from the emitted `contracts.ts`.
+- `scaffold`'s example app ships the bread-and-butter backend capabilities: Zod validation at the route edge (schemas in `interface/validation/`, shared with the Nuxt UI `UForm` via the api package's `./validation` export), Dexie persistence in the browser (the server entry wires an in-memory adapter instead; `composition.ts` is where the two entries diverge), and a `users` module with a stub `GET /api/me`.
 - `scaffold --no-api` emits only `apps/ui` + `packages/contracts`, for repos whose API lives elsewhere (a .NET backend, another repo). Its `task generate` first command is a TODO pointing at your API's spec emitter.
 - `scaffold-mock` copies your entry and its local imports into `apps/api/src/` preserving relative layout, emits one module per contract, and prefers authored examples for mock responses before synthesizing values. Handlers for shapes it cannot synthesize throw with a TODO comment rather than fabricating data.
+- `scaffold-mock` also synthesizes a shape-level Zod schema per body-carrying endpoint into `interface/validation/` and wraps those handlers to reject invalid bodies with `422 { code: "validation_failed" }` before the use case runs. Pass `--spec <openapi.json>` to chain the spec's JSON Schema constraints (`minLength`/`maxLength`/`pattern`, numeric bounds, `multipleOf`, `minItems`/`maxItems`/`uniqueItems`) onto those schemas; without `--spec` they carry shape only. The schemas are yours after emission.
 - Both scaffolds write bootstrap `openapi.json` + `schema.d.ts` so the typed-client chain typechecks before the first `task generate`.
 
 The scaffolded `task generate` pipeline is three CLI steps:
@@ -170,14 +173,14 @@ Enforced at runtime by the Hono adapter (inbound request binding; all failures a
 - a JSON request body that fails to parse → `INVALID_REQUEST_BODY`
 - missing required multipart fields → `MISSING_MULTIPART_FIELD`
 
-Not enforced at runtime:
+Not enforced at runtime by the adapter:
 
-- **Request body shape.** The JSON body is parsed, not schema-validated. A parseable body with missing, extra, or wrongly-typed fields reaches your handler as-is.
+- **Request body shape.** The JSON body is parsed, not schema-validated by the adapter. A parseable body with missing, extra, or wrongly-typed fields reaches your handler as-is. Scaffolded apps close this gap themselves: scaffold-time Zod schemas in `interface/validation/` (user-owned app code, not an adapter guarantee) validate body shape — plus the spec's JSON Schema constraints when scaffolded with `scaffold-mock --spec` — and reject violations with `422 { code: "validation_failed" }` before the handler runs.
 - **Response bodies — at all.** The runtime serializes whatever your handler returns. Extra fields on a returned object go to the wire; a missing field is not caught. The TypeScript handler types (`RivetHandler<Contract, "Endpoint">`) are the only guard, and structural typing means extra properties can slip past them.
 - **Client-side anything.** The generated client is compile-time types over `openapi-fetch`; responses are not validated against the spec at runtime.
 - String parameters beyond number/boolean coercion (e.g. enum-typed query params) pass through as raw strings.
 
-If you need runtime response or body-shape validation, that is outside rivet-ts's current scope; the spec in `generated/openapi.json` is accurate input for any OpenAPI-ecosystem validator you choose to add.
+If you need runtime response validation, or body-shape validation outside the scaffolded apps, that is outside rivet-ts's current scope; the spec in `generated/openapi.json` is accurate input for any OpenAPI-ecosystem validator you choose to add.
 
 ## Vite plugin
 
@@ -223,12 +226,14 @@ The scaffold and plugin pin a specific Rivet .NET binary release (default `0.34.
 
 The pipeline requires a binary that implements the v2 contract: `rivet --from <contract.json> --output <dir>` writes `<dir>/openapi.json` as its only artifact. The freshness guard exists precisely to fail loudly when the binary at hand doesn't do that, instead of generating types from a stale spec.
 
+Caveat: the published Rivet releases (latest `v0.34.3`) still implement the pre-v2 surface — given `--from`/`--output` without `--openapi` they emit a TypeScript client rather than `openapi.json`, so the freshness guard rejects them. Until a v2 Rivet release is published, point `rivet.binaryPath` (or the scaffolded `task generate`) at a binary you built from the Rivet `v2` branch.
+
 ## CLI
 
 ```text
 rivet-ts --entry <path> [--out <file>]
 rivet-ts scaffold --out <dir> [--name <project-name>] [--no-api] [--force]
-rivet-ts scaffold-mock --entry <file> --out <dir> [--name <project-name>] [--tsconfig <file>] [--force]
+rivet-ts scaffold-mock --entry <file> --out <dir> [--name <project-name>] [--tsconfig <file>] [--spec <openapi.json>] [--force]
 rivet-ts generate --generated-root <dir>
 rivet-ts rivet [--] <args passed to the Rivet binary>
 ```

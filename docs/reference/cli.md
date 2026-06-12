@@ -13,7 +13,7 @@ Usage (from `rivet-ts --help`):
 ```text
 rivet-ts --entry <path> [--out <file>]
 rivet-ts scaffold --out <dir> [--name <project-name>] [--no-api] [--force]
-rivet-ts scaffold-mock --entry <file> --out <dir> [--name <project-name>] [--tsconfig <file>] [--force]
+rivet-ts scaffold-mock --entry <file> --out <dir> [--name <project-name>] [--tsconfig <file>] [--spec <openapi.json>] [--force]
 rivet-ts generate --generated-root <dir>
 rivet-ts rivet [--] <args passed to the Rivet binary>
 ```
@@ -67,7 +67,10 @@ Options:
 - `--out`: output directory (required)
 - `--name`: optional project name
 - `--tsconfig`: optional explicit TypeScript project file for reflection
+- `--spec`: optional generated `openapi.json`; its JSON Schema constraints (`minLength`/`maxLength`/`pattern`, numeric bounds, `multipleOf`, `minItems`/`maxItems`/`uniqueItems`) are chained onto the emitted Zod schemas. Without it the schemas carry shape only. Reading the file fails loudly if it is missing or not valid JSON
 - `--force`: scaffold into a non-empty directory (refused otherwise)
+
+Body-carrying endpoints get a Zod schema in `apps/api/src/interface/validation/<module>.ts` (exported from the api package as `./validation`, user-owned after emission) and a handler wrapper that rejects invalid bodies with `422 { code: "validation_failed" }`.
 
 The entry and its local imports are copied into `apps/api/src/` preserving their relative layout. A copied file that would collide with a scaffold-emitted file (`contract.ts`, `local.ts`, `main.ts`, `app.ts`) is an error, not a silent overwrite.
 

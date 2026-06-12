@@ -17,7 +17,7 @@ export default defineNuxtPlugin(() => {
 
 Only this plugin imports `@myapp/api/local` (which re-exports the Hono `app`). Feature code sees the typed client and nothing else.
 
-This mode does not provide server-side infrastructure concerns such as persistent storage, secrets, background jobs, or external integrations.
+This mode does not provide server-side infrastructure concerns such as secrets, background jobs, or external integrations. Storage is per-browser: the example scaffold (`rivet-ts scaffold`) persists through a Dexie (IndexedDB) adapter wired in the browser entry, which survives reloads but is not a shared database.
 
 ## Promotion to a real server
 
@@ -31,6 +31,8 @@ serve({ fetch: app.fetch, port: 5180 }, (info) => {
   console.log(`api listening on http://localhost:${info.port}`);
 });
 ```
+
+(That is the `scaffold-mock` flavor; the example scaffold's `main.ts` builds the same app through `composition.ts`, swapping the browser's Dexie store for the in-memory adapter and enabling request logging + CORS on the server entry only.)
 
 Run it with `task api:run`, then switch the UI plugin's transport:
 

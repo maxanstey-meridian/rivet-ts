@@ -83,9 +83,9 @@ Enforced (each failure is a structured `400` with a `{ code, message }` body, an
 
 Array-typed query params collect repeated values (a single value arrives as a one-element array), with element-level coercion.
 
-Not enforced:
+Not enforced by the adapter:
 
-- **Request body shape.** The body is parsed, not schema-validated; a parseable body with missing, extra, or wrongly-typed fields reaches the handler as-is.
+- **Request body shape.** The body is parsed, not schema-validated; a parseable body with missing, extra, or wrongly-typed fields reaches the handler as-is. (Scaffolded apps layer their own Zod body validation on top of this adapter — schemas in `interface/validation/`, returning `422 { code: "validation_failed" }` — but that is user-owned app code, not part of `rivet-ts/hono`.)
 - **Response bodies.** The runtime serializes whatever the handler returns — extra fields on returned objects go to the wire. `RivetHandler` types are the only guard.
 - String parameters beyond number/boolean coercion (e.g. enum-typed query params) pass through as raw strings.
 

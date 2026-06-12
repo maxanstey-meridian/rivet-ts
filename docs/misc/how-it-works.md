@@ -28,14 +28,14 @@ That contract is the source of truth for:
 
 `rivet-ts scaffold` (worked example) and `rivet-ts scaffold-mock` (from your contract) emit the same pnpm workspace:
 
-- a Hono API under `apps/api` with one module per contract and handlers typed via `RivetHandler<...>`
+- a Hono API under `apps/api` with one module per contract, handlers typed via `RivetHandler<...>`, and user-owned Zod schemas in `interface/validation/` that reject invalid request bodies with a structured 422 at the route edge
 - a Nuxt SPA under `apps/ui` with in-browser transport wired once in `app/plugins/rivet.client.ts`
 - a contracts package: read-only `generated/{openapi.json, schema.d.ts}` plus a hand-owned `src/index.ts` client facade
 - a Taskfile (`install` / `dev` / `generate` / `api:run` / `api:test` / `plumb`)
 
 ## 4. Generate downstream artifacts
 
-The version-pinned Rivet binary consumes the contract JSON and emits one artifact: an OpenAPI 3.1 document (`openapi.json`). Everything downstream of the spec comes from the OpenAPI ecosystem: `rivet-ts generate` runs `openapi-typescript` over it to produce `schema.d.ts`, and the scaffold-time facade wraps `openapi-fetch` with those types. Inbound request binding (structured 400s) is the Hono adapter's job on the server; the client is types-only with no runtime validation.
+The version-pinned Rivet binary consumes the contract JSON and emits one artifact: an OpenAPI 3.1 document (`openapi.json`). Everything downstream of the spec comes from the OpenAPI ecosystem: `rivet-ts generate` runs `openapi-typescript` over it to produce `schema.d.ts`, and the scaffold-time facade wraps `openapi-fetch` with those types. Inbound request binding (structured 400s) is the Hono adapter's job on the server; body-shape validation (structured 422s) is the scaffolded, user-owned Zod schemas' job; the client is types-only with no runtime validation.
 
 ## 5. Promote transport later
 
