@@ -15,7 +15,8 @@ import { toKebabCase } from "../codegen/kebab-case.js";
  * ├── Taskfile.yml / package.json / pnpm-workspace.yaml / README.md
  * ├── apps/
  * │   ├── api/   ← Hono backend (modules/<m>/{domain,application,infrastructure},
- * │   │            interface/http/<m>-routes.ts — suffix-free names, Meridian §9.1)
+ * │   │            <m>-routes.ts + <m>-validation.ts + <m>.module.ts module-local
+ * │   │            — suffix-free names, Meridian §9.1/§9.10)
  * │   └── ui/    ← Nuxt SPA (ssr: false), local-now transport via app.request
  * └── packages/contracts/
  *     ├── generated/{openapi.json, schema.d.ts}   ← read-only artifacts (RV-020)
@@ -142,6 +143,16 @@ const emitRootPackageJson = (config: WorkspaceConfig): string =>
       private: true,
       type: "module",
       packageManager: "pnpm@10.24.0",
+      pnpm: {
+        peerDependencyRules: {
+          allowedVersions: {
+            // openapi-typescript 7 declares typescript@^5 but runs fine on 6
+            // (the scaffold's tsc + generate gates prove it); drop this rule
+            // when openapi-typescript widens its peer range.
+            "openapi-typescript>typescript": "6",
+          },
+        },
+      },
     },
     null,
     2,
@@ -320,7 +331,7 @@ const emitApiPackageJson = (config: WorkspaceConfig): string =>
         "./local": "./src/local.ts",
         // The same schemas that guard the server's front door validate UForm
         // state in the ui — one source of rules, two enforcement points.
-        "./validation": "./src/interface/validation/index.ts",
+        "./validation": "./src/validation.ts",
       },
       scripts: {
         start: "tsx src/main.ts",

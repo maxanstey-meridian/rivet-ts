@@ -148,7 +148,9 @@ describe("scaffold-mock lifecycle", () => {
     const appSource = await read(path.join(apiSource, "app.ts"));
     const contractSource = await read(path.join(apiSource, "contract.ts"));
     const localSource = await read(path.join(apiSource, "local.ts"));
-    const routesSource = await read(path.join(apiSource, "interface", "http", "members-routes.ts"));
+    const routesSource = await read(
+      path.join(apiSource, "modules", "members", "members-routes.ts"),
+    );
     const listUseCaseSource = await read(
       path.join(apiSource, "modules", "members", "application", "list.ts"),
     );
@@ -270,16 +272,17 @@ describe("scaffold-mock lifecycle", () => {
     // Synthesized Zod schemas: emitted once from the IR, locked to the
     // contract type when synthesis is exact, parsed at the route edge.
     const validationSource = await read(
-      path.join(apiSource, "interface", "validation", "members.ts"),
+      path.join(apiSource, "modules", "members", "members-validation.ts"),
     );
     expect(validationSource).toContain("export const createRequest = z.object(");
     expect(validationSource).toContain('satisfies z.ZodType<RivetHandlerInput<MembersContract, "Create">["body"]>');
     expect(routesSource).toContain("createRequest.safeParse(input.body)");
     expect(routesSource).toContain("rivetHttpError(422");
-    const validationIndexSource = await read(
-      path.join(apiSource, "interface", "validation", "index.ts"),
-    );
-    expect(validationIndexSource).toContain('"./members.js"');
+    // The exact schema's parsed output (Zod transforms applied) is what the
+    // use case receives — not the raw wire body.
+    expect(routesSource).toContain("return create({ ...input, body: result.data });");
+    const validationBarrelSource = await read(path.join(apiSource, "validation.ts"));
+    expect(validationBarrelSource).toContain('"./modules/members/members-validation.js"');
 
     // S8/T6: the scaffolded rivet-ts pin tracks this package's version.
     const { version: rivetTsVersion } = JSON.parse(
@@ -351,11 +354,11 @@ describe("scaffold-mock lifecycle", () => {
     const apiSource = path.join(outputDirectory, "apps", "api", "src");
     const appSource = await fs.readFile(path.join(apiSource, "app.ts"), "utf8");
     const petRoutesSource = await fs.readFile(
-      path.join(apiSource, "interface", "http", "pet-routes.ts"),
+      path.join(apiSource, "modules", "pet", "pet-routes.ts"),
       "utf8",
     );
     const summaryRoutesSource = await fs.readFile(
-      path.join(apiSource, "interface", "http", "summary-routes.ts"),
+      path.join(apiSource, "modules", "summary", "summary-routes.ts"),
       "utf8",
     );
 
@@ -516,9 +519,9 @@ describe("scaffold-mock lifecycle", () => {
       "apps",
       "api",
       "src",
-      "interface",
-      "validation",
-      "widgets.ts",
+      "modules",
+      "widgets",
+      "widgets-validation.ts",
     );
     const validationSource = await fs.readFile(validationPath, "utf8");
 

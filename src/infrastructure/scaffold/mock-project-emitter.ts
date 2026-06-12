@@ -19,9 +19,11 @@ import {
 /**
  * Contract-driven scaffold (`scaffold-mock`): lowers the user's contract entry
  * and emits a golden-shape workspace whose api modules return synthesized mock
- * values. File naming is suffix-free (Meridian §9.1): use cases live at
- * `modules/<m>/application/<endpoint>.ts`, route registration at
- * `src/interface/http/<m>-routes.ts`.
+ * values. File naming is suffix-free and the HTTP edge is module-local
+ * (Meridian §9.1/§9.10): use cases live at `modules/<m>/application/<endpoint>.ts`,
+ * route registration at `modules/<m>/<m>-routes.ts`, synthesized schemas at
+ * `modules/<m>/<m>-validation.ts`. No `<m>.module.ts` here — mock use cases are
+ * standalone functions with nothing to wire, and seams must be earned.
  */
 
 type ContractGroup = {
@@ -333,18 +335,26 @@ const emitValidationSource = (
   return lines.join("\n");
 };
 
-const emitValidationIndexSource = (groupsWithBodies: readonly ContractGroup[]): string => {
+const emitValidationBarrelSource = (groupsWithBodies: readonly ContractGroup[]): string => {
+  const header = [
+    "// Stable home of the package's `./validation` export — module schemas may",
+    "// move; this path may not (frontend consumers import through it).",
+  ];
   if (groupsWithBodies.length === 0) {
-    return "export {};\n";
+    return `${header.join("\n")}\nexport {};\n`;
   }
-  return `${groupsWithBodies
-    .map((group) => `export * from "./${group.moduleDirectoryName}.js";`)
+  return `${header.join("\n")}\n${groupsWithBodies
+    .map(
+      (group) =>
+        `export * from "./modules/${group.moduleDirectoryName}/${group.moduleDirectoryName}-validation.js";`,
+    )
     .join("\n")}\n`;
 };
 
 const emitRoutesSource = (
   group: ContractGroup,
   handlers: readonly HandlerDescriptor[],
+  config: MockProjectEmitterConfig,
 ): string => {
   const bodyHandlers = handlers.filter((handler) => handler.hasBody && handler.bodyType);
   const lines = ['import type { Hono } from "hono";'];
@@ -360,13 +370,15 @@ const emitRoutesSource = (
   lines.push(`import type { ${group.contractExportName} } from "#contract";`);
 
   for (const handler of handlers) {
-    lines.push(
-      `import { ${handler.useCaseExportName} } from "../../modules/${handler.moduleDirectoryName}/application/${handler.fileBaseName}.js";`,
-    );
+    const applicationPath =
+      handler.moduleDirectoryName === group.moduleDirectoryName
+        ? `./application/${handler.fileBaseName}.js`
+        : `../${handler.moduleDirectoryName}/application/${handler.fileBaseName}.js`;
+    lines.push(`import { ${handler.useCaseExportName} } from "${applicationPath}";`);
   }
   if (bodyHandlers.length > 0) {
     lines.push(
-      `import { ${bodyHandlers.map(schemaExportName).join(", ")} } from "../validation/${group.moduleDirectoryName}.js";`,
+      `import { ${bodyHandlers.map(schemaExportName).join(", ")} } from "./${group.moduleDirectoryName}-validation.js";`,
     );
   }
 
@@ -379,6 +391,7 @@ const emitRoutesSource = (
   lines.push("    handlers: {");
   for (const handler of handlers) {
     if (handler.hasBody && handler.bodyType) {
+      const exact = zodSourceForType(handler.bodyType, config.document).exact;
       lines.push(`      ${JSON.stringify(handler.endpointName)}: async (input) => {`);
       lines.push("        // The wire is untrusted: parse before the use case sees it.");
       lines.push(`        const result = ${schemaExportName(handler)}.safeParse(input.body);`);
@@ -389,7 +402,18 @@ const emitRoutesSource = (
       lines.push("            errors: z.flattenError(result.error).fieldErrors,");
       lines.push("          });");
       lines.push("        }");
-      lines.push(`        return ${handler.useCaseExportName}(input);`);
+      if (exact) {
+        lines.push("        // The schema is exact, so the parsed value (with Zod transforms");
+        lines.push("        // applied) IS the contract body — forward it, not the raw wire.");
+        lines.push(
+          `        return ${handler.useCaseExportName}({ ...input, body: result.data });`,
+        );
+      } else {
+        lines.push("        // The synthesized schema is shape-approximate (see the TODO in");
+        lines.push("        // the validation file): parsing strips unknown keys, so forward");
+        lines.push("        // the original body until the schema is made exact.");
+        lines.push(`        return ${handler.useCaseExportName}(input);`);
+      }
       lines.push("      },");
       continue;
     }
@@ -415,7 +439,7 @@ const emitAppSource = (groups: readonly ContractGroup[]): string => {
 
   for (const group of groups) {
     lines.push(
-      `import { register${toPascalCase(group.contractBaseName)}Routes } from "./interface/http/${group.moduleDirectoryName}-routes.js";`,
+      `import { register${toPascalCase(group.contractBaseName)}Routes } from "./modules/${group.moduleDirectoryName}/${group.moduleDirectoryName}-routes.js";`,
     );
   }
 
@@ -506,7 +530,13 @@ export class FileSystemMockProjectEmitter extends MockProjectEmitter {
     const entryRelativePath = entryDependency.relativePath.split(path.sep).join("/");
 
     // Copied user files must not silently clobber emitted app files (S6).
-    const reservedSourcePaths = new Set(["contract.ts", "local.ts", "main.ts", "app.ts"]);
+    const reservedSourcePaths = new Set([
+      "contract.ts",
+      "local.ts",
+      "main.ts",
+      "app.ts",
+      "validation.ts",
+    ]);
     for (const dependency of sourceDependencies) {
       const landed = dependency.relativePath.split(path.sep).join("/");
       if (reservedSourcePaths.has(landed)) {
@@ -536,11 +566,6 @@ export class FileSystemMockProjectEmitter extends MockProjectEmitter {
       `${JSON.stringify(config.document, null, 2)}\n`,
     );
 
-    const interfaceHttpRoot = path.join(apiSourceRoot, "interface", "http");
-    const interfaceValidationRoot = path.join(apiSourceRoot, "interface", "validation");
-    await fs.mkdir(interfaceHttpRoot, { recursive: true });
-    await fs.mkdir(interfaceValidationRoot, { recursive: true });
-
     const groupsWithBodies = groups.filter((group) =>
       handlers.some(
         (handler) =>
@@ -557,12 +582,17 @@ export class FileSystemMockProjectEmitter extends MockProjectEmitter {
     await Promise.all([
       fs.writeFile(path.join(apiSourceRoot, "app.ts"), emitAppSource(groups)),
       fs.writeFile(
-        path.join(interfaceValidationRoot, "index.ts"),
-        emitValidationIndexSource(groupsWithBodies),
+        path.join(apiSourceRoot, "validation.ts"),
+        emitValidationBarrelSource(groupsWithBodies),
       ),
       ...groupsWithBodies.map((group) =>
         fs.writeFile(
-          path.join(interfaceValidationRoot, `${group.moduleDirectoryName}.ts`),
+          path.join(
+            apiSourceRoot,
+            "modules",
+            group.moduleDirectoryName,
+            `${group.moduleDirectoryName}-validation.ts`,
+          ),
           emitValidationSource(
             group,
             handlers.filter(
@@ -575,10 +605,16 @@ export class FileSystemMockProjectEmitter extends MockProjectEmitter {
       ),
       ...groups.map((group) =>
         fs.writeFile(
-          path.join(interfaceHttpRoot, `${group.moduleDirectoryName}-routes.ts`),
+          path.join(
+            apiSourceRoot,
+            "modules",
+            group.moduleDirectoryName,
+            `${group.moduleDirectoryName}-routes.ts`,
+          ),
           emitRoutesSource(
             group,
             handlers.filter((handler) => handler.contractName === group.contractName),
+            config,
           ),
         ),
       ),

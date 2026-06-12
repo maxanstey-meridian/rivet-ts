@@ -18,3 +18,11 @@ golden-shape workspaces (`rivet-ts scaffold` / `scaffold-mock`).
   scaffolder plan shipped in full — git history keeps the retired docs.
 - The version in package.json pins the scaffolded `rivet-ts` dependency
   (tested); bump it as part of every release tag.
+- Accepted TS idiom — routes catch domain errors (decided 2026-06-12): a route
+  handler catches its module's domain errors with `instanceof` and maps each
+  to its DECLARED contract status (`throw rivetHttpError(409, ...)`); only
+  undeclared failures fall through to the structured-500 `app.onError`. This
+  is the deliberate divergence from golden .NET's central
+  `DomainExceptionMiddleware`: in Hono there is no result-filter layer, and
+  the route is already the place that knows the contract's declared statuses.
+  Do not "fix" scaffold output toward middleware-based mapping.

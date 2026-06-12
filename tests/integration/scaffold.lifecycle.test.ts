@@ -50,16 +50,18 @@ describe("scaffold lifecycle", () => {
       path.join("apps", "api", "src", "contracts.ts"),
       path.join("apps", "api", "src", "app.ts"),
       path.join("apps", "api", "src", "composition.ts"),
-      path.join("apps", "api", "src", "interface", "http", "quotes-routes.ts"),
+      path.join("apps", "api", "src", "modules", "quotes", "quotes-routes.ts"),
+      path.join("apps", "api", "src", "modules", "quotes", "quotes-validation.ts"),
+      path.join("apps", "api", "src", "modules", "quotes", "quotes.module.ts"),
       path.join("apps", "api", "src", "modules", "quotes", "domain", "quote.ts"),
       path.join("apps", "api", "src", "modules", "quotes", "application", "ports", "quote-store.ts"),
       path.join("apps", "api", "src", "modules", "quotes", "application", "add-quote.ts"),
       path.join("apps", "api", "src", "modules", "quotes", "infrastructure", "in-memory-quote-store.ts"),
       path.join("apps", "api", "src", "modules", "quotes", "infrastructure", "dexie-quote-store.ts"),
       path.join("apps", "api", "src", "modules", "users", "application", "ports", "current-user.ts"),
-      path.join("apps", "api", "src", "interface", "http", "users-routes.ts"),
-      path.join("apps", "api", "src", "interface", "validation", "quotes.ts"),
-      path.join("apps", "api", "src", "interface", "validation", "index.ts"),
+      path.join("apps", "api", "src", "modules", "users", "users-routes.ts"),
+      path.join("apps", "api", "src", "modules", "users", "users.module.ts"),
+      path.join("apps", "api", "src", "validation.ts"),
       path.join("apps", "ui", "app", "assets", "css", "app.css"),
       path.join("apps", "api", "test", "add-quote.test.ts"),
       path.join("apps", "api", "test", "validation.test.ts"),
@@ -79,6 +81,12 @@ describe("scaffold lifecycle", () => {
         relativePath,
       ).resolves.toBeTruthy();
     }
+
+    // §9.10: the HTTP edge is module-local — the old top-level src/interface/
+    // tree must not come back.
+    await expect(
+      fs.stat(path.join(outputDirectory, "apps", "api", "src", "interface")),
+    ).rejects.toThrow();
 
     // The bootstrap contract derives from lowering the EMITTED entry through
     // the real pipeline — never a hand-maintained copy that can drift.
