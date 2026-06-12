@@ -1,5 +1,5 @@
 // X-section fixtures (FABLE_TEST_FIXES Part II.D T5): one fixture + test per
-// extraction-pipeline finding in FABLE_REVIEW.md. The conversion rule under
+// extraction-pipeline finding in the 2026-06-10 review (doc retired; see git history). The conversion rule under
 // test: silent wrong output is never acceptable — each unsupported construct
 // either works correctly or produces a loud diagnostic with a location.
 import fs from "node:fs/promises";

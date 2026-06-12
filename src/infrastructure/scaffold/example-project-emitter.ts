@@ -17,7 +17,7 @@ import type { RivetContractDocument } from "../../domain/rivet-contract.js";
 /**
  * Contract-less scaffold (`rivet-ts scaffold`): the golden-shape workspace
  * with two worked example modules mirroring `~/Sites/golden`'s idiom plus the
- * proper-scaffold capabilities (SCAFFOLDER_PLAN §Proper-scaffold package):
+ * proper-scaffold capabilities (agreed 2026-06-11, plan doc retired):
  *
  * - `quotes` — typed-inject class use cases, abstract-class ports, TWO
  *   adapters per port story: in-memory (server entry) and Dexie (browser

@@ -12,8 +12,9 @@ golden-shape workspaces (`rivet-ts scaffold` / `scaffold-mock`).
   output (`~/.meridian/plumb/plumb`; self-skips if absent). Any change to the
   emitters in `src/infrastructure/scaffold/` must keep that gate green — the
   scaffolder is permanently coupled to Meridian doctrine.
-- Reviews/registers: `FABLE_REVIEW.md` (2026-06-10 code review),
-  `~/Sites/medway/rivet/FABLE_GAPS.md` (cross-repo capability register),
-  `SCAFFOLDER_PLAN.md` (scaffolder/meridian-init plan + settled decisions).
+- Reviews/registers: `~/Sites/medway/rivet/FABLE_GAPS.md` (cross-repo
+  capability register, audit snapshot) and `~/Sites/medway/rivet/HANDOVER.md`
+  (current state: done/decided/deferred). The 2026-06-10 code review and the
+  scaffolder plan shipped in full — git history keeps the retired docs.
 - The version in package.json pins the scaffolded `rivet-ts` dependency
   (tested); bump it as part of every release tag.
