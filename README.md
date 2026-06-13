@@ -4,9 +4,7 @@
 
 Your API contract is plain TypeScript types — no decorators, no runtime
 registration, nothing to import at runtime. rivet-ts reflects it into an
-OpenAPI 3.1 spec and a fully typed client, serves it with
-[Hono](https://hono.dev), and can scaffold an entire runnable workspace
-around it. The TypeScript-first sibling of
+OpenAPI 3.1 spec and a fully typed client. The TypeScript-first sibling of
 [Rivet](https://github.com/maxanstey-meridian/rivet) (.NET).
 
 ```bash
@@ -73,41 +71,10 @@ const { data, error } = await api.POST("/api/members", {
 });
 ```
 
-And on the server, handlers are typed straight off the contract:
-
-```ts
-import { Hono } from "hono";
-import { registerRivetHonoRoutes, type ContractJson } from "rivet-ts/hono";
-import contract from "./generated/api.contract.json" with { type: "json" };
-import type { MembersContract } from "./contracts.js";
-
-const app = new Hono();
-
-registerRivetHonoRoutes<MembersContract>(app, contract as ContractJson, {
-  group: "members",
-  handlers: {
-    List: () => listMembers(),
-    Create: ({ body }) => createMember(body), // body is CreateMemberRequest
-  },
-});
-```
-
-## Or scaffold the whole thing
-
-```bash
-pnpm exec rivet-ts scaffold --out ./myapp --name myapp
-cd myapp && task install && task dev
-```
-
-One command emits a runnable pnpm workspace: a Hono API with worked example
-modules, a Nuxt SPA whose forms share the API's Zod schemas, the typed-client
-package, and a Taskfile that keeps it all generated. During `task dev` the
-whole API runs *in the browser* (IndexedDB persistence); `task api:run`
-promotes it to a real server. Already have a contract? `rivet-ts
-scaffold-mock --entry contracts.ts` builds a working mock API from it.
-
 There's also a [Vite plugin](https://maxanstey-meridian.github.io/rivet-ts/guides/vite-plugin)
-that regenerates everything on contract changes during dev.
+that regenerates everything on contract changes during dev. Serving the
+contract with Hono, and scaffolding a full workspace around it, live in the
+[docs](https://maxanstey-meridian.github.io/rivet-ts/guides/hono).
 
 ## Documentation
 
