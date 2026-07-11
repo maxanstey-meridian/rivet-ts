@@ -34,7 +34,7 @@ export type WorkspaceConfig = {
   /**
    * "full" = Hono api + Nuxt ui + contracts (the default);
    * "frontend-only" = Nuxt ui + contracts, for repos whose API lives
-   * elsewhere (e.g. a .NET backend — `meridian init --dotnet-backend`
+   * elsewhere (e.g. a .NET backend — `plumb init --dotnet-backend`
    * composes one on top of this variant).
    */
   readonly variant?: "full" | "frontend-only";

@@ -13,7 +13,7 @@ import {
 } from "../support/scaffold-oracles.js";
 
 /**
- * The `scaffold` command is the engine behind `meridian init --ts-backend`:
+ * The `scaffold` command is the engine behind `plumb init --ts-backend`:
  * a contract-less golden-shape workspace with one worked example module.
  * Gates, in order of strictness: shape → tsc → runtime behavior → plumb
  * (zero findings — the permanent generator/doctrine coupling).
@@ -259,7 +259,7 @@ describe("scaffold lifecycle", () => {
 
 /**
  * `scaffold --no-api` — Nuxt ui + contracts only, for repos whose API lives
- * elsewhere (`meridian init --dotnet-backend` composes golden's .NET api on
+ * elsewhere (`plumb init --dotnet-backend` composes golden's .NET api on
  * top of exactly this variant).
  */
 describe("scaffold --no-api lifecycle", () => {

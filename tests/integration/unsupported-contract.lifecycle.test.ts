@@ -30,13 +30,6 @@ describe("Unsupported contract lifecycle", () => {
       }),
       expect.objectContaining({
         severity: "error",
-        code: "UNSUPPORTED_INLINE_OPTIONAL_PROPERTY",
-        message: 'Inline object property "optional" cannot be optional.',
-        filePath: modelsPath,
-        line: 10,
-      }),
-      expect.objectContaining({
-        severity: "error",
         code: "UNSUPPORTED_TYPE_EXPRESSION",
         message: 'Unsupported type expression "string & { readonly __tag: "Value" }".',
         filePath: modelsPath,
@@ -51,9 +44,8 @@ describe("Unsupported contract lifecycle", () => {
       }),
     ]);
 
-    // The unsupported constructs are dropped from the lowered document: the
-    // endpoints survive with type references, but no type definitions are
-    // emitted for them.
+    // Unsupported constructs are dropped, while the formerly unsupported
+    // inline optional property survives with explicit optionality.
     const payload = JSON.parse(lowered.toJson()) as {
       endpoints: Array<{ name: string; responses: Array<{ dataType: unknown }> }>;
       types: unknown[];
@@ -69,7 +61,23 @@ describe("Unsupported contract lifecycle", () => {
       name: "ConditionalDto",
       typeArgs: [{ kind: "primitive", type: "string" }],
     });
-    expect(payload.types).toEqual([]);
+    expect(payload.types).toEqual([
+      expect.objectContaining({
+        name: "InlineOptionalWrapper",
+        properties: [
+          expect.objectContaining({
+            name: "nested",
+            type: {
+              kind: "inlineObject",
+              properties: [
+                expect.objectContaining({ name: "required" }),
+                expect.objectContaining({ name: "optional", optional: true }),
+              ],
+            },
+          }),
+        ],
+      }),
+    ]);
     expect(payload.enums).toEqual([]);
   });
 });

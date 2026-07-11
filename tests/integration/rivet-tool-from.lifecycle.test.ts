@@ -162,6 +162,23 @@ describe.skipIf(!rivetToolAvailable)("Rivet.Tool --from OpenAPI smoke", () => {
     const create422 = createOp!.responses["422"];
     expect(create422?.content?.["application/json"]).toBeDefined();
 
+    // Inline properties preserve optionality independently from nullability.
+    const inlineResponseSchema = openApi.paths["/api/inline-shape"]?.get?.responses["200"]?.content?.[
+      "application/json"
+    ]?.schema as { $ref?: string } | undefined;
+    const inlineComponentName = inlineResponseSchema?.$ref?.split("/").at(-1);
+    const inlineResponse = (inlineComponentName
+      ? openApi.components?.schemas?.[inlineComponentName]
+      : inlineResponseSchema) as
+      | {
+          required?: string[];
+          properties?: Record<string, { type?: string | string[] }>;
+        }
+      | undefined;
+    expect(inlineResponse?.required).toEqual(["required", "requiredNullable"]);
+    expect(inlineResponse?.properties?.["optional"]).toBeDefined();
+    expect(inlineResponse?.properties?.["requiredNullable"]?.type).toEqual(["string", "null"]);
+
     // --- Form-encoded POST: application/x-www-form-urlencoded ---
     const formOp = openApi.paths["/api/forms"]?.post;
     expect(formOp).toBeDefined();

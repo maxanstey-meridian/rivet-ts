@@ -33,6 +33,7 @@ type ContractGroup = {
   readonly contractBaseName: string;
   readonly group: string;
   readonly moduleDirectoryName: string;
+  readonly routeRegistrationName: string;
   readonly endpointNames: readonly string[];
 };
 
@@ -63,6 +64,57 @@ type PackageManifest = {
 
 const RIVET_TS_DEPENDENCY_REPOSITORY = "github:maxanstey-meridian/rivet-ts";
 
+const RESERVED_IDENTIFIERS = new Set([
+  "arguments",
+  "await",
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "debugger",
+  "default",
+  "delete",
+  "do",
+  "else",
+  "enum",
+  "eval",
+  "export",
+  "extends",
+  "false",
+  "finally",
+  "for",
+  "function",
+  "if",
+  "implements",
+  "import",
+  "in",
+  "instanceof",
+  "interface",
+  "let",
+  "new",
+  "null",
+  "package",
+  "private",
+  "protected",
+  "public",
+  "return",
+  "static",
+  "super",
+  "switch",
+  "this",
+  "throw",
+  "true",
+  "try",
+  "typeof",
+  "var",
+  "void",
+  "while",
+  "with",
+  "yield",
+]);
+
 export const toCamelCase = (value: string): string => {
   const kebab = toKebabCase(value);
   const segments = kebab.split("-").filter((segment) => segment.length > 0);
@@ -77,6 +129,17 @@ export const toCamelCase = (value: string): string => {
 export const toPascalCase = (value: string): string => {
   const camel = toCamelCase(value);
   return camel.length === 0 ? camel : `${camel[0]?.toUpperCase() ?? ""}${camel.slice(1)}`;
+};
+
+export const toSafeIdentifier = (value: string): string => {
+  const normalized = toCamelCase(value);
+  const identifier = /^[A-Za-z_$]/u.test(normalized) ? normalized : `_${normalized}`;
+  return RESERVED_IDENTIFIERS.has(identifier) ? `${identifier}Endpoint` : identifier;
+};
+
+const toSafeTypeIdentifier = (value: string): string => {
+  const normalized = toPascalCase(value);
+  return /^[A-Za-z_$]/u.test(normalized) ? normalized : `_${normalized}`;
 };
 
 const deriveContractBaseName = (contractName: string): string =>
@@ -136,13 +199,23 @@ export const resolveWorkspaceVersions = (
 const buildContractGroups = (config: MockProjectEmitterConfig): readonly ContractGroup[] =>
   config.contracts.map((contract) => {
     const contractBaseName = deriveContractBaseName(contract.name);
+    const moduleDirectoryName = toKebabCase(contractBaseName) || "contract";
+    const normalizedRouteBaseName = toPascalCase(contractBaseName);
+    const routeBaseName = normalizedRouteBaseName
+      ? toSafeTypeIdentifier(normalizedRouteBaseName)
+      : "Contract";
+    const routeRegistrationName = `register${routeBaseName}Routes`;
 
     return {
       contractName: contract.name,
       contractExportName: contract.exportedName,
       contractBaseName,
       group: deriveGroupName(contract.name),
-      moduleDirectoryName: toKebabCase(contractBaseName),
+      moduleDirectoryName,
+      routeRegistrationName:
+        routeRegistrationName === "registerRivetHonoRoutes"
+          ? "registerRivetHonoContractRoutes"
+          : routeRegistrationName,
       endpointNames: contract.endpoints.map((endpoint) => endpoint.name),
     };
   });
@@ -212,7 +285,6 @@ const buildHandlerDescriptors = (
         );
       }
 
-      const outputTypeName = `${endpointName}Output`;
       let body: string;
       if (mock.result.kind === "todo" || unsupportedParams.length > 0) {
         const message =
@@ -222,13 +294,19 @@ const buildHandlerDescriptors = (
         body = [...todoLines, `  throw new Error(${JSON.stringify(message)});`].join("\n");
       } else if (mock.result.kind === "void") {
         body = "  return undefined;";
-      } else {
+      } else if (mock.result.kind === "source") {
+        body = `  return ${mock.result.source};`;
+      } else if (mock.result.kind === "value") {
         const expression = JSON.stringify(mock.result.value, null, 2);
         // Enum members, brands, and example-backed values are not assignable
         // as raw JSON literals; the cast keeps the mock honest about being a
         // mock while letting a fresh scaffold pass its own typecheck.
-        const cast = mock.result.needsCast ? ` as ${outputTypeName}` : "";
+        const cast = mock.result.needsCast
+          ? ` as import("rivet-ts").RivetHandlerResult<import("#contract").${group.contractExportName}, ${JSON.stringify(endpointName)}>`
+          : "";
         body = `  return ${indent(expression, 2).trimStart()}${cast};`;
+      } else {
+        throw new Error(`Unhandled mock result for endpoint "${endpoint.name}".`);
       }
 
       const bodyParam = endpoint.params.find((param) => param.source === "body");
@@ -241,11 +319,12 @@ const buildHandlerDescriptors = (
         contractName: group.contractName,
         contractExportName: group.contractExportName,
         moduleDirectoryName: group.moduleDirectoryName,
-        fileBaseName: toKebabCase(endpointName),
-        useCaseExportName: toCamelCase(endpointName),
+        fileBaseName: toKebabCase(endpointName) || "endpoint",
+        useCaseExportName: toSafeIdentifier(endpointName),
         pattern,
         body,
-        supportsDemoCall: supportedSources.length === 0 && mock.result.kind === "value",
+        supportsDemoCall:
+          supportedSources.length === 0 && mock.result.kind === "value",
         hasBody: patternParts.includes("body"),
         bodyType: bodyParam?.type,
       });
@@ -253,6 +332,127 @@ const buildHandlerDescriptors = (
   }
 
   return descriptors;
+};
+
+const assertUniqueGeneratedHandlerNames = (handlers: readonly HandlerDescriptor[]): void => {
+  const identifiers = new Map<string, HandlerDescriptor>();
+  const files = new Map<string, HandlerDescriptor>();
+  const collisions: string[] = [];
+
+  for (const handler of handlers) {
+    const scope = handler.moduleDirectoryName;
+    const identifierKey = `${scope}:${handler.useCaseExportName}`;
+    const existingIdentifier = identifiers.get(identifierKey);
+    if (existingIdentifier) {
+      collisions.push(
+        `endpoints "${existingIdentifier.endpointName}" and "${handler.endpointName}" in contract "${handler.contractName}" generate the same identifier "${handler.useCaseExportName}"`,
+      );
+    } else {
+      identifiers.set(identifierKey, handler);
+    }
+
+    const fileKey = `${scope}:${handler.fileBaseName}`;
+    const existingFile = files.get(fileKey);
+    if (existingFile) {
+      collisions.push(
+        `endpoints "${existingFile.endpointName}" and "${handler.endpointName}" in contract "${handler.contractName}" generate the same file "${handler.fileBaseName}.ts"`,
+      );
+    } else {
+      files.set(fileKey, handler);
+    }
+  }
+
+  if (collisions.length > 0) {
+    throw new Error(`Scaffold endpoint name collisions: ${collisions.join("; ")}.`);
+  }
+};
+
+const assertUniqueRouteModuleBindings = (
+  groups: readonly ContractGroup[],
+  handlers: readonly HandlerDescriptor[],
+): void => {
+  const collisions: string[] = [];
+
+  for (const group of groups) {
+    const groupHandlers = handlers.filter((handler) => handler.contractName === group.contractName);
+    const bodyHandlers = groupHandlers.filter((handler) => handler.hasBody && handler.bodyType);
+    const bindings = new Map<string, string>();
+    const importedBindings = [
+      ["Hono", 'framework import "Hono"'],
+      ["ContractJson", 'runtime import "ContractJson"'],
+      ["registerRivetHonoRoutes", 'runtime import "registerRivetHonoRoutes"'],
+      [group.contractExportName, `contract import "${group.contractExportName}"`],
+      [group.routeRegistrationName, `route registration "${group.routeRegistrationName}"`],
+      ...(bodyHandlers.length > 0
+        ? [
+            ["rivetHttpError", 'runtime import "rivetHttpError"'],
+            ["z", 'validation import "z"'],
+          ]
+        : []),
+      ...groupHandlers.map(
+        (handler) =>
+          [handler.useCaseExportName, `endpoint "${handler.endpointName}" handler`] as const,
+      ),
+      ...bodyHandlers.map(
+        (handler) => [schemaExportName(handler), `endpoint "${handler.endpointName}" schema`] as const,
+      ),
+    ] as const;
+
+    for (const [binding, source] of importedBindings) {
+      const existing = bindings.get(binding);
+      if (existing) {
+        collisions.push(
+          `contract "${group.contractName}" imports ${existing} and ${source} as the same route-module binding "${binding}"`,
+        );
+      } else {
+        bindings.set(binding, source);
+      }
+    }
+  }
+
+  if (collisions.length > 0) {
+    throw new Error(`Scaffold route-module scope collisions: ${collisions.join("; ")}.`);
+  }
+};
+
+const assertUniqueGeneratedGroupNames = (
+  groups: readonly ContractGroup[],
+  handlers: readonly HandlerDescriptor[],
+): void => {
+  const artifacts = new Map<string, ContractGroup>();
+  const collisions: string[] = [];
+
+  for (const group of groups) {
+    const generatedArtifacts = [
+      ["module directory", group.moduleDirectoryName],
+      ["route registration identifier", group.routeRegistrationName],
+      ["route file", `${group.moduleDirectoryName}-routes.ts`],
+    ];
+    if (
+      handlers.some(
+        (handler) =>
+          handler.contractName === group.contractName && handler.hasBody && handler.bodyType,
+      )
+    ) {
+      generatedArtifacts.push(["validation file", `${group.moduleDirectoryName}-validation.ts`]);
+    }
+
+    for (const [artifactType, generatedName] of generatedArtifacts) {
+      const key = `${artifactType}:${generatedName}`;
+      const existing = artifacts.get(key);
+      if (existing) {
+        collisions.push(
+          `contracts "${existing.contractName}" and "${group.contractName}" generate the same ${artifactType} "${generatedName}"`,
+        );
+      } else {
+        artifacts.set(key, group);
+      }
+    }
+  }
+
+  if (collisions.length > 0) {
+    throw new Error(`Scaffold contract name collisions: ${collisions.join("; ")}.`);
+  }
 };
 
 const selectDemoClientCall = (
@@ -278,17 +478,8 @@ const selectDemoClientCall = (
 };
 
 const emitUseCaseSource = (descriptor: HandlerDescriptor): string => {
-  const inputTypeName = `${descriptor.endpointName}Input`;
-  const outputTypeName = `${descriptor.endpointName}Output`;
-
   return [
-    'import type { RivetHandlerInput, RivetHandlerResult } from "rivet-ts";',
-    `import type { ${descriptor.contractExportName} } from "#contract";`,
-    "",
-    `type ${inputTypeName} = RivetHandlerInput<${descriptor.contractExportName}, "${descriptor.endpointName}">;`,
-    `type ${outputTypeName} = RivetHandlerResult<${descriptor.contractExportName}, "${descriptor.endpointName}">;`,
-    "",
-    `export const ${descriptor.useCaseExportName} = async (_input: ${inputTypeName}): Promise<${outputTypeName}> => {`,
+    `export const ${descriptor.useCaseExportName} = async (_input: import("rivet-ts").RivetHandlerInput<import("#contract").${descriptor.contractExportName}, ${JSON.stringify(descriptor.endpointName)}>): Promise<import("rivet-ts").RivetHandlerResult<import("#contract").${descriptor.contractExportName}, ${JSON.stringify(descriptor.endpointName)}>> => {`,
     descriptor.body,
     "};",
     "",
@@ -312,13 +503,7 @@ const emitValidationSource = (
     handler,
     schema: zodSourceForType(handler.bodyType!, config.document),
   }));
-  const anyExact = schemas.some((entry) => entry.schema.exact);
-
   const lines = ['import { z } from "zod";'];
-  if (anyExact) {
-    lines.push('import type { RivetHandlerInput } from "rivet-ts";');
-    lines.push(`import type { ${group.contractExportName} } from "#contract";`);
-  }
   lines.push("");
   lines.push("// Synthesized from the contract at scaffold time — owned by you now. Add");
   lines.push("// the rules the contract can't express (lengths, trims, formats); the");
@@ -326,7 +511,7 @@ const emitValidationSource = (
 
   for (const { handler, schema } of schemas) {
     const lock = schema.exact
-      ? ` satisfies z.ZodType<RivetHandlerInput<${group.contractExportName}, ${JSON.stringify(handler.endpointName)}>["body"]>`
+      ? ` satisfies z.ZodType<import("rivet-ts").RivetHandlerInput<import("#contract").${group.contractExportName}, ${JSON.stringify(handler.endpointName)}>["body"]>`
       : "";
     lines.push(`export const ${schemaExportName(handler)} = ${schema.source}${lock};`);
     lines.push("");
@@ -335,7 +520,10 @@ const emitValidationSource = (
   return lines.join("\n");
 };
 
-const emitValidationBarrelSource = (groupsWithBodies: readonly ContractGroup[]): string => {
+const emitValidationBarrelSource = (
+  groupsWithBodies: readonly ContractGroup[],
+  handlers: readonly HandlerDescriptor[],
+): string => {
   const header = [
     "// Stable home of the package's `./validation` export — module schemas may",
     "// move; this path may not (frontend consumers import through it).",
@@ -343,12 +531,33 @@ const emitValidationBarrelSource = (groupsWithBodies: readonly ContractGroup[]):
   if (groupsWithBodies.length === 0) {
     return `${header.join("\n")}\nexport {};\n`;
   }
-  return `${header.join("\n")}\n${groupsWithBodies
-    .map(
-      (group) =>
-        `export * from "./modules/${group.moduleDirectoryName}/${group.moduleDirectoryName}-validation.js";`,
-    )
-    .join("\n")}\n`;
+  const entries = groupsWithBodies.flatMap((group) =>
+    handlers
+      .filter(
+        (handler) => handler.contractName === group.contractName && handler.hasBody && handler.bodyType,
+      )
+      .map((handler) => ({ group, exportName: schemaExportName(handler) })),
+  );
+  const counts = new Map<string, number>();
+  for (const entry of entries) {
+    counts.set(entry.exportName, (counts.get(entry.exportName) ?? 0) + 1);
+  }
+
+  const exportedNames = new Set<string>();
+  const exports = entries.map(({ group, exportName }) => {
+    const publicName =
+      counts.get(exportName) === 1
+        ? exportName
+        : `${toSafeIdentifier(group.contractBaseName)}${toSafeTypeIdentifier(exportName)}`;
+    if (exportedNames.has(publicName)) {
+      throw new Error(`Scaffold validation export collision: "${publicName}".`);
+    }
+    exportedNames.add(publicName);
+    const alias = publicName === exportName ? "" : ` as ${publicName}`;
+    return `export { ${exportName}${alias} } from "./modules/${group.moduleDirectoryName}/${group.moduleDirectoryName}-validation.js";`;
+  });
+
+  return `${header.join("\n")}\n${exports.join("\n")}\n`;
 };
 
 const emitRoutesSource = (
@@ -382,10 +591,10 @@ const emitRoutesSource = (
     );
   }
 
-  const registrationName = `register${toPascalCase(group.contractBaseName)}Routes`;
-
   lines.push("");
-  lines.push(`export const ${registrationName} = (app: Hono, contract: ContractJson): void => {`);
+  lines.push(
+    `export const ${group.routeRegistrationName} = (app: Hono, contract: ContractJson): void => {`,
+  );
   lines.push(`  registerRivetHonoRoutes<${group.contractExportName}>(app, contract, {`);
   lines.push(`    group: ${JSON.stringify(group.group)},`);
   lines.push("    handlers: {");
@@ -439,7 +648,7 @@ const emitAppSource = (groups: readonly ContractGroup[]): string => {
 
   for (const group of groups) {
     lines.push(
-      `import { register${toPascalCase(group.contractBaseName)}Routes } from "./modules/${group.moduleDirectoryName}/${group.moduleDirectoryName}-routes.js";`,
+      `import { ${group.routeRegistrationName} } from "./modules/${group.moduleDirectoryName}/${group.moduleDirectoryName}-routes.js";`,
     );
   }
 
@@ -448,7 +657,7 @@ const emitAppSource = (groups: readonly ContractGroup[]): string => {
   lines.push("");
 
   for (const group of groups) {
-    lines.push(`register${toPascalCase(group.contractBaseName)}Routes(app, contract);`);
+    lines.push(`${group.routeRegistrationName}(app, contract);`);
   }
 
   lines.push("");
@@ -522,6 +731,9 @@ export class FileSystemMockProjectEmitter extends MockProjectEmitter {
 
     const groups = buildContractGroups(config);
     const handlers = buildHandlerDescriptors(config, groups);
+    assertUniqueGeneratedGroupNames(groups, handlers);
+    assertUniqueGeneratedHandlerNames(handlers);
+    assertUniqueRouteModuleBindings(groups, handlers);
     const manifest = await readPackageManifest();
 
     // The entry (and its local imports) are copied into src/ preserving their
@@ -583,7 +795,7 @@ export class FileSystemMockProjectEmitter extends MockProjectEmitter {
       fs.writeFile(path.join(apiSourceRoot, "app.ts"), emitAppSource(groups)),
       fs.writeFile(
         path.join(apiSourceRoot, "validation.ts"),
-        emitValidationBarrelSource(groupsWithBodies),
+        emitValidationBarrelSource(groupsWithBodies, handlers),
       ),
       ...groupsWithBodies.map((group) =>
         fs.writeFile(

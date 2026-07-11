@@ -61,34 +61,13 @@ describe("Invalid tagged union contract lifecycle", () => {
         filePath: modelsPath,
         line: 13,
       }),
-      // OptionalVariantFieldState: the optional property is reported at its
-      // type node, then the union as a whole is rejected.
-      expect.objectContaining({
-        severity: "error",
-        code: "UNSUPPORTED_UNION",
-        message:
-          'Union "| { kind: "loading"; requestId?: string; workspaceKey: string }\n' +
-          '  | { kind: "shown"; summary: string; workspaceKey: string }" cannot use optional properties in tagged union variants.',
-        filePath: modelsPath,
-        line: 10,
-      }),
-      expect.objectContaining({
-        severity: "error",
-        code: "UNSUPPORTED_UNION",
-        message:
-          'Union "| { kind: "loading"; requestId?: string; workspaceKey: string }\n' +
-          '  | { kind: "shown"; summary: string; workspaceKey: string }" is not supported.',
-        filePath: modelsPath,
-        line: 10,
-      }),
     ]);
 
-    // The invalid unions are dropped from the lowered document: every endpoint
-    // survives with a ref to its state type, but no type definitions are
-    // emitted for the rejected unions.
+    // Invalid unions are dropped; the variant with an optional non-discriminator
+    // property now survives as a tagged union.
     const payload = JSON.parse(lowered.toJson()) as {
       endpoints: Array<{ name: string; responses: Array<{ dataType: unknown }> }>;
-      types: unknown[];
+      types: Array<{ name: string; type?: unknown }>;
       enums: unknown[];
     };
     expect(payload.endpoints.map((endpoint) => endpoint.name)).toEqual([
@@ -103,7 +82,25 @@ describe("Invalid tagged union contract lifecycle", () => {
       { kind: "ref", name: "OptionalVariantFieldState" },
       { kind: "ref", name: "MixedMemberState" },
     ]);
-    expect(payload.types).toEqual([]);
+    expect(payload.types).toEqual([
+      expect.objectContaining({
+        name: "OptionalVariantFieldState",
+        type: expect.objectContaining({
+          kind: "taggedUnion",
+          variants: expect.arrayContaining([
+            expect.objectContaining({
+              tag: "loading",
+              type: expect.objectContaining({
+                properties: expect.arrayContaining([
+                  expect.objectContaining({ name: "kind" }),
+                  expect.objectContaining({ name: "requestId", optional: true }),
+                ]),
+              }),
+            }),
+          ]),
+        }),
+      }),
+    ]);
     expect(payload.enums).toEqual([]);
   });
 });

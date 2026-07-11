@@ -41,10 +41,19 @@ const writeMembersFixture = async (sourceDirectory: string): Promise<string> => 
       "  data: Wrapper<T>;",
       "}",
       "",
+      "export interface TreeDto {",
+      "  name: string;",
+      "  children: TreeDto[];",
+      "  childrenByName: Record<string, TreeDto>;",
+      "  parent: TreeDto | null;",
+      "  next?: TreeDto;",
+      "}",
+      "",
       "export const memberResponseExample = {",
       '  id: "mem_001",',
       '  email: "jane@example.com",',
       "} satisfies MemberDto;",
+      'export const exportResponseExample = "not-a-blob";',
       "",
     ].join("\n"),
   );
@@ -54,8 +63,8 @@ const writeMembersFixture = async (sourceDirectory: string): Promise<string> => 
     entryPath,
     [
       'import type { Contract, Endpoint } from "rivet-ts";',
-      'import type { CreateMemberRequest, MemberDto, Page, PagedResult } from "./models.js";',
-      'import { memberResponseExample } from "./models.js";',
+      'import type { CreateMemberRequest, MemberDto, Page, PagedResult, TreeDto } from "./models.js";',
+      'import { exportResponseExample, memberResponseExample } from "./models.js";',
       "",
       'export interface MembersContract extends Contract<"Members"> {',
       "  List: Endpoint<{",
@@ -84,6 +93,20 @@ const writeMembersFixture = async (sourceDirectory: string): Promise<string> => 
       '    method: "GET";',
       '    route: "/api/members/nested";',
       "    response: Page<MemberDto>;",
+      "  }>;",
+      "",
+      "  Tree: Endpoint<{",
+      '    method: "GET";',
+      '    route: "/api/members/tree";',
+      "    response: TreeDto;",
+      "  }>;",
+      "",
+      "  Export: Endpoint<{",
+      '    method: "GET";',
+      '    route: "/api/members/export";',
+      "    fileResponse: true;",
+      '    fileContentType: "text/csv";',
+      "    responseExamples: [{ status: 200; examples: [typeof exportResponseExample] }];",
       "  }>;",
       "}",
       "",
@@ -160,6 +183,12 @@ describe("scaffold-mock lifecycle", () => {
     const nestedUseCaseSource = await read(
       path.join(apiSource, "modules", "members", "application", "nested.ts"),
     );
+    const treeUseCaseSource = await read(
+      path.join(apiSource, "modules", "members", "application", "tree.ts"),
+    );
+    const exportUseCaseSource = await read(
+      path.join(apiSource, "modules", "members", "application", "export.ts"),
+    );
     const apiPackageJsonSource = await read(path.join("apps", "api", "package.json"));
     const contractsPackageJsonSource = await read(
       path.join("packages", "contracts", "package.json"),
@@ -233,12 +262,14 @@ describe("scaffold-mock lifecycle", () => {
     expect(appSource).toContain("app.onError");
 
     expect(listUseCaseSource).toContain("export const list = async");
-    expect(listUseCaseSource).toContain('import type { MembersContract } from "#contract";');
+    expect(listUseCaseSource).toContain('import("#contract").MembersContract');
     expect(listUseCaseSource).toContain("totalCount");
 
     // Example-backed mocks are emitted verbatim and therefore cast (S7).
     expect(createUseCaseSource).toContain('"id": "mem_001"');
-    expect(createUseCaseSource).toContain("as CreateOutput");
+    expect(createUseCaseSource).toContain(
+      'as import("rivet-ts").RivetHandlerResult<import("#contract").MembersContract, "Create">',
+    );
 
     // S2: nested generics reusing the type-parameter name synthesize a
     // terminal mock value instead of overflowing the stack.
@@ -246,6 +277,32 @@ describe("scaffold-mock lifecycle", () => {
     expect(nestedUseCaseSource).toContain('"value"');
     expect(nestedUseCaseSource).toContain('"email": "example"');
     expect(nestedUseCaseSource).not.toContain("TODO");
+
+    // Recursive responses terminate only at boundaries with finite values:
+    // arrays/dictionaries empty, nullable refs become null, optional refs omit.
+    expect(treeUseCaseSource).toContain('"children": []');
+    expect(treeUseCaseSource).toContain('"childrenByName": {}');
+    expect(treeUseCaseSource).toContain('"parent": null');
+    expect(treeUseCaseSource).not.toContain('"next"');
+    expect(treeUseCaseSource).not.toContain("TODO");
+
+    // File endpoints get a conforming, content-typed placeholder instead of a
+    // throwing TODO stub.
+    expect(exportUseCaseSource).toContain("export const exportEndpoint = async");
+    expect(exportUseCaseSource).toContain(
+      'return new Blob(["example"], { type: "text/csv" });',
+    );
+    expect(exportUseCaseSource).not.toContain("TODO");
+    expect(exportUseCaseSource).not.toContain("not-a-blob");
+    expect(routesSource).toContain('import { exportEndpoint } from "./application/export.js";');
+
+    const { exportEndpoint } = (await import(
+      path.join(outputDirectory, "apps", "api", "src", "modules", "members", "application", "export.ts")
+    )) as { exportEndpoint: (input: object) => Promise<Blob> };
+    const exportedFile = await exportEndpoint({});
+    expect(exportedFile).toBeInstanceOf(Blob);
+    expect(exportedFile.type).toBe("text/csv");
+    await expect(exportedFile.text()).resolves.toBe("example");
 
     // S4: every reference derives from where the entry actually lands.
     expect(contractSource).toContain('export type { MembersContract } from "./contracts.js";');
@@ -275,7 +332,9 @@ describe("scaffold-mock lifecycle", () => {
       path.join(apiSource, "modules", "members", "members-validation.ts"),
     );
     expect(validationSource).toContain("export const createRequest = z.object(");
-    expect(validationSource).toContain('satisfies z.ZodType<RivetHandlerInput<MembersContract, "Create">["body"]>');
+    expect(validationSource).toContain(
+      'satisfies z.ZodType<import("rivet-ts").RivetHandlerInput<import("#contract").MembersContract, "Create">["body"]>',
+    );
     expect(routesSource).toContain("createRequest.safeParse(input.body)");
     expect(routesSource).toContain("rivetHttpError(422");
     // The exact schema's parsed output (Zod transforms applied) is what the
@@ -320,10 +379,16 @@ describe("scaffold-mock lifecycle", () => {
         "  total: number;",
         "}",
         "",
-        'export interface PetContract extends Contract<"Pet"> {',
+        'export interface RivetHandlerInput extends Contract<"Pet"> {',
         "  Get: Endpoint<{",
         '    method: "GET";',
         '    route: "/api/pets/current";',
+        "    response: PetDto;",
+        "  }>;",
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/pets";',
+        "    input: { name: string };",
         "    response: PetDto;",
         "  }>;",
         "}",
@@ -332,6 +397,12 @@ describe("scaffold-mock lifecycle", () => {
         "  Get: Endpoint<{",
         '    method: "GET";',
         '    route: "/api/summary";',
+        "    response: SummaryDto;",
+        "  }>;",
+        "  Create: Endpoint<{",
+        '    method: "POST";',
+        '    route: "/api/summary";',
+        "    input: { name: string };",
         "    response: SummaryDto;",
         "  }>;",
         "}",
@@ -361,11 +432,17 @@ describe("scaffold-mock lifecycle", () => {
       path.join(apiSource, "modules", "summary", "summary-routes.ts"),
       "utf8",
     );
+    const validationBarrelSource = await fs.readFile(
+      path.join(apiSource, "validation.ts"),
+      "utf8",
+    );
 
     expect(appSource).toContain("registerPetRoutes(app, contract);");
     expect(appSource).toContain("registerSummaryRoutes(app, contract);");
     expect(petRoutesSource).toContain('group: "pet"');
     expect(summaryRoutesSource).toContain('group: "summary"');
+    expect(validationBarrelSource).toContain("createRequest as petCreateRequest");
+    expect(validationBarrelSource).toContain("createRequest as summaryCreateRequest");
     expect(petRoutesSource).toContain('"Get": () => get({}),');
     await expect(
       fs.stat(path.join(apiSource, "modules", "pet", "application", "get.ts")),
@@ -374,6 +451,264 @@ describe("scaffold-mock lifecycle", () => {
       fs.stat(path.join(apiSource, "modules", "summary", "application", "get.ts")),
     ).resolves.toBeTruthy();
 
+    await typecheckScaffoldedWorkspace(outputDirectory);
+  }, 120000);
+
+  it("emits valid identifiers for numeric string-literal endpoint names", async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-numeric-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const outputDirectory = path.join(tempDirectory, "mock-app");
+    await fs.writeFile(
+      entryPath,
+      [
+        'import type { Contract, Endpoint } from "rivet-ts";',
+        'export interface NumericContract extends Contract<"Numeric"> {',
+        '  "123 Export": Endpoint<{',
+        '    method: "GET";',
+        '    route: "/api/numeric";',
+        '    response: string;',
+        "  }>;",
+        '  "Rivet Handler": Endpoint<{ method: "GET"; route: "/api/handler"; response: string }>;',
+        "}",
+      ].join("\n"),
+    );
+
+    const exitCode = await runCli(["scaffold-mock", "--entry", entryPath, "--out", outputDirectory]);
+    expect(exitCode).toBe(0);
+
+    const useCaseSource = await fs.readFile(
+      path.join(outputDirectory, "apps", "api", "src", "modules", "numeric", "application", "123-export.ts"),
+      "utf8",
+    );
+    expect(useCaseSource).toContain(
+      '_input: import("rivet-ts").RivetHandlerInput<import("#contract").NumericContract, "123 Export">',
+    );
+    expect(useCaseSource).toContain("export const _123Export = async");
+    const handlerCollisionSource = await fs.readFile(
+      path.join(outputDirectory, "apps", "api", "src", "modules", "numeric", "application", "rivet-handler.ts"),
+      "utf8",
+    );
+    expect(handlerCollisionSource).toContain("export const rivetHandler = async");
+    await typecheckScaffoldedWorkspace(outputDirectory);
+  }, 120000);
+
+  it("safely renders quoted and escaped endpoint names in handler types", async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-escaped-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const outputDirectory = path.join(tempDirectory, "mock-app");
+    const endpointName = 'Say "hello" \\ now';
+    await fs.writeFile(
+      entryPath,
+      [
+        'import type { Contract, Endpoint } from "rivet-ts";',
+        'export interface EscapedContract extends Contract<"Escaped"> {',
+        `  ${JSON.stringify(endpointName)}: Endpoint<{`,
+        '    method: "GET";',
+        '    route: "/api/escaped";',
+        '    response: string;',
+        "  }>;",
+        "}",
+      ].join("\n"),
+    );
+
+    const exitCode = await runCli(["scaffold-mock", "--entry", entryPath, "--out", outputDirectory]);
+    expect(exitCode).toBe(0);
+
+    const useCaseSource = await fs.readFile(
+      path.join(outputDirectory, "apps", "api", "src", "modules", "escaped", "application", "say-hello-now.ts"),
+      "utf8",
+    );
+    expect(useCaseSource).toContain(
+      `RivetHandlerInput<import("#contract").EscapedContract, ${JSON.stringify(endpointName)}>`,
+    );
+    expect(useCaseSource).toContain(
+      `RivetHandlerResult<import("#contract").EscapedContract, ${JSON.stringify(endpointName)}>`,
+    );
+    await typecheckScaffoldedWorkspace(outputDirectory);
+  }, 120000);
+
+  it.each([
+    {
+      label: "generated identifier",
+      endpoints: ["Export", "ExportEndpoint"],
+      expected: 'same identifier "exportEndpoint"',
+    },
+    {
+      label: "normalized filename",
+      endpoints: ["GetURL", "get-url"],
+      expected: 'same file "get-url.ts"',
+    },
+    {
+      label: "route-module binding",
+      endpoints: ["Create", "CreateRequest"],
+      expected: 'same route-module binding "createRequest"',
+    },
+  ])("rejects $label collisions before writing files", async ({ endpoints, expected }) => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-collision-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const outputDirectory = path.join(tempDirectory, "mock-app");
+    await fs.writeFile(
+      entryPath,
+      [
+        'import type { Contract, Endpoint } from "rivet-ts";',
+        'export interface CollisionContract extends Contract<"Collision"> {',
+        ...endpoints.flatMap((endpoint, index) => [
+          `  ${JSON.stringify(endpoint)}: Endpoint<{`,
+          `    method: "${endpoint === "Create" ? "POST" : "GET"}";`,
+          `    route: "/api/collision/${index}";`,
+          ...(endpoint === "Create" ? ['    input: string;'] : []),
+          '    response: string;',
+          "  }>;",
+        ]),
+        "}",
+      ].join("\n"),
+    );
+
+    const stderr: string[] = [];
+    const exitCode = await runCli(
+      ["scaffold-mock", "--entry", entryPath, "--out", outputDirectory],
+      { stdout: () => undefined, stderr: (text) => stderr.push(text) },
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join("")).toContain(expected);
+    await expect(fs.stat(outputDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects normalized contract artifact collisions before writing files", async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-group-collision-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const outputDirectory = path.join(tempDirectory, "mock-app");
+    await fs.writeFile(
+      entryPath,
+      [
+        'import type { Contract, Endpoint } from "rivet-ts";',
+        'export interface FooBarContract extends Contract<"FooBar"> {',
+        '  Create: Endpoint<{ method: "POST"; route: "/api/foo"; input: string; response: string }>;',
+        "}",
+        'export interface OtherContract extends Contract<"foo-bar"> {',
+        '  Update: Endpoint<{ method: "POST"; route: "/api/bar"; input: string; response: string }>;',
+        "}",
+      ].join("\n"),
+    );
+
+    const stderr: string[] = [];
+    const exitCode = await runCli(
+      ["scaffold-mock", "--entry", entryPath, "--out", outputDirectory],
+      { stdout: () => undefined, stderr: (text) => stderr.push(text) },
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join("")).toContain(
+      'Scaffold contract name collisions: contracts "FooBar" and "foo-bar" generate the same module directory "foo-bar"; contracts "FooBar" and "foo-bar" generate the same route registration identifier "registerFooBarRoutes"; contracts "FooBar" and "foo-bar" generate the same route file "foo-bar-routes.ts"; contracts "FooBar" and "foo-bar" generate the same validation file "foo-bar-validation.ts".',
+    );
+    await expect(fs.stat(outputDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("derives safe module paths and route identifiers from arbitrary contract brands", async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-brands-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const outputDirectory = path.join(tempDirectory, "mock-app");
+    await fs.writeFile(
+      entryPath,
+      [
+        'import type { Contract, Endpoint } from "rivet-ts";',
+        'export interface NumericBrandContract extends Contract<"123 Sales"> {',
+        '  List: Endpoint<{ method: "GET"; route: "/api/numeric"; response: string }>;',
+        "}",
+        'export interface PunctuationBrandContract extends Contract<"!!!"> {',
+        '  "---": Endpoint<{ method: "GET"; route: "/api/punctuation"; response: string }>;',
+        "}",
+        'export interface RivetHonoBrandContract extends Contract<"RivetHono"> {',
+        '  Get: Endpoint<{ method: "GET"; route: "/api/rivet-hono"; response: string }>;',
+        "}",
+      ].join("\n"),
+    );
+
+    const exitCode = await runCli(["scaffold-mock", "--entry", entryPath, "--out", outputDirectory]);
+    expect(exitCode).toBe(0);
+
+    const apiSource = path.join(outputDirectory, "apps", "api", "src");
+    const appSource = await fs.readFile(path.join(apiSource, "app.ts"), "utf8");
+    const numericRoutesSource = await fs.readFile(
+      path.join(apiSource, "modules", "123-sales", "123-sales-routes.ts"),
+      "utf8",
+    );
+    const punctuationRoutesSource = await fs.readFile(
+      path.join(apiSource, "modules", "contract", "contract-routes.ts"),
+      "utf8",
+    );
+    const rivetHonoRoutesSource = await fs.readFile(
+      path.join(apiSource, "modules", "rivet-hono", "rivet-hono-routes.ts"),
+      "utf8",
+    );
+    const punctuationHandlerSource = await fs.readFile(
+      path.join(apiSource, "modules", "contract", "application", "endpoint.ts"),
+      "utf8",
+    );
+
+    expect(numericRoutesSource).toContain("export const register_123SalesRoutes =");
+    expect(punctuationRoutesSource).toContain("export const registerContractRoutes =");
+    expect(rivetHonoRoutesSource).toContain("export const registerRivetHonoContractRoutes =");
+    expect(punctuationRoutesSource).toContain('import { _ } from "./application/endpoint.js";');
+    expect(punctuationHandlerSource).toContain("export const _ = async");
+    expect(appSource).toContain(
+      'import { register_123SalesRoutes } from "./modules/123-sales/123-sales-routes.js";',
+    );
+    expect(appSource).toContain(
+      'import { registerContractRoutes } from "./modules/contract/contract-routes.js";',
+    );
+    expect(appSource).toContain("register_123SalesRoutes(app, contract);");
+    expect(appSource).toContain("registerContractRoutes(app, contract);");
+    expect(appSource).toContain("registerRivetHonoContractRoutes(app, contract);");
+    await typecheckScaffoldedWorkspace(outputDirectory);
+  }, 120000);
+
+  it("does not select a file response as the generated UI demo", async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-file-"));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const outputDirectory = path.join(tempDirectory, "mock-app");
+    await fs.writeFile(
+      entryPath,
+      [
+        'import type { Contract, Endpoint } from "rivet-ts";',
+        'export interface FilesContract extends Contract<"Files"> {',
+        "  Download: Endpoint<{",
+        '    method: "GET";',
+        '    route: "/api/files/download";',
+        "    fileResponse: true;",
+        '    fileContentType: "application/pdf";',
+        "  }>;",
+        "}",
+      ].join("\n"),
+    );
+
+    const exitCode = await runCli(["scaffold-mock", "--entry", entryPath, "--out", outputDirectory]);
+    expect(exitCode).toBe(0);
+
+    const appVueSource = await fs.readFile(
+      path.join(outputDirectory, "apps", "ui", "app", "app.vue"),
+      "utf8",
+    );
+    const downloadSource = await fs.readFile(
+      path.join(
+        outputDirectory,
+        "apps",
+        "api",
+        "src",
+        "modules",
+        "files",
+        "application",
+        "download.ts",
+      ),
+      "utf8",
+    );
+
+    expect(downloadSource).toContain(
+      'return new Blob(["example"], { type: "application/pdf" });',
+    );
+    expect(appVueSource).toContain("Typed client configured");
+    expect(appVueSource).not.toContain('client.GET("/api/files/download")');
     await typecheckScaffoldedWorkspace(outputDirectory);
   }, 120000);
 
@@ -532,7 +867,7 @@ describe("scaffold-mock lifecycle", () => {
     // Constraint chains never change the output TYPE, so the exactness lock
     // must survive the enrichment.
     expect(validationSource).toContain(
-      'satisfies z.ZodType<RivetHandlerInput<WidgetsContract, "Create">["body"]>',
+      'satisfies z.ZodType<import("rivet-ts").RivetHandlerInput<import("#contract").WidgetsContract, "Create">["body"]>',
     );
 
     // The enriched constraints round-trip onto the wire contract JSON, which

@@ -140,7 +140,7 @@ export const ensureRivetBinary = async (
   }
 
   const autoInstall = config?.autoInstall ?? true;
-  const version = config?.version ?? "0.39.0";
+  const version = config?.version ?? "0.40.0";
   const tagName = normalizeTagName(version);
   const rid = resolveRid();
   const executableName = process.platform === "win32" ? `rivet-${rid}.exe` : `rivet-${rid}`;

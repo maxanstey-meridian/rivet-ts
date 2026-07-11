@@ -57,16 +57,16 @@ Parameter lowering has two modes:
 | `1 \| 2 \| 3`                               | Numeric literal unions                                                                               |
 | heterogeneous scalar unions                 | Primitive and scalar-literal variants, such as `number \| false`, lower to OpenAPI `oneOf` + `const` |
 | discriminated object unions                 | Tagged unions when every variant has the same single required string-literal discriminator           |
-| `enum E { ... }`                            | Members must have explicit string or numeric literal initializers; mixed string/numeric enums reject |
+| `enum E { ... }`                            | Auto-numbered and explicit string/numeric members are supported; mixed string/numeric enums reject   |
 | exported interfaces and object type aliases | Become named schemas/refs                                                                            |
-| inline object types                         | Supported as anonymous object shapes                                                                 |
+| inline object types                         | Supported as anonymous object shapes, including optional properties                                  |
 | `Brand<string, "Email">`                    | Branded primitives                                                                                   |
 | `Format<string, "uuid">`                    | Primitive plus format metadata                                                                       |
 | generic types                               | Contract JSON preserves generic refs and type arguments                                              |
 | optional properties on named object shapes  | Preserved                                                                                            |
 | plain `readonly` properties                 | Preserved as property-level type information                                                         |
 
-Inline object types have a narrower rule: optional properties inside inline object literals are rejected. Tagged-union variants also reject optional properties.
+Tagged-union discriminators must be required. Other variant properties may be optional.
 
 Metadata arrays such as `errors`, `requestExamples`, and `responseExamples` support tuple syntax, readonly tuple syntax, `T[]`, `Array<T>`, `ReadonlyArray<T>`, and aliases that resolve to those forms. General tuple DTO shapes are not part of the supported DTO surface.
 

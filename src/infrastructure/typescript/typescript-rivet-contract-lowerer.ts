@@ -2871,17 +2871,6 @@ class TypeEmissionContext {
 
       const loweredProperties = [];
       for (const property of properties) {
-        if (property.optional) {
-          this.diagnostics.push(
-            createNodeDiagnostic(
-              property.typeNode,
-              "UNSUPPORTED_INLINE_OPTIONAL_PROPERTY",
-              `Inline object property "${property.name}" cannot be optional.`,
-            ),
-          );
-          return null;
-        }
-
         const loweredPropertyType = this.lowerTypeNode(property.typeNode, typeParameters);
         if (!loweredPropertyType) {
           return null;
@@ -2890,6 +2879,9 @@ class TypeEmissionContext {
         loweredProperties.push({
           name: property.name,
           type: loweredPropertyType,
+          ...(property.optional || loweredPropertyType.kind === "nullable"
+            ? { optional: property.optional }
+            : {}),
         });
       }
 
@@ -3306,17 +3298,6 @@ class TypeEmissionContext {
 
       const loweredProperties = [];
       for (const property of member.properties) {
-        if (property.optional) {
-          this.diagnostics.push(
-            createNodeDiagnostic(
-              property.typeNode,
-              "UNSUPPORTED_UNION",
-              `Union "${node.getText(getNodeSourceFile(node))}" cannot use optional properties in tagged union variants.`,
-            ),
-          );
-          return null;
-        }
-
         const loweredPropertyType = this.lowerTypeNode(property.typeNode, typeParameters);
         if (!loweredPropertyType) {
           return null;
@@ -3325,6 +3306,9 @@ class TypeEmissionContext {
         loweredProperties.push({
           name: property.name,
           type: loweredPropertyType,
+          ...(property.optional || loweredPropertyType.kind === "nullable"
+            ? { optional: property.optional }
+            : {}),
         });
       }
 

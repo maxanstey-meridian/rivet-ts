@@ -65,6 +65,17 @@ export interface OpenApiSmokeContract extends Contract<"OpenApiSmokeContract"> {
     queryAuth: "api_key";
   }>;
 
+  InlineShape: Endpoint<{
+    method: "GET";
+    route: "/api/inline-shape";
+    response: {
+      required: string;
+      optional?: string;
+      requiredNullable: string | null;
+      optionalNullable?: string | null;
+    };
+  }>;
+
   DeleteItem: Endpoint<{
     method: "DELETE";
     route: "/api/items/{id}";

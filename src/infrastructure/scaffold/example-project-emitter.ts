@@ -29,7 +29,7 @@ import type { RivetContractDocument } from "../../domain/rivet-contract.js";
  *
  * Composition is split per environment: `local.ts` (browser) wires Dexie,
  * `main.ts` (server) wires in-memory + logger + cors. Suffix-free file names
- * throughout (Meridian §9.1). This is what `meridian init --ts-backend` calls.
+ * throughout (Meridian §9.1). This is what `plumb init --ts-backend` calls.
  */
 
 const CONTRACTS_SOURCE = [

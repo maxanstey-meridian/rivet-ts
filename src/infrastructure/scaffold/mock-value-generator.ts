@@ -10,6 +10,7 @@ import type {
 
 type MockGenerationSuccess =
   | { kind: "value"; value: RivetEndpointExampleValue; needsCast: boolean }
+  | { kind: "source"; source: string }
   | { kind: "void" };
 
 type MockGenerationFailure = {
@@ -18,6 +19,7 @@ type MockGenerationFailure = {
 };
 
 export type MockGenerationResult = MockGenerationSuccess | MockGenerationFailure;
+type TypeSynthesisResult = Exclude<MockGenerationResult, { kind: "source" }>;
 
 type TypeContext = {
   readonly endpointName: string;
@@ -155,14 +157,18 @@ const synthesizeObject = (
   properties: readonly {
     readonly name: string;
     readonly type: RivetType;
+    readonly optional?: boolean;
   }[],
   context: TypeContext,
-): MockGenerationResult => {
+): TypeSynthesisResult => {
   const output: Record<string, RivetEndpointExampleValue> = {};
 
   for (const property of properties) {
     const value = synthesizeType(property.type, context);
     if (value.kind === "todo") {
+      if (property.optional) {
+        continue;
+      }
       return value;
     }
     if (value.kind === "value") {
@@ -176,7 +182,7 @@ const synthesizeObject = (
 const synthesizeTaggedUnion = (
   type: Extract<RivetType, { kind: "taggedUnion" }>,
   context: TypeContext,
-): MockGenerationResult => {
+): TypeSynthesisResult => {
   const [firstVariant] = type.variants;
   if (!firstVariant) {
     return {
@@ -205,7 +211,7 @@ const synthesizeTaggedUnion = (
   };
 };
 
-const synthesizeType = (type: RivetType, outerContext: TypeContext): MockGenerationResult => {
+const synthesizeType = (type: RivetType, outerContext: TypeContext): TypeSynthesisResult => {
   if (outerContext.depth >= MAX_SYNTHESIS_DEPTH) {
     return {
       kind: "todo",
@@ -249,7 +255,7 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): MockGenerat
     case "array": {
       const element = synthesizeType(type.element, context);
       if (element.kind === "todo") {
-        return element;
+        return { kind: "value", value: [], needsCast: false };
       }
       return {
         kind: "value",
@@ -261,7 +267,7 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): MockGenerat
     case "dictionary": {
       const value = synthesizeType(type.value, context);
       if (value.kind === "todo") {
-        return value;
+        return { kind: "value", value: {}, needsCast: false };
       }
       // An empty dictionary is assignable to Record<string, T> for every T;
       // {key: null} is not (S7).
@@ -413,6 +419,16 @@ export const generateEndpointMock = (
   const successResponse = findSuccessResponse(endpoint);
   const diagnostics: ExtractionDiagnostic[] = [];
 
+  if (endpoint.fileContentType) {
+    return {
+      result: {
+        kind: "source",
+        source: `new Blob(["example"], { type: ${JSON.stringify(endpoint.fileContentType)} })`,
+      },
+      diagnostics,
+    };
+  }
+
   const firstExample = successResponse?.examples?.[0];
   if (firstExample) {
     const parsed = parseExample(firstExample);
@@ -424,21 +440,6 @@ export const generateEndpointMock = (
         diagnostics,
       };
     }
-  }
-
-  if (endpoint.fileContentType) {
-    const message = `Endpoint "${endpoint.name}" returns a file response, which scaffold-mock does not synthesize in v1.`;
-    diagnostics.push(
-      new ExtractionDiagnostic({
-        severity: "warning",
-        code: "SCAFFOLD_UNSUPPORTED_FILE_RESPONSE",
-        message,
-      }),
-    );
-    return {
-      result: { kind: "todo", message },
-      diagnostics,
-    };
   }
 
   const responseType = successResponse?.dataType ?? endpoint.returnType;

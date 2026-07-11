@@ -14,10 +14,7 @@ These shapes are not part of the contract system and should produce diagnostics 
 - `any`
 - `never`
 - standalone `null`; use `T | null`
-- inline object optional properties
-- optional properties inside tagged-union variants
 - non-literal or repeated tagged-union discriminator values
-- enum declarations without explicit string or numeric literal initializers
 - enums that mix string and numeric members
 - class-based or namespace-based contract authoring
 - decorator-driven endpoint definitions
@@ -35,9 +32,8 @@ Plain property-level `readonly` modifiers are supported. What is not supported i
 
 `scaffold-mock` is strongest on normal JSON APIs. These edges are not first-class today:
 
-- file response synthesis
 - anything that collapses to `unknown`
-- recursive response types
+- recursive response types with no finite JSON value; nullable, optional-property, array, and dictionary recursion boundaries are synthesized
 - behavior inferred from request semantics
 
 The scaffold does not infer domain behavior such as “create echoes the body” or “toggle mutates state”.

@@ -66,6 +66,7 @@ export type RivetType =
 export type RivetInlineObjectProperty = {
   name: string;
   type: RivetType;
+  optional?: boolean;
 };
 
 export type RivetTaggedUnionVariant = {
