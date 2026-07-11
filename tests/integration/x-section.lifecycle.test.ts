@@ -620,6 +620,43 @@ describe("X-section extraction pipeline fixtures", () => {
     });
   });
 
+  it("lowers heterogeneous scalar unions without widening boolean literals", async () => {
+    const { entryPath } = await writeFixtureProject("rivet-ts-scalar-union-", {
+      "contracts.ts": [
+        'import type { Contract, Endpoint } from "__IMPORT_PATH__";',
+        "",
+        "export interface SettingsDto {",
+        "  idleTimeoutMs: number | false;",
+        "}",
+        "",
+        'export interface SettingsContract extends Contract<"SettingsContract"> {',
+        "  Get: Endpoint<{",
+        '    method: "GET";',
+        '    route: "/api/settings";',
+        "    response: SettingsDto;",
+        "  }>;",
+        "}",
+        "",
+      ],
+    });
+
+    const { lowered } = await extractAndLower(entryPath);
+    expect(lowered.hasErrors).toBe(false);
+    expect(lowered.diagnostics).toEqual([]);
+    const payload = JSON.parse(lowered.toJson()) as DocumentPayload;
+    expectValidContractDocument(payload);
+    const settings = payload.types.find((type) => type.name === "SettingsDto");
+    expect(
+      settings?.properties?.find((property) => property.name === "idleTimeoutMs")?.type,
+    ).toEqual({
+      kind: "union",
+      variants: [
+        { kind: "primitive", type: "number" },
+        { kind: "literal", value: false },
+      ],
+    });
+  });
+
   // X16: idiomatic auto-numbered enums previously rejected the whole enum.
   it("X16: lowers auto-numbered and negative enum members with computed values", async () => {
     const { entryPath } = await writeFixtureProject("rivet-ts-x16-auto-enum-", {

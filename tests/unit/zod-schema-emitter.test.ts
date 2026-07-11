@@ -31,6 +31,23 @@ const evaluate = (source: string): z.ZodType =>
   new Function("z", `return ${source};`)(z) as z.ZodType;
 
 describe("zod-schema-emitter constraints", () => {
+  it("emits exact heterogeneous scalar unions", () => {
+    const result = zodSourceForType(
+      {
+        kind: "union",
+        variants: [
+          { kind: "primitive", type: "number" },
+          { kind: "literal", value: false },
+        ],
+      },
+      new RivetContractDocument({}),
+    );
+
+    expect(result).toEqual({ source: "z.union([z.number(), z.literal(false)])", exact: true });
+    expect(evaluate(result.source).safeParse(false).success).toBe(true);
+    expect(evaluate(result.source).safeParse(true).success).toBe(false);
+  });
+
   it("chains minLength, maxLength, and pattern onto string properties", () => {
     const result = synthesizeRequest([
       {

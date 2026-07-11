@@ -283,6 +283,11 @@ const collectTypeReferences = (type: RivetType, references: Set<string>): void =
         collectTypeReferences(variant.type, references);
       }
       return;
+    case "union":
+      for (const variant of type.variants) {
+        collectTypeReferences(variant, references);
+      }
+      return;
     case "nullable":
       collectTypeReferences(type.inner, references);
       return;
@@ -290,6 +295,7 @@ const collectTypeReferences = (type: RivetType, references: Set<string>): void =
       references.add(type.name);
       return;
     case "intUnion":
+    case "literal":
     case "primitive":
     case "stringUnion":
     case "typeParam":
@@ -2915,6 +2921,14 @@ class TypeEmissionContext {
           values: [Number(node.literal.text)],
         };
       }
+
+      if (node.literal.kind === ts.SyntaxKind.TrueKeyword) {
+        return { kind: "literal", value: true };
+      }
+
+      if (node.literal.kind === ts.SyntaxKind.FalseKeyword) {
+        return { kind: "literal", value: false };
+      }
     }
 
     switch (node.kind) {
@@ -3165,16 +3179,11 @@ class TypeEmissionContext {
 
     const stringValues: string[] = [];
     const intValues: number[] = [];
+    let homogeneousLiterals = true;
     for (const member of members) {
       if (!ts.isLiteralTypeNode(member)) {
-        this.diagnostics.push(
-          createNodeDiagnostic(
-            node,
-            "UNSUPPORTED_UNION",
-            `Union "${node.getText(getNodeSourceFile(node))}" is not supported.`,
-          ),
-        );
-        return null;
+        homogeneousLiterals = false;
+        break;
       }
 
       if (ts.isStringLiteral(member.literal)) {
@@ -3187,6 +3196,25 @@ class TypeEmissionContext {
         continue;
       }
 
+      homogeneousLiterals = false;
+      break;
+    }
+
+    if (homogeneousLiterals && stringValues.length > 0 && intValues.length === 0) {
+      return {
+        kind: "stringUnion",
+        values: stringValues,
+      };
+    }
+
+    if (homogeneousLiterals && intValues.length > 0 && stringValues.length === 0) {
+      return {
+        kind: "intUnion",
+        values: intValues,
+      };
+    }
+
+    if (!members.every((member) => this.isScalarUnionMember(member))) {
       this.diagnostics.push(
         createNodeDiagnostic(
           node,
@@ -3197,28 +3225,38 @@ class TypeEmissionContext {
       return null;
     }
 
-    if (stringValues.length > 0 && intValues.length === 0) {
-      return {
-        kind: "stringUnion",
-        values: stringValues,
-      };
+    const variants = members.map((member) => this.lowerUnionVariant(member, typeParameters));
+    if (variants.some((variant) => variant === null)) {
+      return null;
     }
+    return { kind: "union", variants: variants as RivetType[] };
+  }
 
-    if (intValues.length > 0 && stringValues.length === 0) {
-      return {
-        kind: "intUnion",
-        values: intValues,
-      };
-    }
-
-    this.diagnostics.push(
-      createNodeDiagnostic(
-        node,
-        "UNSUPPORTED_UNION",
-        `Union "${node.getText(getNodeSourceFile(node))}" is not supported.`,
-      ),
+  private isScalarUnionMember(member: ts.TypeNode): boolean {
+    return (
+      ts.isLiteralTypeNode(member) ||
+      member.kind === ts.SyntaxKind.BooleanKeyword ||
+      member.kind === ts.SyntaxKind.NumberKeyword ||
+      member.kind === ts.SyntaxKind.StringKeyword
     );
-    return null;
+  }
+
+  private lowerUnionVariant(member: ts.TypeNode, typeParameters: Set<string>): RivetType | null {
+    if (ts.isLiteralTypeNode(member)) {
+      if (ts.isStringLiteral(member.literal)) {
+        return { kind: "literal", value: member.literal.text };
+      }
+      if (ts.isNumericLiteral(member.literal)) {
+        return { kind: "literal", value: Number(member.literal.text) };
+      }
+      if (member.literal.kind === ts.SyntaxKind.TrueKeyword) {
+        return { kind: "literal", value: true };
+      }
+      if (member.literal.kind === ts.SyntaxKind.FalseKeyword) {
+        return { kind: "literal", value: false };
+      }
+    }
+    return this.lowerTypeNode(member, typeParameters);
   }
 
   private tryLowerTaggedUnionTypeNode(

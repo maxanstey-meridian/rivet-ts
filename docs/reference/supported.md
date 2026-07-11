@@ -55,6 +55,7 @@ Parameter lowering has two modes:
 | `T \| null`                                 | Nullable wrapper                                                                                     |
 | `"a" \| "b"`                                | String literal unions                                                                                |
 | `1 \| 2 \| 3`                               | Numeric literal unions                                                                               |
+| heterogeneous scalar unions                 | Primitive and scalar-literal variants, such as `number \| false`, lower to OpenAPI `oneOf` + `const` |
 | discriminated object unions                 | Tagged unions when every variant has the same single required string-literal discriminator           |
 | `enum E { ... }`                            | Members must have explicit string or numeric literal initializers; mixed string/numeric enums reject |
 | exported interfaces and object type aliases | Become named schemas/refs                                                                            |

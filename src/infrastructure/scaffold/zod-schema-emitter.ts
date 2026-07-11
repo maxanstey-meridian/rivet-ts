@@ -34,7 +34,7 @@ const inexact = (todo: string): ZodSourceResult => ({
   exact: false,
 });
 
-const literalSource = (value: string | number): string =>
+const literalSource = (value: string | number | boolean): string =>
   typeof value === "string" ? `z.literal(${JSON.stringify(value)})` : `z.literal(${value})`;
 
 /**
@@ -246,6 +246,23 @@ const synthesize = (type: RivetType, context: Context): ZodSourceResult => {
         source: `z.union([${type.values.map(literalSource).join(", ")}])`,
         exact: true,
       };
+
+    case "literal":
+      return { source: literalSource(type.value), exact: true };
+
+    case "union": {
+      const variants = type.variants.map((variant) => synthesize(variant, context));
+      if (variants.length === 0) {
+        return inexact("empty union");
+      }
+      if (variants.length === 1) {
+        return variants[0]!;
+      }
+      return {
+        source: `z.union([${variants.map((variant) => variant.source).join(", ")}])`,
+        exact: variants.every((variant) => variant.exact),
+      };
+    }
 
     case "ref": {
       const enumValues = context.enumValues.get(type.name);

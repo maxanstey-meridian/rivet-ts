@@ -44,7 +44,7 @@ export default defineConfig({
 | `runtimeContractOut` | Contract JSON output path. Default: `<apiRoot>/generated/<kebab-cased-api-dir>.contract.json` |
 | `clientOutDir`       | Artifact directory for `openapi.json` + `schema.d.ts`. Default: `<apiRoot>/generated`         |
 | `tsconfig`           | Optional TypeScript project file for reflection                                               |
-| `rivet.version`      | Rivet binary version to download (default `0.38.0`)                                           |
+| `rivet.version`      | Rivet binary version to download (default `0.39.0`)                                           |
 | `rivet.autoInstall`  | Auto-download the binary when missing (default `true`)                                        |
 | `rivet.binaryPath`   | Use an explicit Rivet binary instead of auto-install                                          |
 | `rivet.cacheDir`     | Override the auto-installed binary cache directory                                            |

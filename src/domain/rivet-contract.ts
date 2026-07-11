@@ -28,6 +28,10 @@ export type RivetType =
       values: readonly number[];
     }
   | {
+      kind: "literal";
+      value: string | number | boolean;
+    }
+  | {
       kind: "ref";
       name: string;
     }
@@ -53,6 +57,10 @@ export type RivetType =
       kind: "taggedUnion";
       discriminator: string;
       variants: readonly RivetTaggedUnionVariant[];
+    }
+  | {
+      kind: "union";
+      variants: readonly RivetType[];
     };
 
 export type RivetInlineObjectProperty = {

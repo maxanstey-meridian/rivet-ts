@@ -17,7 +17,6 @@ These shapes are not part of the contract system and should produce diagnostics 
 - inline object optional properties
 - optional properties inside tagged-union variants
 - non-literal or repeated tagged-union discriminator values
-- mixed string and numeric literal unions
 - enum declarations without explicit string or numeric literal initializers
 - enums that mix string and numeric members
 - class-based or namespace-based contract authoring

@@ -290,6 +290,22 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): MockGenerat
       }
       return { kind: "value", value: type.values[0], needsCast: false };
 
+    case "literal":
+      return { kind: "value", value: type.value, needsCast: false };
+
+    case "union": {
+      for (const variant of type.variants) {
+        const result = synthesizeType(variant, context);
+        if (result.kind !== "todo") {
+          return result;
+        }
+      }
+      return {
+        kind: "todo",
+        message: `Endpoint "${context.endpointName}" has no synthesizable union variant.`,
+      };
+    }
+
     case "ref": {
       const enumValues = context.enumValues.get(type.name);
       if (enumValues) {
