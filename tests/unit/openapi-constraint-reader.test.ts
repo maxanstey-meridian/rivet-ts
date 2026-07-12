@@ -186,7 +186,7 @@ describe("enrichDocumentWithConstraints", () => {
 describe("ConstraintEnrichingMockProjectEmitter", () => {
   it("hands the inner emitter an enriched document, all other config untouched", async () => {
     const received: MockProjectEmitterConfig[] = [];
-    class RecordingEmitter extends MockProjectEmitter {
+    class RecordingEmitter implements MockProjectEmitter {
       public emit(config: MockProjectEmitterConfig): Promise<void> {
         received.push(config);
         return Promise.resolve();

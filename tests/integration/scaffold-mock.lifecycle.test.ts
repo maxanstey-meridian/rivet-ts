@@ -1,11 +1,8 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { runCli } from "../../src/interfaces/cli/run-cli.js";
-import {
-  getProjectRoot,
-  typecheckScaffoldedWorkspace,
-} from "../support/scaffold-oracles.js";
+import { runCli } from "../../src/cli.js";
+import { getProjectRoot, typecheckScaffoldedWorkspace } from "../support/scaffold-oracles.js";
 
 const writeMembersFixture = async (sourceDirectory: string): Promise<string> => {
   await fs.mkdir(sourceDirectory, { recursive: true });
@@ -289,15 +286,22 @@ describe("scaffold-mock lifecycle", () => {
     // File endpoints get a conforming, content-typed placeholder instead of a
     // throwing TODO stub.
     expect(exportUseCaseSource).toContain("export const exportEndpoint = async");
-    expect(exportUseCaseSource).toContain(
-      'return new Blob(["example"], { type: "text/csv" });',
-    );
+    expect(exportUseCaseSource).toContain('return new Blob(["example"], { type: "text/csv" });');
     expect(exportUseCaseSource).not.toContain("TODO");
     expect(exportUseCaseSource).not.toContain("not-a-blob");
     expect(routesSource).toContain('import { exportEndpoint } from "./application/export.js";');
 
     const { exportEndpoint } = (await import(
-      path.join(outputDirectory, "apps", "api", "src", "modules", "members", "application", "export.ts")
+      path.join(
+        outputDirectory,
+        "apps",
+        "api",
+        "src",
+        "modules",
+        "members",
+        "application",
+        "export.ts",
+      )
     )) as { exportEndpoint: (input: object) => Promise<Blob> };
     const exportedFile = await exportEndpoint({});
     expect(exportedFile).toBeInstanceOf(Blob);
@@ -355,9 +359,7 @@ describe("scaffold-mock lifecycle", () => {
   }, 120000);
 
   it("scaffolds one module per contract when multiple contracts are authored together", async () => {
-    const tempDirectory = await fs.mkdtemp(
-      path.join(os.tmpdir(), "rivet-ts-scaffold-mock-multi-"),
-    );
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-multi-"));
     const sourceDirectory = path.join(tempDirectory, "source");
     const outputDirectory = path.join(tempDirectory, "mock-app");
     await fs.mkdir(sourceDirectory, { recursive: true });
@@ -432,10 +434,7 @@ describe("scaffold-mock lifecycle", () => {
       path.join(apiSource, "modules", "summary", "summary-routes.ts"),
       "utf8",
     );
-    const validationBarrelSource = await fs.readFile(
-      path.join(apiSource, "validation.ts"),
-      "utf8",
-    );
+    const validationBarrelSource = await fs.readFile(path.join(apiSource, "validation.ts"), "utf8");
 
     expect(appSource).toContain("registerPetRoutes(app, contract);");
     expect(appSource).toContain("registerSummaryRoutes(app, contract);");
@@ -455,7 +454,9 @@ describe("scaffold-mock lifecycle", () => {
   }, 120000);
 
   it("emits valid identifiers for numeric string-literal endpoint names", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-numeric-"));
+    const tempDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rivet-ts-scaffold-mock-numeric-"),
+    );
     const entryPath = path.join(tempDirectory, "contracts.ts");
     const outputDirectory = path.join(tempDirectory, "mock-app");
     await fs.writeFile(
@@ -466,18 +467,33 @@ describe("scaffold-mock lifecycle", () => {
         '  "123 Export": Endpoint<{',
         '    method: "GET";',
         '    route: "/api/numeric";',
-        '    response: string;',
+        "    response: string;",
         "  }>;",
         '  "Rivet Handler": Endpoint<{ method: "GET"; route: "/api/handler"; response: string }>;',
         "}",
       ].join("\n"),
     );
 
-    const exitCode = await runCli(["scaffold-mock", "--entry", entryPath, "--out", outputDirectory]);
+    const exitCode = await runCli([
+      "scaffold-mock",
+      "--entry",
+      entryPath,
+      "--out",
+      outputDirectory,
+    ]);
     expect(exitCode).toBe(0);
 
     const useCaseSource = await fs.readFile(
-      path.join(outputDirectory, "apps", "api", "src", "modules", "numeric", "application", "123-export.ts"),
+      path.join(
+        outputDirectory,
+        "apps",
+        "api",
+        "src",
+        "modules",
+        "numeric",
+        "application",
+        "123-export.ts",
+      ),
       "utf8",
     );
     expect(useCaseSource).toContain(
@@ -485,7 +501,16 @@ describe("scaffold-mock lifecycle", () => {
     );
     expect(useCaseSource).toContain("export const _123Export = async");
     const handlerCollisionSource = await fs.readFile(
-      path.join(outputDirectory, "apps", "api", "src", "modules", "numeric", "application", "rivet-handler.ts"),
+      path.join(
+        outputDirectory,
+        "apps",
+        "api",
+        "src",
+        "modules",
+        "numeric",
+        "application",
+        "rivet-handler.ts",
+      ),
       "utf8",
     );
     expect(handlerCollisionSource).toContain("export const rivetHandler = async");
@@ -493,7 +518,9 @@ describe("scaffold-mock lifecycle", () => {
   }, 120000);
 
   it("safely renders quoted and escaped endpoint names in handler types", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-escaped-"));
+    const tempDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rivet-ts-scaffold-mock-escaped-"),
+    );
     const entryPath = path.join(tempDirectory, "contracts.ts");
     const outputDirectory = path.join(tempDirectory, "mock-app");
     const endpointName = 'Say "hello" \\ now';
@@ -505,17 +532,32 @@ describe("scaffold-mock lifecycle", () => {
         `  ${JSON.stringify(endpointName)}: Endpoint<{`,
         '    method: "GET";',
         '    route: "/api/escaped";',
-        '    response: string;',
+        "    response: string;",
         "  }>;",
         "}",
       ].join("\n"),
     );
 
-    const exitCode = await runCli(["scaffold-mock", "--entry", entryPath, "--out", outputDirectory]);
+    const exitCode = await runCli([
+      "scaffold-mock",
+      "--entry",
+      entryPath,
+      "--out",
+      outputDirectory,
+    ]);
     expect(exitCode).toBe(0);
 
     const useCaseSource = await fs.readFile(
-      path.join(outputDirectory, "apps", "api", "src", "modules", "escaped", "application", "say-hello-now.ts"),
+      path.join(
+        outputDirectory,
+        "apps",
+        "api",
+        "src",
+        "modules",
+        "escaped",
+        "application",
+        "say-hello-now.ts",
+      ),
       "utf8",
     );
     expect(useCaseSource).toContain(
@@ -544,7 +586,9 @@ describe("scaffold-mock lifecycle", () => {
       expected: 'same route-module binding "createRequest"',
     },
   ])("rejects $label collisions before writing files", async ({ endpoints, expected }) => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-collision-"));
+    const tempDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rivet-ts-scaffold-mock-collision-"),
+    );
     const entryPath = path.join(tempDirectory, "contracts.ts");
     const outputDirectory = path.join(tempDirectory, "mock-app");
     await fs.writeFile(
@@ -556,8 +600,8 @@ describe("scaffold-mock lifecycle", () => {
           `  ${JSON.stringify(endpoint)}: Endpoint<{`,
           `    method: "${endpoint === "Create" ? "POST" : "GET"}";`,
           `    route: "/api/collision/${index}";`,
-          ...(endpoint === "Create" ? ['    input: string;'] : []),
-          '    response: string;',
+          ...(endpoint === "Create" ? ["    input: string;"] : []),
+          "    response: string;",
           "  }>;",
         ]),
         "}",
@@ -576,7 +620,9 @@ describe("scaffold-mock lifecycle", () => {
   });
 
   it("rejects normalized contract artifact collisions before writing files", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-group-collision-"));
+    const tempDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rivet-ts-scaffold-mock-group-collision-"),
+    );
     const entryPath = path.join(tempDirectory, "contracts.ts");
     const outputDirectory = path.join(tempDirectory, "mock-app");
     await fs.writeFile(
@@ -606,7 +652,9 @@ describe("scaffold-mock lifecycle", () => {
   });
 
   it("derives safe module paths and route identifiers from arbitrary contract brands", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-mock-brands-"));
+    const tempDirectory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rivet-ts-scaffold-mock-brands-"),
+    );
     const entryPath = path.join(tempDirectory, "contracts.ts");
     const outputDirectory = path.join(tempDirectory, "mock-app");
     await fs.writeFile(
@@ -625,7 +673,13 @@ describe("scaffold-mock lifecycle", () => {
       ].join("\n"),
     );
 
-    const exitCode = await runCli(["scaffold-mock", "--entry", entryPath, "--out", outputDirectory]);
+    const exitCode = await runCli([
+      "scaffold-mock",
+      "--entry",
+      entryPath,
+      "--out",
+      outputDirectory,
+    ]);
     expect(exitCode).toBe(0);
 
     const apiSource = path.join(outputDirectory, "apps", "api", "src");
@@ -683,7 +737,13 @@ describe("scaffold-mock lifecycle", () => {
       ].join("\n"),
     );
 
-    const exitCode = await runCli(["scaffold-mock", "--entry", entryPath, "--out", outputDirectory]);
+    const exitCode = await runCli([
+      "scaffold-mock",
+      "--entry",
+      entryPath,
+      "--out",
+      outputDirectory,
+    ]);
     expect(exitCode).toBe(0);
 
     const appVueSource = await fs.readFile(
@@ -704,9 +764,7 @@ describe("scaffold-mock lifecycle", () => {
       "utf8",
     );
 
-    expect(downloadSource).toContain(
-      'return new Blob(["example"], { type: "application/pdf" });',
-    );
+    expect(downloadSource).toContain('return new Blob(["example"], { type: "application/pdf" });');
     expect(appVueSource).toContain("Typed client configured");
     expect(appVueSource).not.toContain('client.GET("/api/files/download")');
     await typecheckScaffoldedWorkspace(outputDirectory);

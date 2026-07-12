@@ -32,9 +32,7 @@ export const linkScaffoldDependencies = async (outputDirectory: string): Promise
       .catch(() => undefined);
   }
 
-  await fs
-    .symlink(projectRoot, path.join(targetModules, "rivet-ts"), "dir")
-    .catch(() => undefined);
+  await fs.symlink(projectRoot, path.join(targetModules, "rivet-ts"), "dir").catch(() => undefined);
 };
 
 const runTsc = async (tsconfigPath: string): Promise<void> => {
@@ -62,12 +60,7 @@ export const typecheckScaffoldedWorkspace = async (outputDirectory: string): Pro
   await runTsc(path.join(outputDirectory, "packages", "contracts", "tsconfig.json"));
 };
 
-export const PLUMB_EXECUTABLE = path.join(
-  process.env.HOME ?? "",
-  ".meridian",
-  "plumb",
-  "plumb",
-);
+export const PLUMB_EXECUTABLE = path.join(process.env.HOME ?? "", ".meridian", "plumb", "plumb");
 
 export const plumbAvailable = async (): Promise<boolean> => {
   try {

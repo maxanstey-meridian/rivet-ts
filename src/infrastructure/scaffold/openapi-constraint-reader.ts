@@ -194,12 +194,11 @@ export const enrichDocumentWithConstraints = (
  * spec's constraints before emission, leaving the emitter itself — and the
  * no-spec scaffold path — untouched.
  */
-export class ConstraintEnrichingMockProjectEmitter extends MockProjectEmitter {
+export class ConstraintEnrichingMockProjectEmitter implements MockProjectEmitter {
   private readonly inner: MockProjectEmitter;
   private readonly index: OpenApiConstraintIndex;
 
   public constructor(inner: MockProjectEmitter, index: OpenApiConstraintIndex) {
-    super();
     this.inner = inner;
     this.index = index;
   }

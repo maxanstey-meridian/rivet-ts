@@ -118,14 +118,9 @@ const EDITORCONFIG_SOURCE = [
   "",
 ].join("\n");
 
-const GITIGNORE_SOURCE = [
-  "node_modules/",
-  "dist/",
-  ".nuxt/",
-  ".output/",
-  ".DS_Store",
-  "",
-].join("\n");
+const GITIGNORE_SOURCE = ["node_modules/", "dist/", ".nuxt/", ".output/", ".DS_Store", ""].join(
+  "\n",
+);
 
 export const emitGoldenConfigSources = (): Record<string, string> => ({
   ".oxlintrc.json": OXLINTRC_SOURCE,
@@ -185,8 +180,8 @@ const emitTaskfile = (config: WorkspaceConfig): string => {
       "  generate:",
       "    desc: Regenerate schema.d.ts from openapi.json (replace the first command with your API's spec emitter)",
       "    cmds:",
-      '      # TODO: produce packages/contracts/generated/openapi.json from your API,',
-      '      # e.g. dotnet run --project <api.csproj path via Rivet.Tool> --output ./packages/contracts/generated',
+      "      # TODO: produce packages/contracts/generated/openapi.json from your API,",
+      "      # e.g. dotnet run --project <api.csproj path via Rivet.Tool> --output ./packages/contracts/generated",
       `      - pnpm --filter ${scope}/contracts exec openapi-typescript ./generated/openapi.json -o ./generated/schema.d.ts`,
       "",
       "  plumb:",
@@ -622,10 +617,7 @@ export const emitWorkspaceSkeleton = async (
  * S6 guard: refuse to scaffold into a directory that already has content,
  * unless the caller passed --force. Returns null when safe to proceed.
  */
-export const checkOutDirSafety = async (
-  outDir: string,
-  force: boolean,
-): Promise<string | null> => {
+export const checkOutDirSafety = async (outDir: string, force: boolean): Promise<string | null> => {
   let entries: string[];
   try {
     entries = await fs.readdir(outDir);

@@ -11,5 +11,7 @@ export type MockProjectEmitterConfig = {
 };
 
 export abstract class MockProjectEmitter {
+  private constructor() {}
+
   public abstract emit(config: MockProjectEmitterConfig): Promise<void>;
 }

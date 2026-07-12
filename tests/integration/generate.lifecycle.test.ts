@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { runCli } from "../../src/interfaces/cli/run-cli.js";
+import { runCli } from "../../src/cli.js";
 
 const SPEC = {
   openapi: "3.1.0",

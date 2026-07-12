@@ -303,10 +303,8 @@ const collectTypeReferences = (type: RivetType, references: Set<string>): void =
   }
 };
 
-export class TypeScriptRivetContractLowerer extends RivetContractLowerer {
-  public constructor(private readonly tsconfigPath?: string) {
-    super();
-  }
+export class TypeScriptRivetContractLowerer implements RivetContractLowerer {
+  public constructor(private readonly tsconfigPath?: string) {}
 
   /**
    * Single AST→document pass (X13 collapse): one tsconfig parse, one

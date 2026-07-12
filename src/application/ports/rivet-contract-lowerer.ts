@@ -1,7 +1,7 @@
 import { RivetContractLoweringResult } from "../../domain/rivet-contract-lowering-result.js";
 
 export abstract class RivetContractLowerer {
-  protected constructor() {}
+  private constructor() {}
 
   /**
    * Single pass from a TypeScript entry file to the lowered Rivet contract

@@ -163,13 +163,14 @@ describe.skipIf(!rivetToolAvailable)("Rivet.Tool --from OpenAPI smoke", () => {
     expect(create422?.content?.["application/json"]).toBeDefined();
 
     // Inline properties preserve optionality independently from nullability.
-    const inlineResponseSchema = openApi.paths["/api/inline-shape"]?.get?.responses["200"]?.content?.[
-      "application/json"
-    ]?.schema as { $ref?: string } | undefined;
+    const inlineResponseSchema = openApi.paths["/api/inline-shape"]?.get?.responses["200"]
+      ?.content?.["application/json"]?.schema as { $ref?: string } | undefined;
     const inlineComponentName = inlineResponseSchema?.$ref?.split("/").at(-1);
-    const inlineResponse = (inlineComponentName
-      ? openApi.components?.schemas?.[inlineComponentName]
-      : inlineResponseSchema) as
+    const inlineResponse = (
+      inlineComponentName
+        ? openApi.components?.schemas?.[inlineComponentName]
+        : inlineResponseSchema
+    ) as
       | {
           required?: string[];
           properties?: Record<string, { type?: string | string[] }>;

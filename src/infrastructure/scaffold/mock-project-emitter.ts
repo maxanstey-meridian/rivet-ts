@@ -8,13 +8,13 @@ import type { RivetType } from "../../domain/rivet-contract.js";
 import { toKebabCase } from "../codegen/kebab-case.js";
 import { collectLocalDependencies } from "../typescript/local-source-dependencies.js";
 import { generateEndpointMock } from "./mock-value-generator.js";
-import { zodSourceForType } from "./zod-schema-emitter.js";
 import {
   checkOutDirSafety,
   emitWorkspaceSkeleton,
   toPackageScope,
   type WorkspaceConfig,
 } from "./workspace-emitter.js";
+import { zodSourceForType } from "./zod-schema-emitter.js";
 
 /**
  * Contract-driven scaffold (`scaffold-mock`): lowers the user's contract entry
@@ -323,8 +323,7 @@ const buildHandlerDescriptors = (
         useCaseExportName: toSafeIdentifier(endpointName),
         pattern,
         body,
-        supportsDemoCall:
-          supportedSources.length === 0 && mock.result.kind === "value",
+        supportsDemoCall: supportedSources.length === 0 && mock.result.kind === "value",
         hasBody: patternParts.includes("body"),
         bodyType: bodyParam?.type,
       });
@@ -394,7 +393,8 @@ const assertUniqueRouteModuleBindings = (
           [handler.useCaseExportName, `endpoint "${handler.endpointName}" handler`] as const,
       ),
       ...bodyHandlers.map(
-        (handler) => [schemaExportName(handler), `endpoint "${handler.endpointName}" schema`] as const,
+        (handler) =>
+          [schemaExportName(handler), `endpoint "${handler.endpointName}" schema`] as const,
       ),
     ] as const;
 
@@ -534,7 +534,8 @@ const emitValidationBarrelSource = (
   const entries = groupsWithBodies.flatMap((group) =>
     handlers
       .filter(
-        (handler) => handler.contractName === group.contractName && handler.hasBody && handler.bodyType,
+        (handler) =>
+          handler.contractName === group.contractName && handler.hasBody && handler.bodyType,
       )
       .map((handler) => ({ group, exportName: schemaExportName(handler) })),
   );
@@ -614,9 +615,7 @@ const emitRoutesSource = (
       if (exact) {
         lines.push("        // The schema is exact, so the parsed value (with Zod transforms");
         lines.push("        // applied) IS the contract body — forward it, not the raw wire.");
-        lines.push(
-          `        return ${handler.useCaseExportName}({ ...input, body: result.data });`,
-        );
+        lines.push(`        return ${handler.useCaseExportName}({ ...input, body: result.data });`);
       } else {
         lines.push("        // The synthesized schema is shape-approximate (see the TODO in");
         lines.push("        // the validation file): parsing strips unknown keys, so forward");
@@ -666,7 +665,9 @@ const emitAppSource = (groups: readonly ContractGroup[]): string => {
   lines.push('// keeping the "local now, server later" behavioral parity promise.');
   lines.push("app.onError((error, context) => {");
   lines.push("  console.error(error);");
-  lines.push('  return context.json({ code: "internal_error", message: "Unexpected error." }, 500);');
+  lines.push(
+    '  return context.json({ code: "internal_error", message: "Unexpected error." }, 500);',
+  );
   lines.push("});");
   lines.push("");
 
@@ -713,7 +714,7 @@ export const buildBootstrapOpenApiDocument = (config: {
   };
 };
 
-export class FileSystemMockProjectEmitter extends MockProjectEmitter {
+export class FileSystemMockProjectEmitter implements MockProjectEmitter {
   public async emit(config: MockProjectEmitterConfig): Promise<void> {
     const sourceDependencies = await collectLocalDependencies(config.entryPath);
     const entryDependency = sourceDependencies.find(
@@ -786,9 +787,12 @@ export class FileSystemMockProjectEmitter extends MockProjectEmitter {
     );
 
     for (const group of groups) {
-      await fs.mkdir(path.join(apiSourceRoot, "modules", group.moduleDirectoryName, "application"), {
-        recursive: true,
-      });
+      await fs.mkdir(
+        path.join(apiSourceRoot, "modules", group.moduleDirectoryName, "application"),
+        {
+          recursive: true,
+        },
+      );
     }
 
     await Promise.all([

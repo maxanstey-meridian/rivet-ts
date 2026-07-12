@@ -1,30 +1,37 @@
-import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { MockProjectEmitter } from "../../application/ports/mock-project-emitter.js";
+import type { RivetContractLowerer } from "../../application/ports/rivet-contract-lowerer.js";
 import { LowerTsContractsToRivetContract } from "../../application/use-cases/lower-ts-contracts-to-rivet-contract.js";
 import { ScaffoldMockProject } from "../../application/use-cases/scaffold-mock-project.js";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
+import type { RivetContractDocument } from "../../domain/rivet-contract.js";
 import { ScaffoldMockConfig } from "../../domain/scaffold-mock-config.js";
-import { emitClientPackage } from "../../infrastructure/codegen/client-package-emitter.js";
-import {
-  EXAMPLE_CONTRACTS_SOURCE,
-  emitExampleProject,
-  emitFrontendOnlyProject,
-} from "../../infrastructure/scaffold/example-project-emitter.js";
-import { FileSystemMockProjectEmitter } from "../../infrastructure/scaffold/mock-project-emitter.js";
-import {
-  ConstraintEnrichingMockProjectEmitter,
-  readOpenApiConstraints,
-} from "../../infrastructure/scaffold/openapi-constraint-reader.js";
-import { TypeScriptRivetContractLowerer } from "../../infrastructure/typescript/typescript-rivet-contract-lowerer.js";
-import { ensureRivetBinary } from "../../infrastructure/vite/rivet-binary.js";
 
-type CliIO = {
+export type CliIO = {
   stdout: (text: string) => void;
   stderr: (text: string) => void;
+};
+
+type CliDependencies = {
+  readonly createLowerer: (tsconfigPath?: string) => RivetContractLowerer;
+  readonly createMockProjectEmitter: (spec?: unknown) => MockProjectEmitter;
+  readonly exampleContractsSource: string;
+  readonly emitExampleProject: (config: {
+    readonly outDir: string;
+    readonly projectName: string;
+    readonly force: boolean;
+    readonly document: RivetContractDocument;
+  }) => Promise<void>;
+  readonly emitFrontendOnlyProject: (config: {
+    readonly outDir: string;
+    readonly projectName: string;
+    readonly force: boolean;
+  }) => Promise<void>;
+  readonly emitClientPackage: (generatedRoot: string) => Promise<void>;
+  readonly runRivet: (args: readonly string[], io: CliIO) => Promise<number>;
 };
 
 const DEFAULT_IO: CliIO = {
@@ -110,7 +117,11 @@ const reportDiagnostics = (diagnostics: readonly ExtractionDiagnostic[], io: Cli
   }
 };
 
-export const runCli = async (args: readonly string[], io: CliIO = DEFAULT_IO): Promise<number> => {
+const runCli = async (
+  args: readonly string[],
+  io: CliIO,
+  dependencies: CliDependencies,
+): Promise<number> => {
   if (args.includes("--help") || args.includes("-h")) {
     io.stdout(USAGE);
     return 0;
@@ -122,19 +133,19 @@ export const runCli = async (args: readonly string[], io: CliIO = DEFAULT_IO): P
   }
 
   if (args[0] === "scaffold") {
-    return runScaffold(args.slice(1), io);
+    return runScaffold(args.slice(1), io, dependencies);
   }
 
   if (args[0] === "scaffold-mock") {
-    return runScaffoldMock(args.slice(1), io);
+    return runScaffoldMock(args.slice(1), io, dependencies);
   }
 
   if (args[0] === "generate") {
-    return runGenerate(args.slice(1), io);
+    return runGenerate(args.slice(1), io, dependencies);
   }
 
   if (args[0] === "rivet") {
-    return runRivetPassthrough(args.slice(1), io);
+    return runRivetPassthrough(args.slice(1), io, dependencies);
   }
 
   const parsed = parseFlags(args, ["--entry", "--out"]);
@@ -152,7 +163,7 @@ export const runCli = async (args: readonly string[], io: CliIO = DEFAULT_IO): P
     return 1;
   }
 
-  const lowerer = new TypeScriptRivetContractLowerer();
+  const lowerer = dependencies.createLowerer();
   const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
   const lowered = await lowerUseCase.execute({ entryPath });
 
@@ -186,7 +197,16 @@ export const runCli = async (args: readonly string[], io: CliIO = DEFAULT_IO): P
   return lowered.hasErrors ? 1 : 0;
 };
 
-const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<number> => {
+export const createRunCli =
+  (dependencies: CliDependencies) =>
+  (args: readonly string[], io: CliIO = DEFAULT_IO): Promise<number> =>
+    runCli(args, io, dependencies);
+
+const runScaffoldMock = async (
+  args: readonly string[],
+  io: CliIO,
+  dependencies: CliDependencies,
+): Promise<number> => {
   const parsed = parseFlags(
     args,
     ["--entry", "--out", "--name", "--tsconfig", "--spec"],
@@ -212,9 +232,8 @@ const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<numb
   // Spec present → enrich the lowered document with the spec's JSON Schema
   // constraints before Zod emission. No spec → plain emitter, a strict no-op
   // (TS-flavor scaffolds have no constraint source today).
-  let emitter: MockProjectEmitter = new FileSystemMockProjectEmitter();
+  let spec: unknown;
   if (specPath) {
-    let spec: unknown;
     try {
       spec = JSON.parse(await fs.readFile(specPath, "utf8")) as unknown;
     } catch (error) {
@@ -222,10 +241,10 @@ const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<numb
       io.stderr(`error: could not read OpenAPI spec at ${specPath}: ${message}\n`);
       return 1;
     }
-    emitter = new ConstraintEnrichingMockProjectEmitter(emitter, readOpenApiConstraints(spec));
   }
 
-  const lowerer = new TypeScriptRivetContractLowerer(tsconfigPath);
+  const emitter = dependencies.createMockProjectEmitter(spec);
+  const lowerer = dependencies.createLowerer(tsconfigPath);
   const useCase = new ScaffoldMockProject(lowerer, emitter);
 
   try {
@@ -256,19 +275,17 @@ const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<numb
  * bootstrap artifacts therefore can never drift from what the emitted
  * contracts.ts actually declares.
  */
-const lowerExampleEntry = async () => {
+const lowerExampleEntry = async (dependencies: CliDependencies) => {
   const stagingDir = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-"));
 
   try {
     // ../../../ is the package root from BOTH src/interfaces/cli (tests run
     // the TS directly) and dist/interfaces/cli (the shipped CLI).
-    const packageTypesPath = fileURLToPath(
-      new URL("../../../dist/index.d.ts", import.meta.url),
-    );
+    const packageTypesPath = fileURLToPath(new URL("../../../dist/index.d.ts", import.meta.url));
     const entryPath = path.join(stagingDir, "contracts.ts");
     const tsconfigPath = path.join(stagingDir, "tsconfig.json");
 
-    await fs.writeFile(entryPath, EXAMPLE_CONTRACTS_SOURCE);
+    await fs.writeFile(entryPath, dependencies.exampleContractsSource);
     await fs.writeFile(
       tsconfigPath,
       JSON.stringify(
@@ -290,14 +307,18 @@ const lowerExampleEntry = async () => {
       ),
     );
 
-    const lowerer = new TypeScriptRivetContractLowerer(tsconfigPath);
+    const lowerer = dependencies.createLowerer(tsconfigPath);
     return await lowerer.lower(entryPath);
   } finally {
     await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
   }
 };
 
-const runScaffold = async (args: readonly string[], io: CliIO): Promise<number> => {
+const runScaffold = async (
+  args: readonly string[],
+  io: CliIO,
+  dependencies: CliDependencies,
+): Promise<number> => {
   const parsed = parseFlags(args, ["--out", "--name"], ["--force", "--no-api"]);
 
   if (parsed.errors.length > 0) {
@@ -316,7 +337,7 @@ const runScaffold = async (args: readonly string[], io: CliIO): Promise<number> 
 
   try {
     if (parsed.switches.has("--no-api")) {
-      await emitFrontendOnlyProject({
+      await dependencies.emitFrontendOnlyProject({
         outDir,
         projectName,
         force: parsed.switches.has("--force"),
@@ -327,7 +348,7 @@ const runScaffold = async (args: readonly string[], io: CliIO): Promise<number> 
       return 0;
     }
 
-    const lowered = await lowerExampleEntry();
+    const lowered = await lowerExampleEntry(dependencies);
     reportDiagnostics(lowered.diagnostics, io);
 
     if (lowered.hasErrors) {
@@ -335,7 +356,7 @@ const runScaffold = async (args: readonly string[], io: CliIO): Promise<number> 
       return 1;
     }
 
-    await emitExampleProject({
+    await dependencies.emitExampleProject({
       outDir,
       projectName,
       force: parsed.switches.has("--force"),
@@ -352,7 +373,11 @@ const runScaffold = async (args: readonly string[], io: CliIO): Promise<number> 
   }
 };
 
-const runGenerate = async (args: readonly string[], io: CliIO): Promise<number> => {
+const runGenerate = async (
+  args: readonly string[],
+  io: CliIO,
+  dependencies: CliDependencies,
+): Promise<number> => {
   const parsed = parseFlags(args, ["--generated-root"]);
 
   if (parsed.errors.length > 0) {
@@ -368,7 +393,7 @@ const runGenerate = async (args: readonly string[], io: CliIO): Promise<number> 
   }
 
   try {
-    await emitClientPackage(generatedRoot);
+    await dependencies.emitClientPackage(generatedRoot);
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -383,24 +408,15 @@ const runGenerate = async (args: readonly string[], io: CliIO): Promise<number> 
  * Scaffolded `task generate` pipelines call this instead of a bare `rivet`
  * that is never on PATH (GAPS 5.1 exit-127).
  */
-const runRivetPassthrough = async (args: readonly string[], io: CliIO): Promise<number> => {
+const runRivetPassthrough = async (
+  args: readonly string[],
+  io: CliIO,
+  dependencies: CliDependencies,
+): Promise<number> => {
   const passthroughArgs = args[0] === "--" ? args.slice(1) : [...args];
 
   try {
-    const binary = await ensureRivetBinary(
-      process.env.RIVET_VERSION ? { version: process.env.RIVET_VERSION } : undefined,
-    );
-
-    return await new Promise<number>((resolve) => {
-      const child = execFile(binary.executablePath, passthroughArgs);
-      child.stdout?.on("data", (chunk: string | Buffer) => io.stdout(chunk.toString()));
-      child.stderr?.on("data", (chunk: string | Buffer) => io.stderr(chunk.toString()));
-      child.on("error", (error) => {
-        io.stderr(`${error.message}\n`);
-        resolve(1);
-      });
-      child.on("close", (code) => resolve(code ?? 1));
-    });
+    return await dependencies.runRivet(passthroughArgs, io);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     io.stderr(`error: ${message}\n`);

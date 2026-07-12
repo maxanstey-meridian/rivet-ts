@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { runCli } from "../../src/interfaces/cli/run-cli.js";
+import { runCli } from "../../src/cli.js";
 import { emitGoldenConfigSources } from "../../src/infrastructure/scaffold/workspace-emitter.js";
 import {
   PLUMB_EXECUTABLE,
@@ -26,13 +26,10 @@ describe("scaffold lifecycle", () => {
     outputDirectory = path.join(tempDirectory, "demo-app");
 
     const stderr: string[] = [];
-    const exitCode = await runCli(
-      ["scaffold", "--out", outputDirectory, "--name", "demo"],
-      {
-        stdout: () => undefined,
-        stderr: (text) => stderr.push(text),
-      },
-    );
+    const exitCode = await runCli(["scaffold", "--out", outputDirectory, "--name", "demo"], {
+      stdout: () => undefined,
+      stderr: (text) => stderr.push(text),
+    });
 
     expect(exitCode).toBe(0);
     expect(stderr).toHaveLength(0);
@@ -54,11 +51,45 @@ describe("scaffold lifecycle", () => {
       path.join("apps", "api", "src", "modules", "quotes", "quotes-validation.ts"),
       path.join("apps", "api", "src", "modules", "quotes", "quotes.module.ts"),
       path.join("apps", "api", "src", "modules", "quotes", "domain", "quote.ts"),
-      path.join("apps", "api", "src", "modules", "quotes", "application", "ports", "quote-store.ts"),
+      path.join(
+        "apps",
+        "api",
+        "src",
+        "modules",
+        "quotes",
+        "application",
+        "ports",
+        "quote-store.ts",
+      ),
       path.join("apps", "api", "src", "modules", "quotes", "application", "add-quote.ts"),
-      path.join("apps", "api", "src", "modules", "quotes", "infrastructure", "in-memory-quote-store.ts"),
-      path.join("apps", "api", "src", "modules", "quotes", "infrastructure", "dexie-quote-store.ts"),
-      path.join("apps", "api", "src", "modules", "users", "application", "ports", "current-user.ts"),
+      path.join(
+        "apps",
+        "api",
+        "src",
+        "modules",
+        "quotes",
+        "infrastructure",
+        "in-memory-quote-store.ts",
+      ),
+      path.join(
+        "apps",
+        "api",
+        "src",
+        "modules",
+        "quotes",
+        "infrastructure",
+        "dexie-quote-store.ts",
+      ),
+      path.join(
+        "apps",
+        "api",
+        "src",
+        "modules",
+        "users",
+        "application",
+        "ports",
+        "current-user.ts",
+      ),
       path.join("apps", "api", "src", "modules", "users", "users-routes.ts"),
       path.join("apps", "api", "src", "modules", "users", "users.module.ts"),
       path.join("apps", "api", "src", "validation.ts"),
@@ -135,9 +166,9 @@ describe("scaffold lifecycle", () => {
     await linkScaffoldDependencies(outputDirectory);
     const apiSrc = path.join(outputDirectory, "apps", "api", "src");
     const { createApp } = (await import(path.join(apiSrc, "app.ts"))) as {
-      createApp: (
-        useCases: unknown,
-      ) => { request: (input: string, init?: RequestInit) => Promise<Response> };
+      createApp: (useCases: unknown) => {
+        request: (input: string, init?: RequestInit) => Promise<Response>;
+      };
     };
     const { composeApp } = (await import(path.join(apiSrc, "composition.ts"))) as {
       composeApp: (adapters: { quoteStore: unknown }) => unknown;
@@ -333,4 +364,3 @@ describe("scaffold --no-api lifecycle", () => {
     await expectPlumbClean(outputDirectory);
   }, 60000);
 });
-

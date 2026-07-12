@@ -3,11 +3,16 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { Plugin, ResolvedConfig } from "vite";
+import { resolveRivetBinaryConfig } from "./config/rivet-binary.js";
 import { emitClientPackage } from "./infrastructure/codegen/client-package-emitter.js";
 import { toKebabCase } from "./infrastructure/codegen/kebab-case.js";
 import { collectLocalDependencies } from "./infrastructure/typescript/local-source-dependencies.js";
 import { TypeScriptRivetContractLowerer } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
-import { ensureRivetBinary, type RivetBinaryConfig } from "./infrastructure/vite/rivet-binary.js";
+import {
+  ensureRivetBinary,
+  type ResolvedRivetBinaryConfig,
+  type RivetBinaryConfig,
+} from "./infrastructure/vite/rivet-binary.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -50,7 +55,7 @@ type NormalizedPluginOptions = {
   readonly runtimeContractPath: string;
   readonly clientOutDir: string;
   readonly openApiPath: string;
-  readonly binaryConfig?: RivetBinaryConfig;
+  readonly binaryConfig: ResolvedRivetBinaryConfig;
 };
 
 const resolveEntryPath = (options: RivetTsVitePluginOptions, baseDir: string): string => {
@@ -93,7 +98,7 @@ const normalizeOptions = (
     runtimeContractPath,
     clientOutDir,
     openApiPath: path.join(clientOutDir, "openapi.json"),
-    binaryConfig: options.rivet,
+    binaryConfig: resolveRivetBinaryConfig(options.rivet),
   };
 };
 

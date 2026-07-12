@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -34,22 +33,6 @@ const resolveRid = (): string => {
   throw new Error(
     `Unsupported platform for Rivet binary auto-install: ${process.platform} ${process.arch}.`,
   );
-};
-
-const getDefaultCacheRoot = (): string => {
-  if (process.platform === "win32") {
-    return process.env.LOCALAPPDATA
-      ? path.join(process.env.LOCALAPPDATA, "rivet-ts")
-      : path.join(os.homedir(), "AppData", "Local", "rivet-ts");
-  }
-
-  if (process.platform === "darwin") {
-    return path.join(os.homedir(), "Library", "Caches", "rivet-ts");
-  }
-
-  return process.env.XDG_CACHE_HOME
-    ? path.join(process.env.XDG_CACHE_HOME, "rivet-ts")
-    : path.join(os.homedir(), ".cache", "rivet-ts");
 };
 
 const ensureOk = async (response: Response, message: string): Promise<void> => {
@@ -86,6 +69,10 @@ export type RivetBinaryConfig = {
   readonly cacheDir?: string;
 };
 
+export type ResolvedRivetBinaryConfig = RivetBinaryConfig & {
+  readonly cacheDir: string;
+};
+
 type GitHubReleaseAsset = {
   readonly name: string;
   readonly digest?: string;
@@ -120,7 +107,7 @@ const downloadReleaseAsset = async (
 };
 
 export const ensureRivetBinary = async (
-  config: RivetBinaryConfig | undefined,
+  config: ResolvedRivetBinaryConfig,
 ): Promise<ResolvedRivetBinary> => {
   if (config?.binaryPath) {
     // The rid is informational on this branch; resolving it eagerly would
@@ -139,12 +126,12 @@ export const ensureRivetBinary = async (
     };
   }
 
-  const autoInstall = config?.autoInstall ?? true;
-  const version = config?.version ?? "0.40.0";
+  const autoInstall = config.autoInstall ?? true;
+  const version = config.version ?? "0.40.0";
   const tagName = normalizeTagName(version);
   const rid = resolveRid();
   const executableName = process.platform === "win32" ? `rivet-${rid}.exe` : `rivet-${rid}`;
-  const cacheRoot = config?.cacheDir ? path.resolve(config.cacheDir) : getDefaultCacheRoot();
+  const cacheRoot = path.resolve(config.cacheDir);
   const installDirectory = path.join(cacheRoot, "rivet", tagName, rid);
   const executablePath = path.join(installDirectory, executableName);
 

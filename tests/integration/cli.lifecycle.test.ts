@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { runCli } from "../../src/interfaces/cli/run-cli.js";
+import { runCli } from "../../src/cli.js";
 import { expectValidContractDocument } from "../contract-schema.js";
 
 const execFileAsync = promisify(execFile);

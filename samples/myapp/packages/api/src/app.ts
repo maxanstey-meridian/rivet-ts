@@ -3,9 +3,9 @@ import { registerRivetHonoRoutes } from "rivet-ts/hono";
 import type { MembersContract } from "#contract";
 import contract from "../generated/api.contract.json";
 import { compose } from "./app/composition.js";
-import { tryMapContractError } from "./app/map-contract-error.js";
-import { createHandler } from "./modules/members/interface/http/create.handler.js";
-import { listHandler } from "./modules/members/interface/http/list.handler.js";
+import { tryMapContractError } from "./interface/http/map-contract-error.js";
+import { createHandler } from "./modules/members/interface/http/create.js";
+import { listHandler } from "./modules/members/interface/http/list.js";
 
 compose();
 

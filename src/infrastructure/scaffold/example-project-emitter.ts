@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { RivetContractDocument } from "../../domain/rivet-contract.js";
 import {
   buildBootstrapOpenApiDocument,
   readPackageManifest,
@@ -12,7 +13,6 @@ import {
   toPackageScope,
   type WorkspaceConfig,
 } from "./workspace-emitter.js";
-import type { RivetContractDocument } from "../../domain/rivet-contract.js";
 
 /**
  * Contract-less scaffold (`rivet-ts scaffold`): the golden-shape workspace
@@ -588,15 +588,15 @@ const buildAppVueSource = (packageScope: string): string =>
     "",
     "// The SAME schema validates this form and the api's front door — edit a",
     "// rule in modules/quotes/quotes-validation.ts and both change together.",
-    "const state = reactive({ text: \"\", author: \"\" });",
+    'const state = reactive({ text: "", author: "" });',
     "const serverError = ref<string | null>(null);",
     "const quotes = ref<Array<{ id: string; text: string; author: string }>>([]);",
     "",
     "// openapi-fetch never throws on HTTP errors — always handle { data, error }.",
-    "const { data: me, error: meError } = await client.GET(\"/api/me\");",
+    'const { data: me, error: meError } = await client.GET("/api/me");',
     "",
     "async function refreshQuotes() {",
-    "  const { data, error } = await client.GET(\"/api/quotes\");",
+    '  const { data, error } = await client.GET("/api/quotes");',
     "  if (!error) {",
     "    quotes.value = data ?? [];",
     "  }",
@@ -606,13 +606,13 @@ const buildAppVueSource = (packageScope: string): string =>
     "",
     "async function onSubmit() {",
     "  serverError.value = null;",
-    "  const { error } = await client.POST(\"/api/quotes\", { body: { ...state } });",
+    '  const { error } = await client.POST("/api/quotes", { body: { ...state } });',
     "  if (error) {",
-    "    serverError.value = (error as { message?: string }).message ?? \"Request failed.\";",
+    '    serverError.value = (error as { message?: string }).message ?? "Request failed.";',
     "    return;",
     "  }",
-    "  state.text = \"\";",
-    "  state.author = \"\";",
+    '  state.text = "";',
+    '  state.author = "";',
     "  await refreshQuotes();",
     "}",
     "</script>",
@@ -620,7 +620,7 @@ const buildAppVueSource = (packageScope: string): string =>
     "<template>",
     "  <UApp>",
     '    <UContainer class="py-10 space-y-6">',
-    "      <h1 class=\"text-xl font-semibold\">Quotes</h1>",
+    '      <h1 class="text-xl font-semibold">Quotes</h1>',
     '      <p v-if="me" class="text-sm text-muted">Signed in as {{ me.name }}</p>',
     '      <UAlert v-if="meError" color="error" title="Could not load the current user." />',
     "",
@@ -635,7 +635,7 @@ const buildAppVueSource = (packageScope: string): string =>
     '        <UAlert v-if="serverError" color="error" :title="serverError" />',
     "      </UForm>",
     "",
-    "      <ul class=\"space-y-2\">",
+    '      <ul class="space-y-2">',
     '        <li v-for="quote in quotes" :key="quote.id">',
     "          <blockquote>{{ quote.text }} — <em>{{ quote.author }}</em></blockquote>",
     "        </li>",
@@ -817,7 +817,10 @@ export const emitExampleProject = async (config: ExampleProjectConfig): Promise<
       PORT_QUOTE_STORE_SOURCE,
     ),
     writeApi(path.join("modules", "quotes", "application", "ports", "clock.ts"), PORT_CLOCK_SOURCE),
-    writeApi(path.join("modules", "quotes", "application", "add-quote.ts"), USE_CASE_ADD_QUOTE_SOURCE),
+    writeApi(
+      path.join("modules", "quotes", "application", "add-quote.ts"),
+      USE_CASE_ADD_QUOTE_SOURCE,
+    ),
     writeApi(
       path.join("modules", "quotes", "application", "list-quotes.ts"),
       USE_CASE_LIST_QUOTES_SOURCE,
@@ -831,7 +834,10 @@ export const emitExampleProject = async (config: ExampleProjectConfig): Promise<
       path.join("modules", "quotes", "infrastructure", "dexie-quote-store.ts"),
       INFRA_DEXIE_STORE_SOURCE,
     ),
-    writeApi(path.join("modules", "quotes", "infrastructure", "system-clock.ts"), INFRA_CLOCK_SOURCE),
+    writeApi(
+      path.join("modules", "quotes", "infrastructure", "system-clock.ts"),
+      INFRA_CLOCK_SOURCE,
+    ),
     writeApi(path.join("modules", "users", "domain", "user.ts"), DOMAIN_USER_SOURCE),
     writeApi(
       path.join("modules", "users", "application", "ports", "current-user.ts"),
