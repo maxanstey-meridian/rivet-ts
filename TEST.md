@@ -1,267 +1,275 @@
-# Zero-Loss Corpus Plan
+# Zero-Loss Corpus Programme
 
-Replace the ratchet gate with a mandatory zero-loss corpus gate first, then treat every finding it emits as the implementation backlog until every corpus is clean.
+Rivet's OpenAPI importer must preserve every supported contract fact through:
 
-No warnings-as-support, no baseline-encoded losses, no selective corpus, and no documented limitation counted as passing.
+```text
+source OpenAPI -> generated C# -> emitted OpenAPI -> second import/emission
+```
+
+rivet-ts must independently prove:
+
+```text
+TypeScript -> contract JSON -> pinned Rivet.Tool -> emitted OpenAPI
+```
+
+No warning, marker, baseline, documented limitation, or selective comparison counts as support. A construct is supported only when the applicable strict gate proves it losslessly.
+
+## Current State
+
+As of 2026-07-13:
+
+```text
+Corpora passing losslessly: 13/25
+Total remaining operation findings: unknown until all 12 run through the strict gate
+Total remaining schema findings: unknown until all 12 run through the strict gate
+Unmatched operations: 0 across the verified thirteen; unknown globally
+Unmatched schemas: 0 across the verified thirteen; unknown globally
+Lossy diagnostics: 0 for valid constructs in the verified thirteen; unknown globally
+CI skips: 4 known skip-capable rivet-ts gates; the Rivet corpus suite is absent from CI
+```
+
+The verified profile covers 1,599 of 8,675 manifest operations and 2,081 of 11,952 named schemas. The remaining 12 corpora contain 7,076 operations and 9,871 named schemas.
+
+The physical corpus and retained audit artifacts are local and gitignored in `rivet`. The 13/25 result is therefore verified local evidence, not reproducible CI evidence.
+
+### Verified Corpora
+
+| Corpus      | Operations | Named schemas | Status                                              |
+| ----------- | ---------: | ------------: | --------------------------------------------------- |
+| Okta        |         19 |             0 | Verified clean                                      |
+| Petstore v2 |         20 |             6 | Verified clean                                      |
+| Petstore v3 |         19 |             6 | Verified clean                                      |
+| Twilio      |        197 |           148 | Verified clean                                      |
+| Square      |        200 |           807 | Verified clean                                      |
+| DocuSign    |        393 |           565 | Verified clean                                      |
+| Notion      |         13 |             0 | Verified clean with one classified source defect    |
+| CircleCI    |         22 |            28 | Verified clean with one classified source defect    |
+| Firebase    |         21 |            40 | Verified clean                                      |
+| Docker      |        105 |            78 | Verified clean with one classified source defect    |
+| SendGrid    |        334 |           145 | Verified clean with eight classified source defects |
+| Spotify     |         89 |            93 | Verified clean                                      |
+| Asana       |        167 |           165 | Verified clean                                      |
+| **Total**   |  **1,599** |     **2,081** | **13/25**                                           |
+
+The eleven source defects are exact, hash-bound classifications rather than tolerated valid-contract loss:
+
+- Notion: a header parameter has an empty name.
+- CircleCI: `Content-Type` is declared as a header parameter instead of through `requestBody.content`.
+- Docker: `Content-Type` is declared as a header parameter instead of through `requestBody.content`.
+- SendGrid: seven `Authorization` and one `Accept` reserved header parameters are declared as ordinary header parameters.
+
+### Remaining Corpora
+
+| Corpus       | Operations | Named schemas | Current classification                            |
+| ------------ | ---------: | ------------: | ------------------------------------------------- |
+| Bitbucket    |        303 |           194 | Wider mixed object/dictionary and link work       |
+| Box          |        296 |           297 | Needs strict census                               |
+| Cloudflare   |      2,700 |         5,565 | Broad operation and schema surface                |
+| DigitalOcean |        290 |             0 | Needs strict census                               |
+| Discord      |        229 |           499 | General union/const algebra                       |
+| GitHub       |      1,099 |           916 | Broad union and mixed object/dictionary surface   |
+| Jira         |        487 |           544 | Links, XML, and mixed object/dictionary work      |
+| Kubernetes   |        248 |           251 | Needs strict census                               |
+| Slack        |        174 |            48 | Union and mixed object/dictionary work            |
+| Stripe       |        587 |         1,357 | General union/encoding algebra                    |
+| Vercel       |        290 |            65 | General union and mixed object/dictionary algebra |
+| Zoom         |        373 |           135 | Composition plus unsupported TRACE operations     |
+| **Total**    |  **7,076** |     **9,871** | **12 remaining**                                  |
+
+OpenAI is not in the current 25-corpus manifest. It must be acquired, pinned, hashed, inventoried, and added explicitly before it can increase the denominator; it is not implicitly covered.
 
 ## Execution Contract
 
-- Do not stop at green unit tests.
-- Do not stop when findings decrease.
-- Do not convert losses into warnings, diagnostics, markers, documentation, or baseline entries.
-- A successful lossy import is a failing test.
-- A genuinely unsupported construct must initially fail the command, not silently produce degraded output.
-- The final objective is to implement those constructs so the corpus succeeds losslessly.
-- Do not raise tolerated counts.
-- Do not remove assertions, fixtures, corpus entries, or comparison categories.
-- Do not add skips or environment-dependent self-skips.
-- Do not call anything supported while its finding count is non-zero or its corpus is unexecuted.
+- Do not stop at green unit tests or decreasing finding counts.
+- A successful lossy import is a failing result.
+- Do not convert loss into warnings, diagnostics, markers, documentation, source-defect entries, or baseline allowances.
+- Source-defect classification is permitted only for an exact invalid source construct, bound to corpus hash, JSON pointer, reason, diagnostic, and cardinality.
+- Do not raise tolerated counts, remove assertions, remove corpus entries, suppress comparison categories, or add environment-dependent skips.
+- Do not call a construct or corpus supported while its valid finding count is non-zero or it has not executed.
+- After every root-cause fix, run focused tests, the full Rivet suite, every currently verified corpus, and the candidate corpus.
+- A corpus joins `verifiedCorpusIds` only after its complete first pass, fixed point, inventory, integrity, diagnostic, marker, and physical audit gates are green.
 
 ## Definition Of Done
 
 Every pinned corpus must satisfy all of these:
 
-- Import command succeeds.
-- Generated C# compiles.
-- Re-emission succeeds without lossy diagnostics.
-- Original operation count equals emitted operation count.
-- Original and emitted operation sets are identical.
-- Every path and method is accounted for.
-- Every parameter is preserved in name, location, requiredness, type, format, enum, and default.
-- Every request body is preserved in presence, requiredness, content types, schema, and encoding.
-- Every response is preserved in status, content types, schema, headers, and examples where supported by the contract model.
+- Import succeeds through the production CLI.
+- Generated C# compiles through the loose-file path.
+- Re-emission succeeds without lossy diagnostics or unsupported markers.
+- Original and emitted operation counts and operation sets are identical.
+- Every parameter preserves name, location, requiredness, schema, enum, format, default, style, and explode where applicable.
+- Every request body preserves presence, requiredness, content types, schema, examples, and encoding.
+- Every response preserves status, content types, schema, headers, examples, and links where applicable.
 - Security schemes and operation security requirements are preserved.
-- Every original schema is accounted for.
+- Every original component identity is accounted for, including unused and shared components.
 - Every schema preserves type, composition, properties, requiredness, nullability, enums, formats, defaults, constraints, and `additionalProperties`.
-- Comparator findings are empty.
-- Tool warnings indicating degradation are empty.
-- The same mandatory suite runs in CI.
-- rivet-ts's TS -> contract JSON -> Rivet -> OpenAPI path runs against the real Rivet tool in CI.
+- Every local reference resolves and every reviewed vendor extension has an explicit preserve, map, or exclude disposition.
+- Comparator findings for valid constructs are empty.
+- The second import/emission is a declared semantic fixed point.
+- The same mandatory suite runs from a clean checkout in CI with reproducibly acquired corpus artifacts.
+- rivet-ts runs its TypeScript-to-OpenAPI path against the exact pinned Rivet tool in CI without skips or tolerated warnings.
 
 Completion means zero unexplained findings across every corpus, not "no regression from yesterday."
 
-## Phase 1: Fix The Gate
+## Immediate Enabler: All-25 Census
 
-1. Create a committed corpus manifest containing every supported corpus.
-2. Record source, version, SHA-256, OpenAPI version, and expected operation/schema counts.
-3. Make the test enumerate the manifest rather than hard-code GitHub.
-4. Fail if a manifest corpus is unavailable.
-5. Remove `Category=Local` exclusion from the release path.
-6. Make CI acquire every corpus reproducibly.
-7. Remove conditional skipping from the cross-repository rivet-ts test.
-8. Make CI check out or install the exact pinned Rivet version required by rivet-ts.
+Before claiming exact global remaining totals, run all 12 unverified corpora through the current production pipeline and retain the same artifacts as the verified gate:
 
-The manifest must include every current local corpus, including GitHub, Discord, Stripe, Notion, Slack, Box, Asana, Bitbucket, CircleCI, DigitalOcean, Firebase, Okta, Petstore, SendGrid, Spotify, Square, Vercel, Zoom, and any others discovered under `openapi/`.
+- source hash and inventory;
+- import stdout/stderr and generated C#;
+- loose-file compilation;
+- first emitted OpenAPI;
+- structured comparator summary and details;
+- unsupported-marker scan;
+- integrity and component-identity checks;
+- second import/emission and fixed-point comparison.
 
-OpenAI must be added as a pinned corpus rather than treated as implicitly covered.
+The census is reporting, not a baseline. Its findings remain failures and are grouped by root cause. It must not weaken the verified 13/25 gate or make unverified corpora appear supported.
 
-## Phase 2: Make The Comparator Complete
+## Completed Corpus Cohort
 
-1. Give the comparator explicit exit semantics:
-   - `0`: exact semantic match.
-   - `1`: semantic findings exist.
-   - `2`: comparator or input failure.
-2. Fail on `only_orig` operations.
-3. Fail on `only_reemit` operations.
-4. Compare original and emitted total operation counts.
-5. Compare path-level parameters as well as operation-level parameters.
-6. Account for every original schema.
-7. Fail on unmatched schemas instead of silently omitting them from property comparison.
-8. Compare response headers.
-9. Compare request-body encoding metadata.
-10. Compare callbacks, links, discriminators, XML metadata, examples, and other modeled OpenAPI fields.
-11. Ensure every human-readable finding is present in structured JSON.
-12. Fail if stdout/stderr reports a degradation absent from structured findings.
-13. Add self-tests proving the comparator catches one deliberate mutation for every compared field.
+The agreed order is:
+
+```text
+Docker -> SendGrid -> Spotify -> Asana
+```
+
+All four are now admitted to the verified profile after exact first-pass comparison, loose-file compilation, fixed-point comparison, inventory/disposition review, and independent retained-artifact audit.
+
+### 1. Docker
+
+Verified result: 105 operations and 78 named schemas, with one exact `RIV3021` source defect. All valid finding categories and fixed-point findings are empty.
+
+### 2. SendGrid
+
+Verified result: 334 operations and 145 named schemas, with seven exact `RIV3022` and one exact `RIV3023` source defects. All valid finding categories and fixed-point findings are empty.
+
+### 3. Spotify
+
+Verified result: 89 operations and 93 named schemas with no source defects, warnings, markers, valid findings, or fixed-point findings.
+
+### 4. Asana
+
+Verified result: 167 operations and 165 named schemas with no source defects, warnings, markers, valid findings, or fixed-point findings.
+
+## Later Corpus Tiers
+
+### Strict Census Required
+
+Box, DigitalOcean, and Kubernetes need current strict first-pass reports before they can be ranked honestly.
+
+### Bounded but Wider
+
+GitHub, Bitbucket, Jira, Zoom, and parts of Cloudflare contain non-algebra work worth separating from their hard remainder:
+
+- response links and reusable linked components;
+- XML metadata;
+- TRACE and other operation-model gaps;
+- status ranges and informational responses;
+- request/response media and encoding metadata;
+- mixed `properties` plus `additionalProperties` identities;
+- document and description provenance.
+
+Each root cause should be implemented and tested independently. Do not pull a whole corpus into the verified profile while any other valid finding remains.
+
+### General Algebra Tier
+
+Discord, Stripe, Vercel, Slack, and the algebra-heavy portions of Cloudflare and GitHub require broader representation work, including:
+
+- unrestricted `oneOf`, `anyOf`, and `allOf` combinations;
+- const unions and heterogeneous scalar leaves;
+- mixed object/dictionary schemas;
+- discriminators and mappings outside the current reversible shapes;
+- recursive and mutually recursive algebra;
+- schema-valued combinations that cannot currently become a faithful C# type.
+
+This tier follows the Docker/SendGrid/Spotify/Asana cohort. It must not be approximated through `JsonElement`, warnings, or opaque fallback while claiming zero loss.
+
+## Comparator Work
+
+The comparator remains part of the product gate, not a reporting convenience. For every modeled field it must:
+
+- return `0` for exact semantic match, `1` for findings, and `2` for comparator/input failure;
+- compare operation counts and both missing and invented operations;
+- compare path-level and operation-level parameters;
+- account for every component and schema identity;
+- compare request encoding, response headers, links, callbacks, discriminators, XML, examples, constraints, and composition where present;
+- put every human-readable finding in structured JSON;
+- fail if process output reports degradation absent from structured findings;
+- have a mutation test proving every comparison category can fail.
 
 Semantically equivalent normalization is allowed only when the comparator proves equivalence. It cannot be dismissed through category suppression.
 
-## Phase 3: Replace The Baseline Assertion
+## rivet-ts Interoperability Lane
 
-Delete the acceptance rule:
+The corpus programme belongs to Rivet's OpenAPI import/emission path. rivet-ts has a separate inverse obligation: representative TypeScript contracts must lower to contract JSON and produce the expected OpenAPI through the real Rivet tool.
 
-```text
-current findings <= baseline findings
-```
+Current state:
 
-Replace it with:
+- `tests/integration/rivet-tool-from.lifecycle.test.ts` passes locally against the Rivet checkout;
+- CI does not provision Rivet/.NET and `describe.skipIf` skips that test when the local project is absent;
+- the test uses a machine-specific fallback project path;
+- one multipart warning is tolerated;
+- optional query requiredness and `queryAuth` assertions remain deliberately loose;
+- the final OpenAPI is checked through selected assertions rather than the semantic comparator;
+- three scaffold lifecycle checks return early when Plumb is absent;
+- the downloadable Rivet binary default is pinned to `0.40.0` in code.
 
-```text
-all finding categories are empty
-unmatched operations are empty
-unmatched schemas are empty
-lossy diagnostics are empty
-```
+Required work:
 
-The historical baseline may remain as an audit artifact, but it must not determine pass/fail.
+1. Provision the exact pinned Rivet release and .NET SDK in CI.
+2. Remove the local-path fallback and `describe.skipIf` from the interop gate.
+3. Provision Plumb or otherwise make its three doctrine gates mandatory in CI.
+4. Eliminate the tolerated multipart warning by preserving the required type definition.
+5. Tighten optional query and `queryAuth` assertions through the final emitted OpenAPI.
+6. Add representative TS fixtures for every resolved root-cause family that TS can author.
+7. Compare the final OpenAPI semantically instead of relying only on selected assertions.
+8. Exercise scaffolded output through build, typecheck, runtime registration, OpenAPI emission, and zero-Plumb validation.
+9. Verify that rivet-ts's vendored contract schema exactly matches Rivet's source schema.
 
-The first strict run must be committed as a deliberately red test suite. That red output becomes the work queue.
-
-## Phase 4: Capture The Full Backlog
-
-For every corpus, generate:
-
-- Exact operation findings.
-- Exact schema findings.
-- Import diagnostics.
-- Emit diagnostics.
-- Compilation failures.
-- Unmatched operations.
-- Unmatched schemas.
-- Comparator-internal omissions.
-
-Group findings by root cause, not merely category count.
-
-The initial GitHub backlog already includes:
-
-- 104 operations with drift.
-- 17 dropped request bodies.
-- 3 invented request bodies.
-- 20 request content-type changes.
-- 9 dropped parameters.
-- 25 invented parameters.
-- 1 requiredness change.
-- 1 request schema-kind change.
-- 59 response content-type changes.
-- 25 response schema-type changes.
-- 20 invented statuses.
-- 2,261 nullable overclaims.
-- 18 lost nullabilities.
-- 282 enum changes.
-- 660 numeric/URI format changes.
-- 9 lost defaults.
-- 26 lost `additionalProperties` declarations.
-- 5 schema-kind changes.
-- 65 schemas not currently assessed.
-
-Running all corpora will expand this backlog. Nothing discovered is deferred merely because it is large.
-
-## Phase 5: Fix Operation Fidelity
-
-Work root-cause-first with a red-green loop.
-
-1. Preserve GET and DELETE request bodies rather than relocating them into query parameters.
-2. Represent request bodies independently from route/query parameters.
-3. Preserve combined body, path, header, and query inputs without dropping either side.
-4. Preserve body requiredness independently from input-record requiredness.
-5. Preserve every request content type.
-6. Preserve form, multipart, binary, text, and structured JSON body semantics.
-7. Stop inventing request bodies from query parameters.
-8. Stop inventing query parameters from body properties.
-9. Preserve every response content type.
-10. Preserve every declared status without adding undeclared alternatives.
-11. Preserve response schema shape for every status/content-type pair.
-12. Preserve security and authentication semantics.
-
-After each root-cause fix:
-
-- Run focused unit and round-trip tests.
-- Run the entire corpus suite.
-- Confirm no category increased anywhere.
-- Treat newly exposed findings as backlog, not acceptable fallout.
-
-## Phase 6: Fix Schema Fidelity
-
-1. Preserve requiredness independently from nullability.
-2. Preserve explicit nullable and non-nullable states.
-3. Stop making all optional properties nullable.
-4. Preserve scalar and heterogeneous unions.
-5. Preserve `oneOf`, `anyOf`, and `allOf` semantics.
-6. Preserve discriminators and mappings.
-7. Preserve enums, including nullable enums.
-8. Preserve numeric and string formats exactly.
-9. Preserve defaults.
-10. Preserve `additionalProperties: true`, `false`, and schema-valued forms.
-11. Preserve arrays, tuples, dictionaries, and nested compositions.
-12. Preserve constraints such as minimum, maximum, lengths, patterns, and item counts.
-13. Preserve recursive and mutually recursive schemas.
-14. Replace `JsonElement` degradation with an actual faithful representation.
-15. Ensure every component is traceable through import and re-emission.
-
-A `RIV2005` warning with successful degraded output remains a failing corpus test. It is not an accepted implementation.
-
-## Phase 7: Run Every Corpus Continuously
-
-After the gate exists, every implementation batch runs:
-
-```text
-focused tests
-full Rivet suite
-all corpus round trips
-rivet-ts full suite
-real rivet-ts -> Rivet.Tool interoperability
-```
-
-Do not reserve the all-corpus run for the end.
-
-Maintain a generated matrix:
-
-| Corpus | Operations | Schemas | Import | Compile | Re-emit | Findings |
-|---|---:|---:|---|---|---|---:|
-
-The matrix is derived from test output. It cannot be manually marked green.
-
-## Phase 8: Harden rivet-ts
-
-1. Remove the conditional .NET test skip.
-2. Run against the exact built Rivet tool.
-3. Expand beyond the current smoke fixture.
-4. Feed representative constructs from every resolved root cause through TS lowering.
-5. Compare final OpenAPI semantically, not through selected assertions.
-6. Fail on any tolerated stderr warning.
-7. Exercise scaffolded output through build, typecheck, runtime registration, and OpenAPI emission.
-8. Ensure the vendored contract schema matches Rivet's source schema exactly.
-
-## Phase 9: CI Enforcement
+## CI Enforcement
 
 Required CI jobs:
 
-- Rivet unit/integration suite.
-- Every corpus round-trip.
-- Comparator mutation/self-tests.
-- Generated C# compilation.
-- rivet-ts lint/typecheck/tests.
-- Real cross-repository interoperability.
-- Scaffold lifecycle.
-- Zero Plumb findings.
+- Rivet unit and integration suite;
+- every pinned corpus round trip;
+- comparator mutation/self-tests;
+- generated C# compilation;
+- rivet-ts lint, typecheck, and tests;
+- real rivet-ts-to-Rivet interoperability;
+- scaffold lifecycle;
+- zero Plumb findings.
 
-No job may self-skip because a local dependency is absent. CI must provision it.
+No job may self-skip because a local dependency is absent. Release workflows must depend on these jobs. A tag cannot publish if any verified or required corpus has one valid finding.
 
-Release workflows must depend on these jobs. A tag cannot publish if any corpus has one finding.
+Reproducible corpus acquisition is still unresolved. Before enabling the all-corpus CI job, each artifact needs an approved source, immutable version/hash, and acquisition mechanism. Unknown provenance must not be replaced by an invented URL.
 
-## Phase 10: Final Audit
+## Final Audit
 
-Before claiming completion:
+Before claiming complete corpus support:
 
-1. Run every corpus from a clean checkout.
-2. Run with fresh tool builds and no stale generated files.
-3. Confirm all manifest hashes.
-4. Confirm zero findings for every corpus.
-5. Confirm zero lossy diagnostics.
-6. Mutate one operation and verify the gate fails.
-7. Mutate one request body and verify the gate fails.
-8. Mutate one response and verify the gate fails.
-9. Mutate one schema property and verify the gate fails.
-10. Remove one corpus and verify the gate fails.
-11. Remove the Rivet tool from rivet-ts CI and verify setup fails rather than skipping.
-12. Publish the generated evidence matrix.
+1. Run every corpus from a clean checkout with fresh tool builds.
+2. Confirm all manifest hashes and reviewed source-defect hashes.
+3. Confirm zero valid findings, lossy diagnostics, and unsupported markers.
+4. Confirm first-pass and fixed-point integrity.
+5. Mutate one operation, parameter, request body, response, schema property, component identity, diagnostic, and corpus entry; prove each mutation fails.
+6. Remove the Rivet tool and Plumb from rivet-ts CI setup; prove setup fails rather than tests skipping.
+7. Publish the generated evidence matrix.
 
-## Non-Negotiable Reporting
+## Reporting Contract
 
-Every progress report must begin with:
+Every progress report begins with:
 
 ```text
 Corpora passing losslessly: X/Y
-Total remaining operation findings: N
-Total remaining schema findings: N
-Unmatched operations: N
-Unmatched schemas: N
-Lossy diagnostics: N
+Total remaining operation findings: N or explicitly unknown
+Total remaining schema findings: N or explicitly unknown
+Unmatched operations: N or explicitly unknown
+Unmatched schemas: N or explicitly unknown
+Lossy diagnostics: N or explicitly unknown
 CI skips: N
 ```
 
-Then list exact root causes still open.
+Then list exact open root causes. Unknown is required until the complete applicable matrix has run; estimated counts must not be presented as measured results.
 
-No confidence percentage while any value is non-zero. No "complete," "supported," or "green" based solely on unit-test totals.
-
-This work continues until the matrix is entirely zero.
+No confidence percentage, "complete," "supported," or "green" claim is permitted while any required value is non-zero, unknown, skipped, or unexecuted.
