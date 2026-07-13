@@ -111,11 +111,15 @@ Only the transport changed.
 ### 3. Move to .NET later
 
 ```csharp
-app.MapGet(UserContract.GetUser.Route, async (string id) =>
-    (await UserContract.GetUser.Invoke(new GetUserParams(id), async input =>
-    {
-        return await db.Users.FindAsync(input.Id);
-    })).ToResult());
+app.MapGet(UserContract.GetUser.Route, async (string id, CancellationToken ct) =>
+{
+    var endpoint = UserContract.GetUser.Bind(new GetUserParams(id));
+    var user = await db.Users.FindAsync(id, ct);
+
+    return user is null
+        ? endpoint.Error(404, new ApiError("User not found")).ToResult()
+        : endpoint.Success(user).ToResult();
+});
 ```
 
 ```ts

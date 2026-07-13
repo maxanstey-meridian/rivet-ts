@@ -24,20 +24,46 @@ const { data, error } = await client.GET("/users/{id}", {
 
 The backend runtime changes.
 
-In `.NET`, the typical Rivet runtime pattern is:
+With `Rivet.Attributes` 0.41, input binding, application execution, contract-owned results, and host adaptation are separate steps:
 
 ```csharp
-app.MapGet(UsersContract.Get.Route, async (string id) =>
-    (await UsersContract.Get.Invoke(new GetUserParams(id), async input =>
-    {
-        return await db.Users.FindAsync(input.Id);
-    })).ToResult());
+app.MapGet(UsersContract.Get.Route, async (string id, CancellationToken ct) =>
+{
+    var endpoint = UsersContract.Get.Bind(new GetUserParams(id));
+    var user = await getUser.ExecuteAsync(id, ct);
+
+    return user is null
+        ? endpoint.Error(404, new ApiError("User not found")).ToResult()
+        : endpoint.Success(user).ToResult();
+});
 ```
 
-That is part of main Rivet:
+Input-bearing operations call `Bind(input)` before application code runs. Operations without input call their terminal method directly:
+
+```csharp
+var health = await healthCheck.ExecuteAsync(ct);
+return SystemContract.Health.Success(health).ToActionResult();
+```
+
+Known non-success outcomes use a declared `Error(...)`. File contracts use `File(...)`, with the content type supplied by the contract:
+
+```csharp
+var endpoint = ReportsContract.Download.Bind(new DownloadReportParams(id));
+var report = await createReport.ExecuteAsync(id, ct);
+
+return report is null
+    ? endpoint.Error(404, new ApiError("Report not found")).ToActionResult()
+    : endpoint.File(report.Content, report.FileName).ToActionResult();
+```
+
+Every terminal returns a Rivet result. Convert it only at the host boundary with `ToActionResult()` for MVC or `ToResult()` for Minimal APIs.
+
+This surface is part of main Rivet:
 
 - C# contracts
-- `.Route` and `.Invoke(...)`
+- `.Route` and `Bind(input)` for input-bearing operations
+- `Success(...)`, `Error(...)`, and `File(...)` terminal results
+- `ToActionResult()` and `ToResult()` host adapters
 - the same binary emits OpenAPI 3.1 from the C# side, so the client keeps coming from the same `openapi-typescript` + `openapi-fetch` pipeline
 
 ## Practical handoff model
