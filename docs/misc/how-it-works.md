@@ -28,7 +28,7 @@ That contract is the source of truth for:
 
 `rivet-ts scaffold` (worked example) and `rivet-ts scaffold-mock` (from your contract) emit the same pnpm workspace:
 
-- a Hono API under `apps/api` with one module per contract, handlers typed via `RivetHandler<...>`, and user-owned Zod schemas in `interface/validation/` that reject invalid request bodies with a structured 422 at the route edge
+- a Hono API under `apps/api` with one module per contract, handlers typed via `RivetHandler<...>`, and user-owned Zod schemas beside each module's routes that reject invalid request bodies with a structured 422 at the route edge
 - a Nuxt SPA under `apps/ui` with in-browser transport wired once in `app/plugins/rivet.client.ts`
 - a contracts package: read-only `generated/{openapi.json, schema.d.ts}` plus a hand-owned `src/index.ts` client facade
 - a Taskfile (`install` / `dev` / `generate` / `api:run` / `api:test` / `plumb`)

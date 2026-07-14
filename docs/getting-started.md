@@ -8,8 +8,11 @@
 ## 1. Install
 
 ```bash
-pnpm add -D github:maxanstey-meridian/rivet-ts#v0.11.1
+pnpm add -D github:maxanstey-meridian/rivet-ts#v0.13.0
 ```
+
+`rivet-ts` is installed from the versioned Git tag; it is not published to the
+npm registry.
 
 The Rivet binary (the OpenAPI emitter) is downloaded and cached automatically
 on first use — both by the Vite plugin and by the `rivet-ts rivet --` CLI
@@ -40,9 +43,10 @@ myapp/
 │   │   └── src/
 │   │       ├── contracts.ts ← the contract entry (source of truth)
 │   │       ├── app.ts / composition.ts / main.ts / local.ts
-│   │       ├── interface/http/{quotes,users}-routes.ts
-│   │       ├── interface/validation/quotes.ts ← user-owned Zod edge schemas
-│   │       └── modules/{quotes,users}/{domain,application,infrastructure}/
+│   │       └── modules/{quotes,users}/
+│   │           ├── {domain,application,infrastructure}/
+│   │           ├── {quotes,users}-routes.ts
+│   │           └── {quotes,users}-validation.ts ← user-owned Zod edge schemas
 │   └── ui/                  ← Nuxt SPA (ssr: false)
 │       └── app/plugins/rivet.client.ts   ← local in-browser transport
 └── packages/contracts/
@@ -54,9 +58,9 @@ File naming is suffix-free throughout (`add-quote.ts`, not
 `add-quote.use-case.ts`): the directory carries the role.
 
 The example also ships the bread-and-butter backend capabilities: Zod
-validation at the route edge (schemas in `interface/validation/`, locked to
-the contract types with `satisfies` — the ui's `UForm` consumes the SAME
-schemas via `@myapp/api/validation`), Dexie persistence in the browser
+validation at the route edge (schemas beside their module routes, locked to the
+contract types with `satisfies` — the ui's `UForm` consumes the SAME schemas
+via `@myapp/api/validation`), Dexie persistence in the browser
 (versioned schemas are the migration story; the server entry wires the
 in-memory adapter instead), a `current-user` port with a dev stub behind
 `GET /api/me`, and request logging + CORS on the server entry only.

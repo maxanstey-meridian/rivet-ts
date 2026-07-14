@@ -84,12 +84,13 @@ myapp/
 │   │   └── src/
 │   │       ├── contracts.ts                 ← your entry, copied in
 │   │       ├── app.ts / contract.ts / local.ts / main.ts
-│   │       ├── interface/http/todo-routes.ts
-│   │       ├── interface/validation/todo.ts ← user-owned Zod edge schemas
-│   │       └── modules/todo/application/
-│   │           ├── list-todos.ts
-│   │           ├── get-todo.ts
-│   │           └── create-todo.ts
+│   │       └── modules/todo/
+│   │           ├── todo-routes.ts
+│   │           ├── todo-validation.ts       ← user-owned Zod edge schema
+│   │           └── application/
+│   │               ├── list-todos.ts
+│   │               ├── get-todo.ts
+│   │               └── create-todo.ts
 │   └── ui/                                  ← Nuxt SPA (ssr: false)
 │       ├── app/app.vue
 │       └── app/plugins/rivet.client.ts      ← in-browser transport wiring
@@ -123,7 +124,7 @@ export const getTodo = async (_input: GetTodoInput): Promise<GetTodoOutput> => {
 Replace those stubs with application logic as needed. Shapes the generator cannot synthesize get a TODO stub that throws rather than fabricating an invalid response.
 
 Body-carrying endpoints (here `CreateTodo`) also get a Zod schema in
-`interface/validation/todo.ts`, locked to the contract type with `satisfies`
+`modules/todo/todo-validation.ts`, locked to the contract type with `satisfies`
 and owned by you after emission. The route wrapper parses the body with it and
 rejects violations with `422 { code: "validation_failed" }` before the handler
 runs. Pass `scaffold-mock --spec <openapi.json>` to chain a generated spec's

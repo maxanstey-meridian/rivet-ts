@@ -2,13 +2,20 @@
 
 **Write a contract. Generate the spec. Consume it typed.**
 
-Your API contract is plain TypeScript types — no decorators, no runtime
-registration, nothing to import at runtime. rivet-ts reflects it into an
-OpenAPI 3.1 spec and a fully typed client. The TypeScript-first sibling of
-[Rivet](https://github.com/maxanstey-meridian/rivet) (.NET).
+Your API contract is a deliberately narrow, type-only TypeScript DSL: no
+decorators, no runtime registration, and nothing for the contract module to do
+at runtime. `rivet-ts` lowers it to Rivet contract JSON; the downloaded
+[Rivet](https://github.com/maxanstey-meridian/rivet) binary is the sole OpenAPI
+3.1 emitter; `openapi-typescript` then generates client types for
+`openapi-fetch`.
+
+## Install
+
+`rivet-ts` currently ships from versioned Git tags, not the npm registry. The
+install builds the package through its `prepare` script.
 
 ```bash
-pnpm add -D github:maxanstey-meridian/rivet-ts#v0.11.1
+pnpm add -D github:maxanstey-meridian/rivet-ts#v0.13.0
 ```
 
 ## Write a contract
@@ -49,13 +56,22 @@ TypeScript compiler API. Your contract never exists at runtime.
 ## Generate
 
 ```bash
-rivet-ts --entry src/contracts.ts --out generated/api.contract.json
-rivet-ts rivet -- --from generated/api.contract.json --output ./generated
-rivet-ts generate --generated-root ./generated
+pnpm exec rivet-ts --entry src/contracts.ts --out generated/api.contract.json
+pnpm exec rivet-ts rivet -- --from generated/api.contract.json --output ./generated
+pnpm exec rivet-ts generate --generated-root ./generated
 ```
 
-reflect → OpenAPI 3.1 → `schema.d.ts`. The OpenAPI emitter binary is
-downloaded and cached automatically; nothing needs to be on `PATH`.
+That pipeline has explicit ownership:
+
+1. `rivet-ts` writes `api.contract.json`.
+2. Rivet writes `openapi.json`.
+3. `rivet-ts generate` writes `schema.d.ts`.
+
+`v0.13.0` pins Rivet `0.40.0` by default. On macOS arm64/x64, Linux x64, and
+Windows x64, the binary is downloaded from GitHub Releases and cached
+automatically; it does not need to be on `PATH`. Set `RIVET_VERSION` for the
+CLI passthrough, or use the [Vite plugin options](https://maxanstey-meridian.github.io/rivet-ts/guides/vite-plugin)
+to select another version or binary.
 
 ## Consume
 
@@ -71,10 +87,19 @@ const { data, error } = await api.POST("/api/members", {
 });
 ```
 
-There's also a [Vite plugin](https://maxanstey-meridian.github.io/rivet-ts/guides/vite-plugin)
-that regenerates everything on contract changes during dev. Serving the
-contract with Hono, and scaffolding a full workspace around it, live in the
-[docs](https://maxanstey-meridian.github.io/rivet-ts/guides/hono).
+The package also provides:
+
+- [`rivet-ts/vite`](https://maxanstey-meridian.github.io/rivet-ts/guides/vite-plugin),
+  which regenerates contract JSON, `openapi.json`, and `schema.d.ts` when the
+  entry or its local imports change.
+- [`rivet-ts/hono`](https://maxanstey-meridian.github.io/rivet-ts/guides/hono),
+  which registers typed handlers against lowered contract JSON.
+- [`scaffold` and `scaffold-mock`](https://maxanstey-meridian.github.io/rivet-ts/getting-started),
+  which emit the Hono + Nuxt + contracts workspace or derive one from an
+  existing contract.
+
+See the [CLI reference](https://maxanstey-meridian.github.io/rivet-ts/reference/cli)
+for all commands, flags, exports, and artifact ownership.
 
 ## Documentation
 
@@ -88,10 +113,13 @@ contract with Hono, and scaffolding a full workspace around it, live in the
 ## Development
 
 ```bash
-pnpm test          # build then run tests (vitest)
-pnpm run lint      # oxlint
-pnpm run check     # tsc --noEmit
+pnpm lint           # oxlint
+pnpm check          # tsc --noEmit
+pnpm test           # build then run tests (vitest)
 ```
+
+The .NET interoperability and Meridian `plumb` integration legs self-skip when
+their external tools are unavailable.
 
 ## License
 
