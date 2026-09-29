@@ -2,17 +2,12 @@ import type { ErrorObject } from "ajv";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
-// tests/rivet-contract-schema.json is a vendored copy of the contract JSON
-// schema the .NET tool validates against. Source of truth:
-//   /Users/max/Sites/medway/rivet/rivet-contract-schema.json
-// (rivet repo root). Keep the copy byte-identical when the upstream schema
-// changes — a plain `cp` resync is intentional; do not edit the copy locally.
-const schemaPath = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "rivet-contract-schema.json",
-);
+// tests/rivet-contract-schema.json is the contract JSON schema shipped with the
+// pinned Rivet release, byte for byte (the rivet-tool-from suite checks it
+// against that release's tagged file). Re-vendor it when the pin moves; never
+// edit it locally.
+const schemaPath = path.resolve(import.meta.dirname, "rivet-contract-schema.json");
 
 const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8")) as Record<string, unknown>;
 

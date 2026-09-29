@@ -20,6 +20,7 @@
 - `ContractJson` (the `rivet-ts/hono` contract parameter) is derived from the lowered contract document: every param needs `type` and `isOptional`, and every endpoint `controllerName`, as `rivet-ts --out` always writes them. Only hand-written contract objects are affected.
 - `registerRivetHonoRoutes` reports a handler map entry whose value is `undefined` as a missing handler at registration, rather than failing when the route is requested.
 - The repository no longer ships the legacy `samples/myapp` workspace (pinned to rivet-ts 0.9.1, untested, importing files that no longer exist). Run `rivet-ts scaffold` or `rivet-ts scaffold-mock` for a current reference app.
+- The default Rivet pin moves from `v0.40.0` to `v0.44.1` (the latest published release). Its `--from` refuses a `.Secure(name)` endpoint unless the scheme is defined with `--security name=<spec>` (RIV2002). Set `RIVET_VERSION` or `rivet.version` to stay on an older release.
 
 ## Unreleased — fixes
 

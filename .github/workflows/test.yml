@@ -16,7 +16,13 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The interop suite runs the pinned Rivet release (DEFAULT_RIVET_VERSION),
+      # downloaded by the product's own ensureRivetBinary into ~/.cache/rivet-ts.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/rivet-ts
+          key: rivet-${{ runner.os }}-${{ hashFiles('src/config/rivet-binary.ts') }}
       - run: pnpm lint
       - run: pnpm check
-      # plumb- and dotnet-dependent legs self-skip when those tools are absent.
+      # plumb-dependent legs self-skip when plumb is absent.
       - run: pnpm test

@@ -67,7 +67,7 @@ That pipeline has explicit ownership:
 2. Rivet writes `openapi.json`.
 3. `rivet-ts generate` writes `schema.d.ts`.
 
-`v0.13.0` pins Rivet `0.40.0` by default. On macOS arm64/x64, Linux x64, and
+rivet-ts pins Rivet `0.44.1` by default. On macOS arm64/x64, Linux x64, and
 Windows x64, the binary is downloaded from GitHub Releases and cached
 automatically; it does not need to be on `PATH`. Set `RIVET_VERSION` (honoured
 by both the CLI passthrough and the Vite plugin), or use the [Vite plugin options](https://maxanstey-meridian.github.io/rivet-ts/guides/vite-plugin)
@@ -118,8 +118,11 @@ pnpm check          # tsc --noEmit
 pnpm test           # build then run tests (vitest)
 ```
 
-The .NET interoperability and Meridian `plumb` integration legs self-skip when
-their external tools are unavailable.
+The .NET interoperability suite runs every lowerable fixture through the pinned
+Rivet release's `--from` and checks the vendored contract schema against that
+release, so the first `pnpm test` downloads the binary (then cached) and every
+run needs network access for the schema. The Meridian `plumb` integration legs
+self-skip when plumb is unavailable.
 
 ## License
 
