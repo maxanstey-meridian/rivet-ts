@@ -87,8 +87,8 @@ const AUTHORING_HELPER_TYPE_NAMES = new Set([
   "EndpointErrorAuthoringSpec",
   "EndpointSecurityAuthoringSpec",
 ]);
-const BUILTIN_TYPE_NAMES = new Set(["Array", "ReadonlyArray"]);
-const MULTIPART_FILE_TYPE_NAMES = new Set(["Blob", "File"]);
+const isListTypeName = (name: string | null): boolean =>
+  name === "Array" || name === "ReadonlyArray";
 const JSON_MEDIA_TYPE = "application/json";
 
 const getResponseExampleMediaType = (status: number, fileContentType: string | undefined): string =>
@@ -136,14 +136,53 @@ const getPropertyName = (name: ts.PropertyName): string | null => {
 const isNullTypeNode = (node: ts.TypeNode): boolean =>
   ts.isLiteralTypeNode(node) && node.literal.kind === ts.SyntaxKind.NullKeyword;
 
-const getModifiers = (node: ts.Node): readonly ts.Modifier[] =>
-  ts.canHaveModifiers(node) ? (ts.getModifiers(node) ?? []) : [];
+const hasModifier = (node: ts.Declaration, flag: ts.ModifierFlags): boolean =>
+  (ts.getCombinedModifierFlags(node) & flag) !== 0;
 
-const hasExportModifier = (node: ts.Node): boolean =>
-  getModifiers(node).some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+const resolveAlias = (checker: ts.TypeChecker, symbol: ts.Symbol): ts.Symbol =>
+  (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(symbol) : symbol;
 
-const hasReadonlyModifier = (node: ts.Node): boolean =>
-  getModifiers(node).some((modifier) => modifier.kind === ts.SyntaxKind.ReadonlyKeyword);
+const resolveSymbol = (checker: ts.TypeChecker, node: ts.Node): ts.Symbol | undefined => {
+  const symbol = checker.getSymbolAtLocation(node);
+  return symbol && resolveAlias(checker, symbol);
+};
+
+// The authoring types ship as src/domain/authoring-types.ts (this repo's own
+// contracts and tests import it) and as dist/domain/authoring-types.d.ts
+// (the published package, re-exported by dist/index.d.ts).
+const isRivetAuthoringFile = (sourceFile: ts.SourceFile): boolean =>
+  /\/(?:src\/domain\/authoring-types\.ts|dist\/domain\/authoring-types\.d\.ts)$/u.test(
+    sourceFile.fileName,
+  );
+
+/** Whether `node` names the rivet-ts authoring type `name`, through any import alias. */
+const isRivetSymbol = (checker: ts.TypeChecker, node: ts.Node, name: string): boolean => {
+  const symbol = resolveSymbol(checker, node);
+  return (
+    symbol?.getName() === name &&
+    (symbol.getDeclarations() ?? []).some((declaration) =>
+      isRivetAuthoringFile(declaration.getSourceFile()),
+    )
+  );
+};
+
+type LiteralValue = string | number | boolean;
+
+const literalValueOfType = (checker: ts.TypeChecker, type: ts.Type): LiteralValue | null => {
+  if (type.isStringLiteral() || type.isNumberLiteral()) {
+    return type.value;
+  }
+
+  if ((type.flags & ts.TypeFlags.BooleanLiteral) !== 0) {
+    return type === checker.getTrueType();
+  }
+
+  return null;
+};
+
+/** The literal a type node denotes, resolved through aliases (`type Get = "GET"`, `-1`). */
+const readLiteral = (checker: ts.TypeChecker, node: ts.TypeNode | undefined): LiteralValue | null =>
+  node ? literalValueOfType(checker, checker.getTypeFromTypeNode(node)) : null;
 
 const createNodeDiagnostic = (
   node: ts.Node,
@@ -163,8 +202,6 @@ const createNodeDiagnostic = (
   });
 };
 
-// X6: resolve the heritage expression's symbol so renamed Contract imports
-// (import { Contract as C }) are recognized; raw text kept as a fast path.
 const getContractHeritageType = (
   node: ts.InterfaceDeclaration,
   checker: ts.TypeChecker,
@@ -175,16 +212,7 @@ const getContractHeritageType = (
     }
 
     for (const type of clause.types) {
-      if (type.expression.getText(getNodeSourceFile(node)) === "Contract") {
-        return type;
-      }
-
-      const symbol = checker.getSymbolAtLocation(type.expression);
-      const resolvedSymbol =
-        symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0
-          ? checker.getAliasedSymbol(symbol)
-          : symbol;
-      if (resolvedSymbol?.getName() === "Contract") {
+      if (isRivetSymbol(checker, type.expression, "Contract")) {
         return type;
       }
     }
@@ -197,18 +225,9 @@ const isContractInterface = (node: ts.InterfaceDeclaration, checker: ts.TypeChec
   getContractHeritageType(node, checker) !== null;
 
 const getContractName = (node: ts.InterfaceDeclaration, checker: ts.TypeChecker): string | null => {
-  const heritageType = getContractHeritageType(node, checker);
-  const [argument] = heritageType?.typeArguments ?? [];
-  if (
-    argument &&
-    ts.isLiteralTypeNode(argument) &&
-    ts.isStringLiteral(argument.literal) &&
-    argument.literal.text.length > 0
-  ) {
-    return argument.literal.text;
-  }
-
-  return null;
+  const [argument] = getContractHeritageType(node, checker)?.typeArguments ?? [];
+  const name = readLiteral(checker, argument);
+  return typeof name === "string" && name.length > 0 ? name : null;
 };
 
 const indexDeclarations = (
@@ -232,7 +251,7 @@ const indexDeclarations = (
         continue;
       }
 
-      if (!hasExportModifier(statement)) {
+      if (!hasModifier(statement, ts.ModifierFlags.Export)) {
         continue;
       }
 
@@ -519,7 +538,7 @@ class TypeEmissionContext {
   ): DiscoveredEndpointSpec | null {
     if (
       !ts.isTypeReferenceNode(typeNode) ||
-      typeNode.typeName.getText(getNodeSourceFile(typeNode)) !== "Endpoint"
+      !isRivetSymbol(this.checker, typeNode.typeName, "Endpoint")
     ) {
       this.diagnostics.push(
         createNodeDiagnostic(
@@ -942,8 +961,8 @@ class TypeEmissionContext {
     if (
       !declaration ||
       !declaration.initializer ||
-      !this.isConstVariableDeclaration(declaration) ||
-      !this.isExportedVariableDeclaration(declaration)
+      (ts.getCombinedNodeFlags(declaration) & ts.NodeFlags.Const) === 0 ||
+      !hasModifier(declaration, ts.ModifierFlags.Export)
     ) {
       this.diagnostics.push(
         createNodeDiagnostic(
@@ -1041,11 +1060,7 @@ class TypeEmissionContext {
       return [node.elementType];
     }
 
-    if (
-      ts.isTypeReferenceNode(node) &&
-      ts.isIdentifier(node.typeName) &&
-      BUILTIN_TYPE_NAMES.has(node.typeName.text)
-    ) {
+    if (ts.isTypeReferenceNode(node) && isListTypeName(this.libraryTypeName(node.typeName))) {
       const [elementType] = node.typeArguments ?? [];
       return elementType ? [elementType] : null;
     }
@@ -1055,39 +1070,13 @@ class TypeEmissionContext {
   }
 
   private resolveExampleDeclaration(entityName: ts.EntityName): ts.VariableDeclaration | null {
-    const symbol = this.checker.getSymbolAtLocation(entityName);
-    if (!symbol) {
-      return null;
-    }
-
-    const resolvedSymbol =
-      (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? this.checker.getAliasedSymbol(symbol) : symbol;
-
-    for (const declaration of resolvedSymbol.getDeclarations() ?? []) {
+    for (const declaration of resolveSymbol(this.checker, entityName)?.getDeclarations() ?? []) {
       if (ts.isVariableDeclaration(declaration)) {
         return declaration;
       }
     }
 
     return null;
-  }
-
-  private isConstVariableDeclaration(declaration: ts.VariableDeclaration): boolean {
-    return (
-      ts.isVariableDeclarationList(declaration.parent) &&
-      (declaration.parent.flags & ts.NodeFlags.Const) !== 0
-    );
-  }
-
-  private isExportedVariableDeclaration(declaration: ts.VariableDeclaration): boolean {
-    return (
-      ts.isVariableDeclarationList(declaration.parent) &&
-      ts.isVariableStatement(declaration.parent.parent) &&
-      (declaration.parent.parent.modifiers?.some(
-        (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
-      ) ??
-        false)
-    );
   }
 
   private parseExampleValue(expression: ts.Expression): RivetEndpointExampleValue | undefined {
@@ -1179,21 +1168,13 @@ class TypeEmissionContext {
       return undefined;
     }
 
-    return this.parseLiteralValueFromType(unwrapped);
+    return literalValueOfType(this.checker, this.checker.getTypeAtLocation(unwrapped)) ?? undefined;
   }
 
   private resolveIdentifierExampleValue(
     identifier: ts.Identifier,
   ): RivetEndpointExampleValue | undefined {
-    const symbol = this.checker.getSymbolAtLocation(identifier);
-    if (!symbol) {
-      return undefined;
-    }
-
-    const resolvedSymbol =
-      (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? this.checker.getAliasedSymbol(symbol) : symbol;
-
-    for (const declaration of resolvedSymbol.getDeclarations() ?? []) {
+    for (const declaration of resolveSymbol(this.checker, identifier)?.getDeclarations() ?? []) {
       if (ts.isVariableDeclaration(declaration) && declaration.initializer) {
         return this.parseExampleValue(declaration.initializer);
       }
@@ -1233,17 +1214,18 @@ class TypeEmissionContext {
       return undefined;
     }
 
-    const resolvedSymbol =
-      (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? this.checker.getAliasedSymbol(symbol) : symbol;
-
+    const resolvedSymbol = resolveAlias(this.checker, symbol);
     for (const declaration of resolvedSymbol.getDeclarations() ?? []) {
       if (ts.isVariableDeclaration(declaration) && declaration.initializer) {
         return this.parseExampleValue(declaration.initializer);
       }
     }
 
-    return this.parseLiteralValueFromTsType(
-      this.checker.getTypeOfSymbolAtLocation(resolvedSymbol, property.name),
+    return (
+      literalValueOfType(
+        this.checker,
+        this.checker.getTypeOfSymbolAtLocation(resolvedSymbol, property.name),
+      ) ?? undefined
     );
   }
 
@@ -1258,28 +1240,6 @@ class TypeEmissionContext {
     }
 
     return expression;
-  }
-
-  private parseLiteralValueFromType(
-    expression: ts.Expression,
-  ): string | number | boolean | undefined {
-    return this.parseLiteralValueFromTsType(this.checker.getTypeAtLocation(expression));
-  }
-
-  private parseLiteralValueFromTsType(type: ts.Type): string | number | boolean | undefined {
-    if ((type.flags & ts.TypeFlags.StringLiteral) !== 0) {
-      return (type as ts.StringLiteralType).value;
-    }
-
-    if ((type.flags & ts.TypeFlags.NumberLiteral) !== 0) {
-      return (type as ts.NumberLiteralType).value;
-    }
-
-    if ((type.flags & ts.TypeFlags.BooleanLiteral) !== 0) {
-      return this.checker.typeToString(type) === "true";
-    }
-
-    return undefined;
   }
 
   public lowerEndpoint(endpoint: DiscoveredEndpointSpec): RivetEndpointDefinition {
@@ -1436,65 +1396,24 @@ class TypeEmissionContext {
   } | null {
     const stringValues: string[] = [];
     const intValues: number[] = [];
-    // X16: auto-numbered members (enum Role { Admin, User }) follow standard
-    // TypeScript semantics: start at 0 and continue from the previous numeric
-    // value. String members invalidate further auto-numbering (as in tsc).
-    let nextAutoValue: number | null = 0;
-
     for (const member of declaration.members) {
-      if (!member.initializer) {
-        if (nextAutoValue === null) {
-          this.diagnostics.push(
-            createNodeDiagnostic(
-              member,
-              "UNSUPPORTED_ENUM_MEMBER",
-              `Enum "${declaration.name.text}" has a member without an initializer after a non-numeric member.`,
-            ),
-          );
-          return null;
-        }
-
-        intValues.push(nextAutoValue);
-        nextAutoValue += 1;
-        continue;
+      const value = this.checker.getConstantValue(member);
+      if (value === undefined) {
+        this.diagnostics.push(
+          createNodeDiagnostic(
+            member,
+            "UNSUPPORTED_ENUM_MEMBER",
+            `Enum "${declaration.name.text}" must use members with constant string or numeric values.`,
+          ),
+        );
+        return null;
       }
 
-      if (
-        ts.isStringLiteral(member.initializer) ||
-        ts.isNoSubstitutionTemplateLiteral(member.initializer)
-      ) {
-        stringValues.push(member.initializer.text);
-        nextAutoValue = null;
-        continue;
-      }
-
-      if (ts.isNumericLiteral(member.initializer)) {
-        const value = Number(member.initializer.text);
+      if (typeof value === "string") {
+        stringValues.push(value);
+      } else {
         intValues.push(value);
-        nextAutoValue = value + 1;
-        continue;
       }
-
-      // X16: negative initializers (= -1) parse as prefix-unary expressions.
-      if (
-        ts.isPrefixUnaryExpression(member.initializer) &&
-        member.initializer.operator === ts.SyntaxKind.MinusToken &&
-        ts.isNumericLiteral(member.initializer.operand)
-      ) {
-        const value = -Number(member.initializer.operand.text);
-        intValues.push(value);
-        nextAutoValue = value + 1;
-        continue;
-      }
-
-      this.diagnostics.push(
-        createNodeDiagnostic(
-          member,
-          "UNSUPPORTED_ENUM_MEMBER",
-          `Enum "${declaration.name.text}" must use explicit string or numeric literal members.`,
-        ),
-      );
-      return null;
     }
 
     if (stringValues.length > 0 && intValues.length > 0) {
@@ -1534,41 +1453,15 @@ class TypeEmissionContext {
       return null;
     }
 
-    const stringValues: string[] = [];
-    const intValues: number[] = [];
-    for (const member of declaration.type.types) {
-      if (!ts.isLiteralTypeNode(member)) {
-        return null;
-      }
-
-      if (ts.isStringLiteral(member.literal)) {
-        stringValues.push(member.literal.text);
-        continue;
-      }
-
-      if (ts.isNumericLiteral(member.literal)) {
-        intValues.push(Number(member.literal.text));
-        continue;
-      }
-
+    const literalUnion = this.readLiteralUnion(declaration.type.types);
+    if (!literalUnion) {
       return null;
     }
 
-    if (stringValues.length > 0 && intValues.length === 0) {
-      return {
-        name: declaration.name.text,
-        values: stringValues,
-      };
-    }
-
-    if (intValues.length > 0 && stringValues.length === 0) {
-      return {
-        name: declaration.name.text,
-        intValues,
-      };
-    }
-
-    return null;
+    const name = declaration.name.text;
+    return literalUnion.kind === "string"
+      ? { name, values: literalUnion.values }
+      : { name, intValues: literalUnion.values };
   }
 
   private lowerTypeDefinition(
@@ -1898,8 +1791,8 @@ class TypeEmissionContext {
       return false;
     }
 
-    const name = this.resolveTypeName(typeNode.typeName);
-    return MULTIPART_FILE_TYPE_NAMES.has(name);
+    const name = this.libraryTypeName(typeNode.typeName);
+    return name === "Blob" || name === "File";
   }
 
   private getNamedPropertyTypes(inputNode: ts.TypeNode): Map<string, RivetType> {
@@ -2155,7 +2048,11 @@ class TypeEmissionContext {
     }
 
     const parent = declaration.parent.parent;
-    return ts.isTypeAliasDeclaration(parent) && AUTHORING_HELPER_TYPE_NAMES.has(parent.name.text);
+    return (
+      ts.isTypeAliasDeclaration(parent) &&
+      AUTHORING_HELPER_TYPE_NAMES.has(parent.name.text) &&
+      isRivetAuthoringFile(parent.getSourceFile())
+    );
   }
 
   private resolveAliasedTypeNode(node: ts.TypeNode): ts.TypeNode | null {
@@ -2239,12 +2136,7 @@ class TypeEmissionContext {
   private resolveHeritageInterface(
     type: ts.ExpressionWithTypeArguments,
   ): ts.InterfaceDeclaration | null {
-    const symbol = this.checker.getSymbolAtLocation(type.expression);
-    const resolvedSymbol =
-      symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0
-        ? this.checker.getAliasedSymbol(symbol)
-        : symbol;
-    const name = resolvedSymbol?.getName();
+    const name = resolveSymbol(this.checker, type.expression)?.getName();
     const declaration = name ? this.declarations.get(name) : undefined;
     return declaration && ts.isInterfaceDeclaration(declaration) ? declaration : null;
   }
@@ -2299,7 +2191,7 @@ class TypeEmissionContext {
         name: propertyName,
         typeNode,
         optional,
-        readOnly: hasReadonlyModifier(member),
+        readOnly: hasModifier(member, ts.ModifierFlags.Readonly),
       });
     }
 
@@ -2386,28 +2278,17 @@ class TypeEmissionContext {
       return this.lowerUnionTypeNode(node, typeParameters);
     }
 
-    if (ts.isLiteralTypeNode(node)) {
-      if (ts.isStringLiteral(node.literal)) {
-        return {
-          kind: "stringUnion",
-          values: [node.literal.text],
-        };
-      }
+    const literal = this.readLiteralTypeNode(node);
+    if (typeof literal === "string") {
+      return { kind: "stringUnion", values: [literal] };
+    }
 
-      if (ts.isNumericLiteral(node.literal)) {
-        return {
-          kind: "intUnion",
-          values: [Number(node.literal.text)],
-        };
-      }
+    if (typeof literal === "number") {
+      return { kind: "intUnion", values: [literal] };
+    }
 
-      if (node.literal.kind === ts.SyntaxKind.TrueKeyword) {
-        return { kind: "literal", value: true };
-      }
-
-      if (node.literal.kind === ts.SyntaxKind.FalseKeyword) {
-        return { kind: "literal", value: false };
-      }
+    if (typeof literal === "boolean") {
+      return { kind: "literal", value: literal };
     }
 
     switch (node.kind) {
@@ -2457,9 +2338,10 @@ class TypeEmissionContext {
     typeParameters: Set<string>,
   ): RivetType | null {
     const typeName = this.resolveTypeName(node.typeName);
+    const libraryTypeName = this.libraryTypeName(node.typeName);
     const typeArguments = node.typeArguments ?? [];
 
-    if (typeName === "Array" || typeName === "ReadonlyArray") {
+    if (isListTypeName(libraryTypeName)) {
       const [elementNode] = typeArguments;
       if (!elementNode) {
         this.diagnostics.push(
@@ -2481,7 +2363,7 @@ class TypeEmissionContext {
         : null;
     }
 
-    if (typeName === "Record") {
+    if (libraryTypeName === "Record") {
       const [keyNode, valueNode] = typeArguments;
       if (!keyNode || !valueNode || !this.isStringLikeRecordKey(keyNode)) {
         this.diagnostics.push(
@@ -2503,7 +2385,7 @@ class TypeEmissionContext {
         : null;
     }
 
-    if (typeName === "Brand") {
+    if (isRivetSymbol(this.checker, node.typeName, "Brand")) {
       const [underlyingNode, brandNameNode] = typeArguments;
       const brandName = brandNameNode ? this.readStringLiteral(brandNameNode) : null;
       if (!underlyingNode || !brandName) {
@@ -2527,7 +2409,7 @@ class TypeEmissionContext {
         : null;
     }
 
-    if (typeName === "Format") {
+    if (isRivetSymbol(this.checker, node.typeName, "Format")) {
       const [underlyingNode, formatNode] = typeArguments;
       const format = formatNode ? this.readStringLiteral(formatNode) : null;
       if (!underlyingNode || !format) {
@@ -2563,10 +2445,9 @@ class TypeEmissionContext {
       };
     }
 
-    // X8: Date lives in lib .d.ts files the declaration index never sees, so
-    // a bare ref would dangle and later fail with a context-free
-    // TYPE_NOT_FOUND. Lower it to its wire shape instead.
-    if (typeName === "Date" && typeArguments.length === 0 && !this.declarations.has("Date")) {
+    // Date lives in lib .d.ts files the declaration index never sees, so a
+    // bare ref would dangle; lower it to its wire shape instead.
+    if (libraryTypeName === "Date" && typeArguments.length === 0) {
       return {
         kind: "primitive",
         type: "string",
@@ -2656,41 +2537,11 @@ class TypeEmissionContext {
       return taggedUnion;
     }
 
-    const stringValues: string[] = [];
-    const intValues: number[] = [];
-    let homogeneousLiterals = true;
-    for (const member of members) {
-      if (!ts.isLiteralTypeNode(member)) {
-        homogeneousLiterals = false;
-        break;
-      }
-
-      if (ts.isStringLiteral(member.literal)) {
-        stringValues.push(member.literal.text);
-        continue;
-      }
-
-      if (ts.isNumericLiteral(member.literal)) {
-        intValues.push(Number(member.literal.text));
-        continue;
-      }
-
-      homogeneousLiterals = false;
-      break;
-    }
-
-    if (homogeneousLiterals && stringValues.length > 0 && intValues.length === 0) {
-      return {
-        kind: "stringUnion",
-        values: stringValues,
-      };
-    }
-
-    if (homogeneousLiterals && intValues.length > 0 && stringValues.length === 0) {
-      return {
-        kind: "intUnion",
-        values: intValues,
-      };
+    const literalUnion = this.readLiteralUnion(members);
+    if (literalUnion) {
+      return literalUnion.kind === "string"
+        ? { kind: "stringUnion", values: literalUnion.values }
+        : { kind: "intUnion", values: literalUnion.values };
     }
 
     if (!members.every((member) => this.isScalarUnionMember(member))) {
@@ -2721,21 +2572,10 @@ class TypeEmissionContext {
   }
 
   private lowerUnionVariant(member: ts.TypeNode, typeParameters: Set<string>): RivetType | null {
-    if (ts.isLiteralTypeNode(member)) {
-      if (ts.isStringLiteral(member.literal)) {
-        return { kind: "literal", value: member.literal.text };
-      }
-      if (ts.isNumericLiteral(member.literal)) {
-        return { kind: "literal", value: Number(member.literal.text) };
-      }
-      if (member.literal.kind === ts.SyntaxKind.TrueKeyword) {
-        return { kind: "literal", value: true };
-      }
-      if (member.literal.kind === ts.SyntaxKind.FalseKeyword) {
-        return { kind: "literal", value: false };
-      }
-    }
-    return this.lowerTypeNode(member, typeParameters);
+    const literal = this.readLiteralTypeNode(member);
+    return literal === null
+      ? this.lowerTypeNode(member, typeParameters)
+      : { kind: "literal", value: literal };
   }
 
   private tryLowerTaggedUnionTypeNode(
@@ -2762,15 +2602,11 @@ class TypeEmissionContext {
       const discriminatorProperty = member.properties.find(
         (property) => property.name === discriminator,
       );
-      if (
-        !discriminatorProperty ||
-        !ts.isLiteralTypeNode(discriminatorProperty.typeNode) ||
-        !ts.isStringLiteral(discriminatorProperty.typeNode.literal)
-      ) {
+      const tag = discriminatorProperty && this.readLiteralTypeNode(discriminatorProperty.typeNode);
+      if (!discriminatorProperty || typeof tag !== "string") {
         return null;
       }
 
-      const tag = discriminatorProperty.typeNode.literal.text;
       if (seenTags.has(tag)) {
         this.diagnostics.push(
           createNodeDiagnostic(
@@ -2833,11 +2669,7 @@ class TypeEmissionContext {
   }
 
   private isTaggedUnionDiscriminatorCandidate(property: PropertyDescriptor): boolean {
-    return (
-      !property.optional &&
-      ts.isLiteralTypeNode(property.typeNode) &&
-      ts.isStringLiteral(property.typeNode.literal)
-    );
+    return !property.optional && typeof this.readLiteralTypeNode(property.typeNode) === "string";
   }
 
   private readSecurityScheme(
@@ -2891,48 +2723,58 @@ class TypeEmissionContext {
   }
 
   private readStringLiteral(node: ts.TypeNode | undefined): string | null {
-    if (!node || !ts.isLiteralTypeNode(node)) {
-      return null;
-    }
-
-    if (ts.isStringLiteral(node.literal) || ts.isNoSubstitutionTemplateLiteral(node.literal)) {
-      return node.literal.text;
-    }
-
-    return null;
+    const value = readLiteral(this.checker, node);
+    return typeof value === "string" ? value : null;
   }
 
   private readNumericLiteral(node: ts.TypeNode | undefined): number | null {
-    if (!node || !ts.isLiteralTypeNode(node) || !ts.isNumericLiteral(node.literal)) {
-      return null;
-    }
-
-    return Number(node.literal.text);
+    const value = readLiteral(this.checker, node);
+    return typeof value === "number" ? value : null;
   }
 
   private readBooleanLiteral(node: ts.TypeNode | undefined): boolean | null {
-    if (!node || !ts.isLiteralTypeNode(node)) {
-      return null;
+    const value = readLiteral(this.checker, node);
+    return typeof value === "boolean" ? value : null;
+  }
+
+  /**
+   * The literal of a literal type node only. Type lowering keeps an alias
+   * reference such as `type Kind = "a"` as a ref (an enum-like alias), so it
+   * must not resolve through aliases the way endpoint-spec reads do.
+   */
+  private readLiteralTypeNode(node: ts.TypeNode): LiteralValue | null {
+    return ts.isLiteralTypeNode(node) ? readLiteral(this.checker, node) : null;
+  }
+
+  /** `"a" | "b"` or `1 | 2`: every member a literal type node of one kind. */
+  private readLiteralUnion(
+    members: readonly ts.TypeNode[],
+  ): { kind: "string"; values: string[] } | { kind: "int"; values: number[] } | null {
+    const values = members.map((member) => this.readLiteralTypeNode(member));
+    const strings = values.filter((value) => typeof value === "string");
+    const numbers = values.filter((value) => typeof value === "number");
+    if (strings.length === values.length) {
+      return { kind: "string", values: strings };
     }
 
-    if (node.literal.kind === ts.SyntaxKind.TrueKeyword) {
-      return true;
-    }
-
-    if (node.literal.kind === ts.SyntaxKind.FalseKeyword) {
-      return false;
-    }
-
-    return null;
+    return numbers.length === values.length ? { kind: "int", values: numbers } : null;
   }
 
   private resolveTypeName(node: ts.EntityName): string {
-    const symbol = this.checker.getSymbolAtLocation(node);
-    if (symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0) {
-      return this.checker.getAliasedSymbol(symbol).getName();
-    }
+    return resolveSymbol(this.checker, node)?.getName() ?? node.getText(getNodeSourceFile(node));
+  }
 
-    return symbol?.getName() ?? node.getText(getNodeSourceFile(node));
+  /**
+   * The name of the library type `node` refers to (declared in a lib or
+   * `@types` declaration file), or null when the contract source declares it.
+   * `@types/node` alone declares `Blob`/`File` for node-only projects.
+   */
+  private libraryTypeName(node: ts.EntityName): string | null {
+    const symbol = resolveSymbol(this.checker, node);
+    const isLibrary = (symbol?.getDeclarations() ?? []).some(
+      (declaration) => declaration.getSourceFile().isDeclarationFile,
+    );
+    return symbol && isLibrary ? symbol.getName() : null;
   }
 
   private isStringLikeRecordKey(node: ts.TypeNode): boolean {

@@ -726,6 +726,36 @@ describe("lowerContracts lifecycle", () => {
     ]);
   });
 
+  it("lowers computed enum members and negative literal types", async () => {
+    const entryPath = await writeContractProject(
+      {
+        "contracts.ts": [
+          `import type { Contract, Endpoint } from "${AUTHORING_TYPES}";`,
+          "",
+          "export enum Permission { Read = 1, Write = 1 << 1, Delete = 1 << 2 }",
+          "export interface GrantDto { permission: Permission; direction: -1 | 1; }",
+          "",
+          'export interface GrantsContract extends Contract<"Grants"> {',
+          '  Get: Endpoint<{ method: "GET"; route: "/api/grants"; response: GrantDto }>;',
+          "}",
+          "",
+        ].join("\n"),
+      },
+      "rivet-ts-computed-literals-",
+    );
+
+    const lowered = lowerContracts(entryPath);
+
+    expect(lowered.diagnostics).toEqual([]);
+    const payload = parseContractJson(lowered.toJson());
+    expect(payload.enums).toEqual([{ name: "Permission", intValues: [1, 2, 4] }]);
+    expect(payload.types.find((type) => type.name === "GrantDto")?.properties).toContainEqual({
+      name: "direction",
+      type: { kind: "intUnion", values: [-1, 1] },
+      optional: false,
+    });
+  });
+
   it.each([101, 204, 205, 304])(
     "refuses response examples on body-forbidden status %i, as C# Rivet does (RIV1102)",
     async (status) => {

@@ -1090,6 +1090,48 @@ describe("Contract discovery lifecycle", () => {
     );
   });
 
+  it("recognises Contract and Endpoint through renamed imports, and literals through aliases", async () => {
+    const { entryPath } = await writeTempEntry("rivet-ts-renamed-authoring-", [
+      'import type { Contract as C, Endpoint as E } from "__IMPORT_PATH__";',
+      "",
+      'type Name = "Users";',
+      'type Get = "GET";',
+      'type PingRoute = "/api/ping";',
+      "",
+      "export interface UsersContract extends C<Name> {",
+      "  Ping: E<{ method: Get; route: PingRoute; response: void }>;",
+      "}",
+      "",
+    ]);
+
+    const lowered = lowerContracts(entryPath);
+
+    expect(lowered.diagnostics).toEqual([]);
+    expect(lowered.contracts.map((contract) => contract.name)).toEqual(["Users"]);
+    expect(parseDocument(lowered).endpoints[0]).toMatchObject({
+      httpMethod: "GET",
+      routeTemplate: "/api/ping",
+    });
+  });
+
+  it("does not treat a local type named Contract as the rivet-ts Contract", async () => {
+    const { entryPath } = await writeTempEntry("rivet-ts-local-contract-", [
+      'import type { Endpoint } from "__IMPORT_PATH__";',
+      "",
+      "type Contract<TName extends string> = { readonly label?: TName };",
+      "",
+      'export interface UsersContract extends Contract<"Users"> {',
+      '  Ping: Endpoint<{ method: "GET"; route: "/api/ping"; response: void }>;',
+      "}",
+      "",
+    ]);
+
+    const lowered = lowerContracts(entryPath);
+
+    expect(lowered.diagnostics).toEqual([]);
+    expect(lowered.contracts).toEqual([]);
+  });
+
   it("rejects a non-array container such as Promise<typeof x> as an example list", async () => {
     const { entryPath } = await writeTempEntry("rivet-ts-example-list-promise-", [
       'import type { Contract, Endpoint } from "__IMPORT_PATH__";',
