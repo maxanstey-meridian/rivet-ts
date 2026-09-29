@@ -111,43 +111,7 @@ export type RivetEndpointExampleValue =
   | readonly RivetEndpointExampleValue[]
   | { readonly [key: string]: RivetEndpointExampleValue };
 
-export class RivetRequestExample {
-  public readonly name?: string;
-  public readonly mediaType: string;
-  public readonly json?: string;
-  public readonly componentExampleId?: string;
-  public readonly resolvedJson?: string;
-
-  public constructor(
-    input:
-      | {
-          mediaType: string;
-          json: RivetEndpointExampleValue;
-          name?: string;
-        }
-      | {
-          mediaType: string;
-          componentExampleId: string;
-          resolvedJson: RivetEndpointExampleValue;
-          name?: string;
-        },
-  ) {
-    if ("json" in input) {
-      this.json = JSON.stringify(input.json);
-    } else {
-      this.componentExampleId = input.componentExampleId;
-      this.resolvedJson = JSON.stringify(input.resolvedJson);
-    }
-
-    if (input.name !== undefined) {
-      this.name = input.name;
-    }
-
-    this.mediaType = input.mediaType;
-  }
-}
-
-export class RivetResponseExample {
+export class RivetExample {
   public readonly name?: string;
   public readonly mediaType: string;
   public readonly json?: string;
@@ -264,13 +228,13 @@ export class RivetResponseType {
   public readonly statusCode: number;
   public readonly dataType?: RivetType;
   public readonly description?: string;
-  public readonly examples?: readonly RivetResponseExample[];
+  public readonly examples?: readonly RivetExample[];
 
   public constructor(input: {
     statusCode: number;
     dataType?: RivetType;
     description?: string;
-    examples?: readonly RivetResponseExample[];
+    examples?: readonly RivetExample[];
   }) {
     this.statusCode = input.statusCode;
     this.dataType = input.dataType;
@@ -299,7 +263,7 @@ export class RivetEndpointDefinition {
   public readonly responses: readonly RivetResponseType[];
   public readonly summary?: string;
   public readonly description?: string;
-  public readonly requestExamples?: readonly RivetRequestExample[];
+  public readonly requestExamples?: readonly RivetExample[];
   public readonly security?: RivetEndpointSecurity;
   public readonly fileContentType?: string;
   public readonly inputTypeName?: string;
@@ -316,7 +280,7 @@ export class RivetEndpointDefinition {
     responses: readonly RivetResponseType[];
     summary?: string;
     description?: string;
-    requestExamples?: readonly RivetRequestExample[];
+    requestExamples?: readonly RivetExample[];
     security?: RivetEndpointSecurity;
     fileContentType?: string;
     inputTypeName?: string;

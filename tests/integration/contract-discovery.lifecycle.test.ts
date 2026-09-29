@@ -1090,6 +1090,64 @@ describe("Contract discovery lifecycle", () => {
     );
   });
 
+  it("names the responseExamples entry, not requestExamples, when a response example descriptor is malformed", async () => {
+    const { entryPath } = await writeTempEntry("rivet-ts-response-example-descriptor-", [
+      'import type { Contract, Endpoint } from "__IMPORT_PATH__";',
+      "",
+      "export interface MemberDto { id: string; }",
+      'export const example = { id: "mem_1" } satisfies MemberDto;',
+      "",
+      'export interface TempContract extends Contract<"TempContract"> {',
+      "  Get: Endpoint<{",
+      '    method: "GET";',
+      '    route: "/api/temp";',
+      "    response: MemberDto;",
+      "    responseExamples: [{ status: 200; examples: [{ name: 42; json: typeof example }] }];",
+      "  }>;",
+      "}",
+      "",
+    ]);
+
+    const lowered = lowerContracts(entryPath);
+
+    expect(lowered.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+        message:
+          'Endpoint "Get" responseExamples[200].examples entries must declare name as a string literal when provided.',
+      }),
+    );
+  });
+
+  // Status-scoped response examples are not checked against the response
+  // types: the DSL does not constrain them at the type level and C# Rivet
+  // carries example JSON verbatim, so the lowerer does not invent a check.
+  it("lowers status-scoped response examples without checking them against the response type", async () => {
+    const { entryPath } = await writeTempEntry("rivet-ts-response-example-unchecked-", [
+      'import type { Contract, Endpoint } from "__IMPORT_PATH__";',
+      "",
+      "export interface MemberDto { id: string; }",
+      "export const example = { other: 1 };",
+      "",
+      'export interface TempContract extends Contract<"TempContract"> {',
+      "  Get: Endpoint<{",
+      '    method: "GET";',
+      '    route: "/api/temp";',
+      "    response: MemberDto;",
+      "    responseExamples: [{ status: 200; examples: [typeof example] }];",
+      "  }>;",
+      "}",
+      "",
+    ]);
+
+    const lowered = lowerContracts(entryPath);
+
+    expect(lowered.diagnostics).toEqual([]);
+    expect(parseDocument(lowered).endpoints[0]?.responses[0]?.examples).toEqual([
+      { mediaType: "application/json", json: '{"other":1}' },
+    ]);
+  });
+
   it("lowers the formEncoded flag from a form-encoded endpoint", async () => {
     const lowered = lowerContracts(fixturePath("form-encoded-contract", "contracts.ts"));
 

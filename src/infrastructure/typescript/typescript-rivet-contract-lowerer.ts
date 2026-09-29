@@ -1,10 +1,5 @@
 import ts from "typescript";
-import {
-  EndpointExampleSpec,
-  type EndpointExampleValue,
-  ResponseExamplesSpec,
-  type HttpMethod,
-} from "../../domain/contract.js";
+import type { HttpMethod } from "../../domain/contract.js";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import {
   type DiscoveredContract,
@@ -14,10 +9,10 @@ import {
   RivetContractDocument,
   type RivetContractEnum,
   RivetEndpointDefinition,
+  type RivetEndpointExampleValue,
   RivetEndpointParam,
-  RivetRequestExample,
-  RivetResponseExample,
   RivetEndpointSecurity,
+  RivetExample,
   RivetResponseType,
   type RivetType,
   RivetTypeDefinition,
@@ -37,8 +32,27 @@ type DiscoveredEndpointSpec = {
   hasInput: boolean;
   hasParams: boolean;
   hasQuery: boolean;
-  requestExamples: readonly EndpointExampleSpec[];
-  responseExamples: readonly ResponseExamplesSpec[];
+  fileContentType: string | undefined;
+  requestExamples: readonly RivetExample[];
+  responseExamples: readonly ResponseExampleGroup[];
+};
+
+type ResponseExampleGroup = {
+  status: number;
+  examples: readonly RivetExample[];
+};
+
+type ExampleReadContext = {
+  readonly endpointName: string;
+  /** How diagnostics name the authored example slot, e.g. "requestExamples entries". */
+  readonly label: string;
+  /** Absent for examples that are not type-checked. */
+  readonly target?: ExampleTarget;
+};
+
+type ExampleTarget = {
+  readonly typeNode: ts.TypeNode | undefined;
+  readonly property: "input" | "response";
 };
 
 type DiscoveredContractSpec = {
@@ -54,8 +68,9 @@ type EndpointContext = {
   httpMethod: string;
   formEncoded: boolean;
   acceptsFile: boolean;
-  requestExamples?: readonly EndpointExampleSpec[];
-  responseExamples?: readonly ResponseExamplesSpec[];
+  fileContentType: string | undefined;
+  requestExamples: readonly RivetExample[];
+  responseExamples: readonly ResponseExampleGroup[];
 };
 
 type PropertyDescriptor = {
@@ -92,7 +107,10 @@ const EXAMPLE_CONTAINER_TYPE_NAMES = new Set([
   "Promise",
 ]);
 const MULTIPART_FILE_TYPE_NAMES = new Set(["Blob", "File"]);
-const DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE = "application/json";
+const JSON_MEDIA_TYPE = "application/json";
+
+const getResponseExampleMediaType = (status: number, fileContentType: string | undefined): string =>
+  status >= 200 && status < 300 && fileContentType ? fileContentType : JSON_MEDIA_TYPE;
 
 const parseRouteParamNames = (route: string): string[] => {
   const matches = route.matchAll(ROUTE_PARAM_PATTERN);
@@ -353,9 +371,9 @@ export const lowerContracts = (
         httpMethod: endpoint.method,
         formEncoded: endpoint.formEncoded,
         acceptsFile: endpoint.acceptsFile,
-        requestExamples: endpoint.requestExamples.length > 0 ? endpoint.requestExamples : undefined,
-        responseExamples:
-          endpoint.responseExamples.length > 0 ? endpoint.responseExamples : undefined,
+        fileContentType: endpoint.fileContentType,
+        requestExamples: endpoint.requestExamples,
+        responseExamples: endpoint.responseExamples,
       });
 
       if (!loweredEndpoint) {
@@ -592,34 +610,36 @@ class TypeEmissionContext {
       return null;
     }
 
-    const successStatus = this.readNumericLiteral(propertyMap.get("successStatus"));
-    const requestExamples = this.parseRequestExamples(
-      propertyMap.get("requestExamples"),
-      propertyMap.get("requestExample"),
-      propertyMap.get("input"),
-      endpointName,
-    );
-    const responseExamples = this.parseResponseExamples(
-      propertyMap.get("responseExamples"),
-      propertyMap.get("successResponseExample"),
-      propertyMap.get("response"),
-      method,
-      successStatus,
-      endpointName,
-    );
+    const formEncoded = this.readBooleanLiteral(propertyMap.get("formEncoded")) ?? false;
+    const acceptsFile = this.readBooleanLiteral(propertyMap.get("acceptsFile")) ?? false;
+    const fileContentType =
+      this.readBooleanLiteral(propertyMap.get("fileResponse")) === true
+        ? (this.readStringLiteral(propertyMap.get("fileContentType")) ?? "application/octet-stream")
+        : undefined;
+    const requestMediaType = acceptsFile
+      ? "multipart/form-data"
+      : formEncoded
+        ? "application/x-www-form-urlencoded"
+        : JSON_MEDIA_TYPE;
 
     return {
       name: endpointName,
       specNode,
       method,
       route,
-      formEncoded: this.readBooleanLiteral(propertyMap.get("formEncoded")) ?? false,
-      acceptsFile: this.readBooleanLiteral(propertyMap.get("acceptsFile")) ?? false,
+      formEncoded,
+      acceptsFile,
       hasInput: propertyMap.has("input"),
       hasParams: propertyMap.has("params"),
       hasQuery: propertyMap.has("query"),
-      requestExamples,
-      responseExamples,
+      fileContentType,
+      requestExamples: this.parseRequestExamples(propertyMap, endpointName, requestMediaType),
+      responseExamples: this.parseResponseExamples(
+        propertyMap,
+        endpointName,
+        method,
+        fileContentType,
+      ),
     };
   }
 
@@ -643,18 +663,15 @@ class TypeEmissionContext {
     return method as HttpMethod;
   }
 
-  // ------------------------------------------------------------------
-  // Endpoint example extraction (absorbed from the deleted frontend).
-  // Examples are parsed at discovery time because they read const
-  // initializers and run type-assignability checks against the checker.
-  // ------------------------------------------------------------------
-
   private parseRequestExamples(
-    pluralNode: ts.TypeNode | undefined,
-    singularNode: ts.TypeNode | undefined,
-    targetNode: ts.TypeNode | undefined,
+    propertyMap: ReadonlyMap<string, ts.TypeNode>,
     endpointName: string,
-  ): EndpointExampleSpec[] {
+    defaultMediaType: string,
+  ): RivetExample[] {
+    const pluralNode = propertyMap.get("requestExamples");
+    const singularNode = propertyMap.get("requestExample");
+    const target: ExampleTarget = { typeNode: propertyMap.get("input"), property: "input" };
+
     if (pluralNode && singularNode) {
       this.diagnostics.push(
         createNodeDiagnostic(
@@ -679,37 +696,33 @@ class TypeEmissionContext {
         return [];
       }
 
-      const examples: EndpointExampleSpec[] = [];
-      for (const entryNode of entryNodes) {
-        const example = this.parseRequestExampleEntry(entryNode, targetNode, endpointName);
-        if (example) {
-          examples.push(example);
-        }
-      }
-
-      return examples;
+      const context = { endpointName, label: "requestExamples entries", defaultMediaType, target };
+      return entryNodes.flatMap((entryNode) => this.parseExampleEntry(entryNode, context) ?? []);
     }
 
-    const requestExample = this.parseEndpointExample(
-      singularNode,
-      targetNode,
-      "requestExample",
-      "input",
-      endpointName,
-    );
+    if (!singularNode) {
+      return [];
+    }
 
-    return requestExample ? [requestExample] : [];
+    const json = this.readExportedConstExample(singularNode, {
+      endpointName,
+      label: "requestExample",
+      target,
+    });
+    return json === null ? [] : [new RivetExample({ mediaType: defaultMediaType, json })];
   }
 
   private parseResponseExamples(
-    pluralNode: ts.TypeNode | undefined,
-    legacySingularNode: ts.TypeNode | undefined,
-    targetNode: ts.TypeNode | undefined,
-    method: HttpMethod,
-    successStatus: number | null,
+    propertyMap: ReadonlyMap<string, ts.TypeNode>,
     endpointName: string,
-  ): ResponseExamplesSpec[] {
-    if (pluralNode && legacySingularNode) {
+    method: HttpMethod,
+    fileContentType: string | undefined,
+  ): ResponseExampleGroup[] {
+    const pluralNode = propertyMap.get("responseExamples");
+    const singularNode = propertyMap.get("successResponseExample");
+    const responseNode = propertyMap.get("response");
+
+    if (pluralNode && singularNode) {
       this.diagnostics.push(
         createNodeDiagnostic(
           pluralNode,
@@ -733,47 +746,42 @@ class TypeEmissionContext {
         return [];
       }
 
-      const result: ResponseExamplesSpec[] = [];
-      for (const entryNode of entryNodes) {
-        const parsed = this.parseResponseExamplesEntry(entryNode, targetNode, endpointName);
-        if (parsed) {
-          result.push(parsed);
-        }
-      }
-
-      return result;
-    }
-
-    if (legacySingularNode) {
-      const legacyExample = this.parseEndpointExample(
-        legacySingularNode,
-        targetNode,
-        "successResponseExample",
-        "response",
-        endpointName,
+      return entryNodes.flatMap(
+        (entryNode) =>
+          this.parseResponseExampleGroup(entryNode, endpointName, fileContentType) ?? [],
       );
-
-      if (!legacyExample) {
-        return [];
-      }
-
-      const resolvedStatus =
-        successStatus ??
-        this.getDefaultSuccessStatus(
-          method,
-          targetNode !== undefined && targetNode.kind !== ts.SyntaxKind.VoidKeyword,
-        );
-      return [new ResponseExamplesSpec({ status: resolvedStatus, examples: [legacyExample] })];
     }
 
-    return [];
+    if (!singularNode) {
+      return [];
+    }
+
+    const json = this.readExportedConstExample(singularNode, {
+      endpointName,
+      label: "successResponseExample",
+      target: { typeNode: responseNode, property: "response" },
+    });
+    if (json === null) {
+      return [];
+    }
+
+    const status =
+      this.readNumericLiteral(propertyMap.get("successStatus")) ??
+      this.getDefaultSuccessStatus(
+        method,
+        responseNode !== undefined && responseNode.kind !== ts.SyntaxKind.VoidKeyword,
+      );
+    const mediaType = getResponseExampleMediaType(status, fileContentType);
+    return [{ status, examples: [new RivetExample({ mediaType, json })] }];
   }
 
-  private parseResponseExamplesEntry(
+  // Status-scoped response examples are deliberately not type-checked: the
+  // DSL does not constrain them and C# Rivet carries example JSON verbatim.
+  private parseResponseExampleGroup(
     node: ts.TypeNode,
-    targetNode: ts.TypeNode | undefined,
     endpointName: string,
-  ): ResponseExamplesSpec | null {
+    fileContentType: string | undefined,
+  ): ResponseExampleGroup | null {
     const propertyMap = this.createPropertyMap(node);
     if (!propertyMap) {
       this.diagnostics.push(
@@ -810,8 +818,8 @@ class TypeEmissionContext {
       return null;
     }
 
-    const exampleEntryNodes = this.getExampleEntryNodes(examplesNode);
-    if (!exampleEntryNodes) {
+    const entryNodes = this.getExampleEntryNodes(examplesNode);
+    if (!entryNodes) {
       this.diagnostics.push(
         createNodeDiagnostic(
           examplesNode,
@@ -822,57 +830,26 @@ class TypeEmissionContext {
       return null;
     }
 
-    const examples: EndpointExampleSpec[] = [];
-    for (const exampleNode of exampleEntryNodes) {
-      const example = this.parseResponseExampleEntry(
-        exampleNode,
-        `responseExamples[${status}].examples entries`,
-        endpointName,
-      );
-      if (example) {
-        examples.push(example);
-      }
-    }
-
-    return new ResponseExamplesSpec({ status, examples });
+    const context = {
+      endpointName,
+      label: `responseExamples[${status}].examples entries`,
+      defaultMediaType: getResponseExampleMediaType(status, fileContentType),
+    };
+    return {
+      status,
+      examples: entryNodes.flatMap((entryNode) => this.parseExampleEntry(entryNode, context) ?? []),
+    };
   }
 
-  private parseResponseExampleEntry(
+  /** One entry of an example list: `typeof exportedConst`, `{ json }` or `{ componentExampleId; resolvedJson }`. */
+  private parseExampleEntry(
     node: ts.TypeNode,
-    propertyName: string,
-    endpointName: string,
-  ): EndpointExampleSpec | null {
+    context: ExampleReadContext & { readonly defaultMediaType: string },
+  ): RivetExample | null {
+    const { endpointName, label } = context;
     if (ts.isTypeQueryNode(node)) {
-      const declaration = this.resolveExampleDeclaration(node.exprName);
-      if (
-        !declaration ||
-        !declaration.initializer ||
-        !this.isConstVariableDeclaration(declaration) ||
-        !this.isExportedVariableDeclaration(declaration)
-      ) {
-        this.diagnostics.push(
-          createNodeDiagnostic(
-            node,
-            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-            `Endpoint "${endpointName}" must declare ${propertyName} as typeof an exported const with an initializer.`,
-          ),
-        );
-        return null;
-      }
-
-      const data = this.parseExampleValue(declaration.initializer);
-      if (data === undefined) {
-        this.diagnostics.push(
-          createNodeDiagnostic(
-            declaration.initializer,
-            "UNSUPPORTED_ENDPOINT_EXAMPLE_VALUE",
-            `Endpoint "${endpointName}" ${propertyName} must resolve to a JSON-like const initializer.`,
-          ),
-        );
-        return null;
-      }
-
-      return new EndpointExampleSpec({ data });
+      const json = this.readExportedConstExample(node, context);
+      return json === null ? null : new RivetExample({ mediaType: context.defaultMediaType, json });
     }
 
     const propertyMap = this.createPropertyMap(node);
@@ -881,23 +858,18 @@ class TypeEmissionContext {
         createNodeDiagnostic(
           node,
           "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-          `Endpoint "${endpointName}" ${propertyName} must be typeof exportedConst or a supported descriptor object.`,
+          `Endpoint "${endpointName}" ${label} must be typeof exportedConst or a supported descriptor object.`,
         ),
       );
       return null;
     }
 
-    const name = this.parseExampleDescriptorStringLiteral(
-      propertyMap.get("name"),
-      "name",
-      endpointName,
-    );
-    const mediaType = this.parseExampleDescriptorStringLiteral(
+    const name = this.readExampleDescriptorString(propertyMap.get("name"), "name", context);
+    const mediaType = this.readExampleDescriptorString(
       propertyMap.get("mediaType"),
       "mediaType",
-      endpointName,
+      context,
     );
-
     if (name === null || mediaType === null) {
       return null;
     }
@@ -905,6 +877,7 @@ class TypeEmissionContext {
     const jsonNode = propertyMap.get("json");
     const componentExampleIdNode = propertyMap.get("componentExampleId");
     const resolvedJsonNode = propertyMap.get("resolvedJson");
+    const exampleMediaType = mediaType ?? context.defaultMediaType;
 
     if (jsonNode) {
       if (componentExampleIdNode || resolvedJsonNode) {
@@ -912,22 +885,14 @@ class TypeEmissionContext {
           createNodeDiagnostic(
             node,
             "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-            `Endpoint "${endpointName}" ${propertyName} must use either inline json or ref-backed componentExampleId/resolvedJson fields, not both.`,
+            `Endpoint "${endpointName}" ${label} must use either inline json or ref-backed componentExampleId/resolvedJson fields, not both.`,
           ),
         );
         return null;
       }
 
-      const data = this.parseResponseExampleData(jsonNode, `${propertyName}.json`, endpointName);
-      if (data === null) {
-        return null;
-      }
-
-      return new EndpointExampleSpec({
-        data,
-        name: name ?? undefined,
-        mediaType: mediaType ?? undefined,
-      });
+      const json = this.readExportedConstExample(jsonNode, { ...context, label: `${label}.json` });
+      return json === null ? null : new RivetExample({ mediaType: exampleMediaType, json, name });
     }
 
     if (componentExampleIdNode || resolvedJsonNode) {
@@ -936,7 +901,7 @@ class TypeEmissionContext {
           createNodeDiagnostic(
             node,
             "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-            `Endpoint "${endpointName}" ref-backed ${propertyName} must declare both componentExampleId and resolvedJson.`,
+            `Endpoint "${endpointName}" ref-backed ${label} must declare both componentExampleId and resolvedJson.`,
           ),
         );
         return null;
@@ -948,50 +913,46 @@ class TypeEmissionContext {
           createNodeDiagnostic(
             componentExampleIdNode,
             "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-            `Endpoint "${endpointName}" ${propertyName} must declare componentExampleId as a string literal.`,
+            `Endpoint "${endpointName}" ${label} must declare componentExampleId as a string literal.`,
           ),
         );
         return null;
       }
 
-      const resolvedJson = this.parseResponseExampleData(
-        resolvedJsonNode,
-        `${propertyName}.resolvedJson`,
-        endpointName,
-      );
-      if (resolvedJson === null) {
-        return null;
-      }
-
-      return new EndpointExampleSpec({
-        componentExampleId,
-        resolvedJson,
-        name: name ?? undefined,
-        mediaType: mediaType ?? undefined,
+      const resolvedJson = this.readExportedConstExample(resolvedJsonNode, {
+        ...context,
+        label: `${label}.resolvedJson`,
       });
+      return resolvedJson === null
+        ? null
+        : new RivetExample({ mediaType: exampleMediaType, componentExampleId, resolvedJson, name });
     }
 
     this.diagnostics.push(
       createNodeDiagnostic(
         node,
         "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-        `Endpoint "${endpointName}" ${propertyName} descriptor must declare json or componentExampleId/resolvedJson.`,
+        `Endpoint "${endpointName}" ${label} must be typeof exportedConst, { json: typeof exportedConst }, or { componentExampleId: "..."; resolvedJson: typeof exportedConst }.`,
       ),
     );
     return null;
   }
 
-  private parseResponseExampleData(
+  /**
+   * Reads `typeof exportedConst` as JSON-like example data. With a target the
+   * const's type must be assignable to the endpoint's input/response type.
+   */
+  private readExportedConstExample(
     node: ts.TypeNode,
-    propertyName: string,
-    endpointName: string,
-  ): EndpointExampleValue | null {
+    context: ExampleReadContext,
+  ): RivetEndpointExampleValue | null {
+    const { endpointName, label, target } = context;
     if (!ts.isTypeQueryNode(node)) {
       this.diagnostics.push(
         createNodeDiagnostic(
           node,
           "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-          `Endpoint "${endpointName}" must declare ${propertyName} as typeof exportedConst.`,
+          `Endpoint "${endpointName}" must declare ${label} as typeof exportedConst.`,
         ),
       );
       return null;
@@ -1008,7 +969,18 @@ class TypeEmissionContext {
         createNodeDiagnostic(
           node,
           "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-          `Endpoint "${endpointName}" must declare ${propertyName} as typeof an exported const with an initializer.`,
+          `Endpoint "${endpointName}" must declare ${label} as typeof an exported const with an initializer.`,
+        ),
+      );
+      return null;
+    }
+
+    if (target && !target.typeNode) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          node,
+          "INVALID_ENDPOINT_EXAMPLE_TYPE",
+          `Endpoint "${endpointName}" ${label} requires the corresponding endpoint ${target.property} type.`,
         ),
       );
       return null;
@@ -1020,232 +992,24 @@ class TypeEmissionContext {
         createNodeDiagnostic(
           declaration.initializer,
           "UNSUPPORTED_ENDPOINT_EXAMPLE_VALUE",
-          `Endpoint "${endpointName}" ${propertyName} must resolve to a JSON-like const initializer.`,
+          `Endpoint "${endpointName}" ${label} must resolve to a JSON-like const initializer.`,
         ),
       );
       return null;
     }
 
-    return data;
-  }
-
-  private parseRequestExampleEntry(
-    node: ts.TypeNode,
-    targetNode: ts.TypeNode | undefined,
-    endpointName: string,
-  ): EndpointExampleSpec | null {
-    if (ts.isTypeQueryNode(node)) {
-      return this.parseEndpointExample(
-        node,
-        targetNode,
-        "requestExamples entries",
-        "input",
-        endpointName,
-      );
-    }
-
-    const propertyMap = this.createPropertyMap(node);
-    if (!propertyMap) {
-      this.diagnostics.push(
-        createNodeDiagnostic(
-          node,
-          "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-          `Endpoint "${endpointName}" requestExamples entries must be typeof exportedConst or a supported descriptor object.`,
-        ),
-      );
-      return null;
-    }
-
-    const name = this.parseExampleDescriptorStringLiteral(
-      propertyMap.get("name"),
-      "name",
-      endpointName,
-    );
-    const mediaType = this.parseExampleDescriptorStringLiteral(
-      propertyMap.get("mediaType"),
-      "mediaType",
-      endpointName,
-    );
-
-    if (name === null || mediaType === null) {
-      return null;
-    }
-
-    const jsonNode = propertyMap.get("json");
-    const componentExampleIdNode = propertyMap.get("componentExampleId");
-    const resolvedJsonNode = propertyMap.get("resolvedJson");
-
-    if (jsonNode) {
-      if (componentExampleIdNode || resolvedJsonNode) {
-        this.diagnostics.push(
-          createNodeDiagnostic(
-            node,
-            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-            `Endpoint "${endpointName}" requestExamples entries must use either inline json or ref-backed componentExampleId/resolvedJson fields, not both.`,
-          ),
-        );
-        return null;
-      }
-
-      const data = this.parseEndpointExampleData(
-        jsonNode,
-        targetNode,
-        "requestExamples entries.json",
-        "input",
-        endpointName,
-      );
-      if (data === null) {
-        return null;
-      }
-
-      return new EndpointExampleSpec({
-        data,
-        name: name ?? undefined,
-        mediaType: mediaType ?? undefined,
-      });
-    }
-
-    if (componentExampleIdNode || resolvedJsonNode) {
-      if (!componentExampleIdNode || !resolvedJsonNode) {
-        this.diagnostics.push(
-          createNodeDiagnostic(
-            node,
-            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-            `Endpoint "${endpointName}" ref-backed requestExamples entries must declare both componentExampleId and resolvedJson.`,
-          ),
-        );
-        return null;
-      }
-
-      const componentExampleId = this.readStringLiteral(componentExampleIdNode);
-      if (!componentExampleId) {
-        this.diagnostics.push(
-          createNodeDiagnostic(
-            componentExampleIdNode,
-            "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-            `Endpoint "${endpointName}" requestExamples entries must declare componentExampleId as a string literal.`,
-          ),
-        );
-        return null;
-      }
-
-      const resolvedJson = this.parseEndpointExampleData(
-        resolvedJsonNode,
-        targetNode,
-        "requestExamples entries.resolvedJson",
-        "input",
-        endpointName,
-      );
-      if (resolvedJson === null) {
-        return null;
-      }
-
-      return new EndpointExampleSpec({
-        componentExampleId,
-        resolvedJson,
-        name: name ?? undefined,
-        mediaType: mediaType ?? undefined,
-      });
-    }
-
-    this.diagnostics.push(
-      createNodeDiagnostic(
-        node,
-        "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-        `Endpoint "${endpointName}" requestExamples entries must be typeof exportedConst, { json: typeof exportedConst }, or { componentExampleId: "..."; resolvedJson: typeof exportedConst }.`,
-      ),
-    );
-    return null;
-  }
-
-  private parseEndpointExample(
-    node: ts.TypeNode | undefined,
-    targetNode: ts.TypeNode | undefined,
-    propertyName: string,
-    targetPropertyName: "input" | "response",
-    endpointName: string,
-  ): EndpointExampleSpec | null {
-    const data = this.parseEndpointExampleData(
-      node,
-      targetNode,
-      propertyName,
-      targetPropertyName,
-      endpointName,
-    );
-
-    return data === null ? null : new EndpointExampleSpec({ data });
-  }
-
-  private parseEndpointExampleData(
-    node: ts.TypeNode | undefined,
-    targetNode: ts.TypeNode | undefined,
-    propertyName: string,
-    targetPropertyName: "input" | "response",
-    endpointName: string,
-  ): EndpointExampleValue | null {
-    if (!node) {
-      return null;
-    }
-
-    if (!ts.isTypeQueryNode(node)) {
-      this.diagnostics.push(
-        createNodeDiagnostic(
-          node,
-          "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-          `Endpoint "${endpointName}" must declare ${propertyName} as typeof exportedConst.`,
-        ),
-      );
-      return null;
-    }
-
-    const declaration = this.resolveExampleDeclaration(node.exprName);
     if (
-      !declaration ||
-      !declaration.initializer ||
-      !this.isConstVariableDeclaration(declaration) ||
-      !this.isExportedVariableDeclaration(declaration)
+      target?.typeNode &&
+      !this.checker.isTypeAssignableTo(
+        this.checker.getTypeFromTypeNode(node),
+        this.checker.getTypeFromTypeNode(target.typeNode),
+      )
     ) {
       this.diagnostics.push(
         createNodeDiagnostic(
           node,
-          "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-          `Endpoint "${endpointName}" must declare ${propertyName} as typeof an exported const with an initializer.`,
-        ),
-      );
-      return null;
-    }
-
-    if (!targetNode) {
-      this.diagnostics.push(
-        createNodeDiagnostic(
-          node,
           "INVALID_ENDPOINT_EXAMPLE_TYPE",
-          `Endpoint "${endpointName}" ${propertyName} requires the corresponding endpoint ${targetPropertyName} type.`,
-        ),
-      );
-      return null;
-    }
-
-    const data = this.parseExampleValue(declaration.initializer);
-    if (data === undefined) {
-      this.diagnostics.push(
-        createNodeDiagnostic(
-          declaration.initializer,
-          "UNSUPPORTED_ENDPOINT_EXAMPLE_VALUE",
-          `Endpoint "${endpointName}" ${propertyName} must resolve to a JSON-like const initializer.`,
-        ),
-      );
-      return null;
-    }
-
-    const exampleType = this.checker.getTypeFromTypeNode(node);
-    const targetType = this.checker.getTypeFromTypeNode(targetNode);
-    if (!this.checker.isTypeAssignableTo(exampleType, targetType)) {
-      this.diagnostics.push(
-        createNodeDiagnostic(
-          node,
-          "INVALID_ENDPOINT_EXAMPLE_TYPE",
-          `Endpoint "${endpointName}" ${propertyName} must be assignable to the endpoint ${targetPropertyName} type.`,
+          `Endpoint "${endpointName}" ${label} must be assignable to the endpoint ${target.property} type.`,
         ),
       );
       return null;
@@ -1254,10 +1018,11 @@ class TypeEmissionContext {
     return data;
   }
 
-  private parseExampleDescriptorStringLiteral(
+  /** `undefined` when absent, `null` when present but not a string literal (diagnosed). */
+  private readExampleDescriptorString(
     node: ts.TypeNode | undefined,
     propertyName: "name" | "mediaType",
-    endpointName: string,
+    context: ExampleReadContext,
   ): string | null | undefined {
     if (!node) {
       return undefined;
@@ -1272,7 +1037,7 @@ class TypeEmissionContext {
       createNodeDiagnostic(
         node,
         "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-        `Endpoint "${endpointName}" requestExamples entries must declare ${propertyName} as a string literal when provided.`,
+        `Endpoint "${context.endpointName}" ${context.label} must declare ${propertyName} as a string literal when provided.`,
       ),
     );
     return null;
@@ -1344,7 +1109,7 @@ class TypeEmissionContext {
     );
   }
 
-  private parseExampleValue(expression: ts.Expression): EndpointExampleValue | undefined {
+  private parseExampleValue(expression: ts.Expression): RivetEndpointExampleValue | undefined {
     const unwrapped = this.unwrapExampleExpression(expression);
 
     if (ts.isStringLiteral(unwrapped) || ts.isNoSubstitutionTemplateLiteral(unwrapped)) {
@@ -1385,7 +1150,7 @@ class TypeEmissionContext {
     }
 
     if (ts.isArrayLiteralExpression(unwrapped)) {
-      const values: EndpointExampleValue[] = [];
+      const values: RivetEndpointExampleValue[] = [];
       for (const element of unwrapped.elements) {
         if (ts.isSpreadElement(element)) {
           return undefined;
@@ -1403,7 +1168,7 @@ class TypeEmissionContext {
     }
 
     if (ts.isObjectLiteralExpression(unwrapped)) {
-      const value: Record<string, EndpointExampleValue> = {};
+      const value: Record<string, RivetEndpointExampleValue> = {};
       for (const property of unwrapped.properties) {
         const entry = this.parseExampleObjectProperty(property);
         if (!entry) {
@@ -1438,7 +1203,7 @@ class TypeEmissionContext {
 
   private resolveIdentifierExampleValue(
     identifier: ts.Identifier,
-  ): EndpointExampleValue | undefined {
+  ): RivetEndpointExampleValue | undefined {
     const symbol = this.checker.getSymbolAtLocation(identifier);
     if (!symbol) {
       return undefined;
@@ -1458,7 +1223,7 @@ class TypeEmissionContext {
 
   private parseExampleObjectProperty(
     property: ts.ObjectLiteralElementLike,
-  ): { name: string; value: EndpointExampleValue } | null {
+  ): { name: string; value: RivetEndpointExampleValue } | null {
     if (ts.isPropertyAssignment(property)) {
       const propertyName = getPropertyName(property.name);
       if (!propertyName) {
@@ -1481,7 +1246,7 @@ class TypeEmissionContext {
 
   private parseShorthandExampleValue(
     property: ts.ShorthandPropertyAssignment,
-  ): EndpointExampleValue | undefined {
+  ): RivetEndpointExampleValue | undefined {
     const symbol = this.checker.getShorthandAssignmentValueSymbol(property);
     if (!symbol) {
       return undefined;
@@ -1575,10 +1340,7 @@ class TypeEmissionContext {
     const description = this.readStringLiteral(propertyMap.get("description")) ?? undefined;
     const anonymous = this.readBooleanLiteral(propertyMap.get("anonymous")) ?? false;
     const securityScheme = this.readSecurityScheme(propertyMap.get("security"), context);
-    const fileResponse = this.readBooleanLiteral(propertyMap.get("fileResponse")) ?? false;
-    const fileContentType = fileResponse
-      ? (this.readStringLiteral(propertyMap.get("fileContentType")) ?? "application/octet-stream")
-      : undefined;
+    const fileContentType = context.fileContentType;
     const queryAuthBool = this.readBooleanLiteral(propertyMap.get("queryAuth"));
     const queryAuthString = this.readStringLiteral(propertyMap.get("queryAuth"));
     const queryAuth =
@@ -1620,9 +1382,9 @@ class TypeEmissionContext {
       successStatus,
       responseNode,
       responseType,
-      fileResponse,
+      fileContentType !== undefined,
     );
-    const responses = this.mergeResponseExamples(baseResponses, context, fileContentType);
+    const responses = this.mergeResponseExamples(baseResponses, context);
 
     if (anonymous && securityScheme) {
       const conflictingNode = propertyMap.get("security") ?? specNode;
@@ -1642,17 +1404,6 @@ class TypeEmissionContext {
             scheme: anonymous ? undefined : (securityScheme ?? undefined),
           })
         : undefined;
-    const requestExampleDefaultMediaType = context.acceptsFile
-      ? "multipart/form-data"
-      : context.formEncoded
-        ? "application/x-www-form-urlencoded"
-        : DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE;
-    const requestExamples = context.requestExamples
-      ?.map((requestExample) =>
-        this.lowerRequestExample(requestExample, requestExampleDefaultMediaType),
-      )
-      .filter((requestExample): requestExample is RivetRequestExample => requestExample !== null);
-
     const inputTypeName =
       context.acceptsFile &&
       inputNode &&
@@ -1671,7 +1422,7 @@ class TypeEmissionContext {
       responses,
       summary,
       description,
-      requestExamples: requestExamples?.length ? requestExamples : undefined,
+      requestExamples: context.requestExamples.length > 0 ? context.requestExamples : undefined,
       security,
       fileContentType,
       inputTypeName,
@@ -2292,40 +2043,6 @@ class TypeEmissionContext {
     return MULTIPART_FILE_TYPE_NAMES.has(name);
   }
 
-  private lowerRequestExample(
-    example: EndpointExampleSpec,
-    defaultMediaType: string,
-  ): RivetRequestExample | null {
-    const mediaType = example.mediaType ?? defaultMediaType;
-
-    if (example.data !== undefined) {
-      return new RivetRequestExample({
-        mediaType,
-        json: example.data,
-        name: example.name,
-      });
-    }
-
-    if (example.componentExampleId && example.resolvedJson !== undefined) {
-      return new RivetRequestExample({
-        mediaType,
-        componentExampleId: example.componentExampleId,
-        resolvedJson: example.resolvedJson,
-        name: example.name,
-      });
-    }
-
-    this.diagnostics.push(
-      new ExtractionDiagnostic({
-        severity: "error",
-        code: "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-        message:
-          "Request example must resolve to either inline json or componentExampleId/resolvedJson.",
-      }),
-    );
-    return null;
-  }
-
   private getNamedPropertyTypes(inputNode: ts.TypeNode): Map<string, RivetType> {
     const properties = this.getObjectProperties(inputNode);
     const propertyTypes = new Map<string, RivetType>();
@@ -2392,9 +2109,8 @@ class TypeEmissionContext {
   private mergeResponseExamples(
     responses: RivetResponseType[],
     context: EndpointContext,
-    fileContentType: string | undefined,
   ): RivetResponseType[] {
-    if (!context.responseExamples || context.responseExamples.length === 0) {
+    if (context.responseExamples.length === 0) {
       return responses;
     }
 
@@ -2418,10 +2134,7 @@ class TypeEmissionContext {
       }
 
       const existing = merged[index]!;
-      const examples = group.examples
-        .map((example) => this.lowerResponseExample(example, group.status, fileContentType))
-        .filter((example): example is RivetResponseExample => example !== null);
-
+      const { examples } = group;
       if (examples.length > 0) {
         merged[index] = new RivetResponseType({
           statusCode: existing.statusCode,
@@ -2433,44 +2146,6 @@ class TypeEmissionContext {
     }
 
     return merged;
-  }
-
-  private lowerResponseExample(
-    example: EndpointExampleSpec,
-    statusCode: number,
-    fileContentType: string | undefined,
-  ): RivetResponseExample | null {
-    const isSuccessStatus = statusCode >= 200 && statusCode < 300;
-    const defaultMediaType =
-      isSuccessStatus && fileContentType ? fileContentType : DEFAULT_REQUEST_EXAMPLE_MEDIA_TYPE;
-    const mediaType = example.mediaType ?? defaultMediaType;
-
-    if (example.data !== undefined) {
-      return new RivetResponseExample({
-        mediaType,
-        json: example.data,
-        name: example.name,
-      });
-    }
-
-    if (example.componentExampleId && example.resolvedJson !== undefined) {
-      return new RivetResponseExample({
-        mediaType,
-        componentExampleId: example.componentExampleId,
-        resolvedJson: example.resolvedJson,
-        name: example.name,
-      });
-    }
-
-    this.diagnostics.push(
-      new ExtractionDiagnostic({
-        severity: "error",
-        code: "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
-        message:
-          "Response example must resolve to either inline json or componentExampleId/resolvedJson.",
-      }),
-    );
-    return null;
   }
 
   private readErrorResponses(node: ts.TypeNode, context: EndpointContext): RivetResponseType[] {

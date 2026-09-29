@@ -7,10 +7,12 @@
 - Removed the `rivet-ts/local` entry point (`configureLocalRivet`, `createLocalRivetFetch`, `LocalRivetConfig`). The scaffolds no longer use it.
 - Removed the lowerer-internal exports `EndpointExampleSpec`, `ResponseExamplesSpec` and the unused `RivetEndpointExample` class.
 - `RivetContractLoweringResult` no longer has `toJSON()`: `JSON.stringify(result)` now serialises the whole result, not just its document. Use `result.toJson()` or `result.document`.
+- `RivetRequestExample` and `RivetResponseExample` are merged into one `RivetExample` class, and the `EndpointExampleValue` type export is removed (use `RivetEndpointExampleValue`). The contract JSON is unchanged.
 - `registerRivetHonoRoutes({ group })` matches endpoints by `controllerName` only. The contract JSON never carried an endpoint `group`, so only hand-written contract objects that set one are affected.
 
 ## Unreleased — fixes
 
+- Malformed `name`/`mediaType` on a `responseExamples` descriptor is reported against `responseExamples[<status>].examples entries`, not `requestExamples entries`.
 - `rivet-ts --entry` accepts `--tsconfig <file>` (it previously rejected the flag, so a non-default tsconfig could not be used).
 - `rivet-ts rivet` no longer kills the Rivet binary after 1 MB of output, and reports a signal-killed binary as `128 + signal`.
 - The Vite plugin no longer fails on more than 1 MB of Rivet output, and fails the build when one Rivet run exceeds `rivet.timeoutMs` (default 120 s).
