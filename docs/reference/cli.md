@@ -5,7 +5,6 @@ The package exposes two identical binaries — `rivet-ts` and the legacy alias `
 - `rivet-ts` — authoring types, handler types, the reflection pipeline
 - `rivet-ts/vite` — the Vite plugin
 - `rivet-ts/hono` — the Hono server runtime
-- `rivet-ts/local` — in-process dispatch helpers for the typed client
 - `rivet-ts/package.json`
 
 Usage (from `rivet-ts --help`):

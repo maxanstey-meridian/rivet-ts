@@ -56,12 +56,6 @@ const verifyDigest = async (filePath: string, expectedDigest: string): Promise<v
   }
 };
 
-export type ResolvedRivetBinary = {
-  readonly executablePath: string;
-  readonly version: string;
-  readonly rid: string;
-};
-
 export type RivetBinaryConfig = {
   readonly version?: string;
   readonly autoInstall?: boolean;
@@ -106,24 +100,11 @@ const downloadReleaseAsset = async (
   return asset;
 };
 
-export const ensureRivetBinary = async (
-  config: ResolvedRivetBinaryConfig,
-): Promise<ResolvedRivetBinary> => {
-  if (config?.binaryPath) {
-    // The rid is informational on this branch; resolving it eagerly would
-    // reject self-built binaries on platforms outside the release matrix —
-    // the exact users the escape hatch exists for (B1).
-    let rid: string;
-    try {
-      rid = resolveRid();
-    } catch {
-      rid = `${process.platform}-${process.arch}`;
-    }
-    return {
-      executablePath: path.resolve(config.binaryPath),
-      version: config.version ?? "manual",
-      rid,
-    };
+export const ensureRivetBinary = async (config: ResolvedRivetBinaryConfig): Promise<string> => {
+  // An explicit binary skips rid resolution, so self-built binaries work on
+  // platforms outside the release matrix.
+  if (config.binaryPath) {
+    return path.resolve(config.binaryPath);
   }
 
   const autoInstall = config.autoInstall ?? true;
@@ -137,11 +118,7 @@ export const ensureRivetBinary = async (
 
   try {
     await fs.access(executablePath);
-    return {
-      executablePath,
-      version,
-      rid,
-    };
+    return executablePath;
   } catch {
     if (!autoInstall) {
       throw new Error(
@@ -209,9 +186,5 @@ export const ensureRivetBinary = async (
     await fs.rm(stagingDirectory, { recursive: true, force: true }).catch(() => undefined);
   }
 
-  return {
-    executablePath,
-    version,
-    rid,
-  };
+  return executablePath;
 };

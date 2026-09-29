@@ -27,7 +27,6 @@ type ContractEndpointJson = {
   readonly name: string;
   readonly httpMethod: string;
   readonly routeTemplate: string;
-  readonly group?: string;
   readonly controllerName?: string;
   readonly params: ReadonlyArray<ContractEndpointParamJson>;
   readonly responses: ReadonlyArray<{ readonly statusCode: number }>;
@@ -131,12 +130,6 @@ const resolveHandlerEntry = <TContract, TKey extends ContractEndpointKey<TContra
     return asRivetHandler(
       resolveHandler(handlerEntry, context) as RivetInvokable<TContract, TKey>,
     ) as RivetHandler<TContract, TKey>;
-  }
-
-  if (handlerEntry.length > 0) {
-    throw createHandlerResolutionError(
-      `Handler class "${handlerEntry.name || endpointName}" for endpoint "${endpointName}" requires constructor dependencies. Supply "resolveHandler" at registration.`,
-    );
   }
 
   return asRivetHandler(new handlerEntry() as RivetInvokable<TContract, TKey>) as RivetHandler<
@@ -356,20 +349,9 @@ const getSuccessStatus = (endpoint: ContractEndpointJson): number => {
   return successResponse?.statusCode ?? getDefaultSuccessStatus(endpoint.httpMethod);
 };
 
-const withHeaders = (
-  input: Headers | Record<string, string> | undefined,
-  name: string,
-  value: string,
-): Headers => {
-  const headers = new Headers(input);
-  headers.set(name, value);
-  return headers;
-};
-
-const toResponseBody = async (
+const toResponseBody = (
   result: unknown,
-  _fileContentType: string,
-): Promise<Blob | string | ArrayBuffer | Uint8Array | ReadableStream> => {
+): Blob | string | ArrayBuffer | Uint8Array | ReadableStream => {
   if (result instanceof Blob) {
     return result;
   }
@@ -399,9 +381,9 @@ const writeSuccessResponse = async (
   }
 
   if (endpoint.fileContentType) {
-    return new Response(await toResponseBody(result, endpoint.fileContentType), {
+    return new Response(toResponseBody(result), {
       status,
-      headers: withHeaders(undefined, "content-type", endpoint.fileContentType),
+      headers: { "content-type": endpoint.fileContentType },
     });
   }
 
@@ -463,10 +445,7 @@ export const registerRivetHonoRoutes = <
   options: RegisterRivetHonoRoutesOptions<TContract>,
 ): TApp => {
   const selectedEndpoints = contract.endpoints.filter(
-    (endpoint) =>
-      !options.group ||
-      endpoint.group === options.group ||
-      endpoint.controllerName === options.group,
+    (endpoint) => !options.group || endpoint.controllerName === options.group,
   );
 
   if (selectedEndpoints.length === 0) {

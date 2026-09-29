@@ -49,11 +49,7 @@ export class RivetContractLoweringResult {
     return this.diagnostics.some((diagnostic) => diagnostic.severity === "error");
   }
 
-  public toJSON(): RivetContractDocument {
-    return this.document;
-  }
-
   public toJson(): string {
-    return JSON.stringify(this.toJSON(), null, 2);
+    return JSON.stringify(this.document, null, 2);
   }
 }

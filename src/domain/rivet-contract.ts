@@ -111,14 +111,6 @@ export type RivetEndpointExampleValue =
   | readonly RivetEndpointExampleValue[]
   | { readonly [key: string]: RivetEndpointExampleValue };
 
-export class RivetEndpointExample {
-  public readonly data: RivetEndpointExampleValue;
-
-  public constructor(input: { data: RivetEndpointExampleValue }) {
-    this.data = input.data;
-  }
-}
-
 export class RivetRequestExample {
   public readonly name?: string;
   public readonly mediaType: string;

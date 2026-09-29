@@ -33,18 +33,12 @@ export {
   type RivetResult,
   type RivetSuccessResult,
 } from "./domain/runtime-types.js";
-export {
-  EndpointExampleSpec,
-  ResponseExamplesSpec,
-  type EndpointExampleValue,
-  type HttpMethod,
-} from "./domain/contract.js";
+export type { EndpointExampleValue, HttpMethod } from "./domain/contract.js";
 export { ExtractionDiagnostic, type DiagnosticSeverity } from "./domain/diagnostic.js";
 export {
   RivetContractDocument,
   type RivetContractEnum,
   RivetEndpointDefinition,
-  RivetEndpointExample,
   type RivetEndpointExampleValue,
   RivetEndpointParam,
   RivetEndpointSecurity,

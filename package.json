@@ -35,10 +35,6 @@
       "types": "./dist/hono.d.ts",
       "import": "./dist/hono.js"
     },
-    "./local": {
-      "types": "./dist/local.d.ts",
-      "import": "./dist/local.js"
-    },
     "./package.json": "./package.json"
   },
   "scripts": {

@@ -142,7 +142,7 @@ const generateArtifacts = async (
   // it emits no TS clients, types, or validators). The TypeScript client is
   // then generated locally from the spec: openapi-typescript types + an
   // openapi-fetch facade.
-  const binary = await ensureRivetBinary(options.binaryConfig);
+  const executablePath = await ensureRivetBinary(options.binaryConfig);
 
   // Freshness guard: the spec on disk may be the scaffold-time bootstrap
   // placeholder (or a previous run's output), so it is moved aside before the
@@ -164,7 +164,7 @@ const generateArtifacts = async (
 
   try {
     await execFileAsync(
-      binary.executablePath,
+      executablePath,
       ["--from", options.runtimeContractPath, "--output", options.clientOutDir],
       {
         cwd: options.apiRoot,
@@ -192,7 +192,7 @@ const generateArtifacts = async (
       `[rivet-ts] The Rivet binary exited successfully but did not write an OpenAPI spec to ` +
       `${options.openApiPath}. The generated client package was NOT regenerated` +
       `${previousSpec !== undefined ? " (previous artifacts were left in place)" : ""}. ` +
-      `Likely cause: the binary's --output handling changed, or "${binary.executablePath}" is not the Rivet OpenAPI emitter.`;
+      `Likely cause: the binary's --output handling changed, or "${executablePath}" is not the Rivet OpenAPI emitter.`;
     config.logger.error(message);
     throw new Error(`rivet-ts/vite: the Rivet binary did not write ${options.openApiPath}.`);
   }

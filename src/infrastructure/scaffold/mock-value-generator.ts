@@ -8,18 +8,20 @@ import type {
 } from "../../domain/rivet-contract.js";
 import { createTypeWalkContext, enterTypeDefinition, type TypeWalkContext } from "./type-walk.js";
 
-type MockGenerationSuccess =
-  | { kind: "value"; value: RivetEndpointExampleValue; needsCast: boolean }
-  | { kind: "source"; source: string }
-  | { kind: "void" };
+type SynthesizedValue = { kind: "value"; value: RivetEndpointExampleValue };
 
 type MockGenerationFailure = {
   kind: "todo";
   message: string;
 };
 
-export type MockGenerationResult = MockGenerationSuccess | MockGenerationFailure;
-type TypeSynthesisResult = Exclude<MockGenerationResult, { kind: "source" }>;
+type TypeSynthesisResult = SynthesizedValue | { kind: "void" } | MockGenerationFailure;
+
+export type MockGenerationResult =
+  | (SynthesizedValue & { needsCast: boolean })
+  | { kind: "source"; source: string }
+  | { kind: "void" }
+  | MockGenerationFailure;
 
 type TypeContext = TypeWalkContext & {
   readonly endpointName: string;
@@ -90,7 +92,7 @@ const synthesizeObject = (
     }
   }
 
-  return { kind: "value", value: output, needsCast: false };
+  return { kind: "value", value: output };
 };
 
 const synthesizeTaggedUnion = (
@@ -121,7 +123,6 @@ const synthesizeTaggedUnion = (
       ...objectValue,
       [type.discriminator]: firstVariant.tag,
     },
-    needsCast: false,
   };
 };
 
@@ -141,14 +142,14 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): TypeSynthes
         case "string": {
           const formatted = type.format ? FORMAT_MOCK_VALUES[type.format] : undefined;
           if (formatted !== undefined) {
-            return { kind: "value", value: formatted, needsCast: false };
+            return { kind: "value", value: formatted };
           }
-          return { kind: "value", value: "example", needsCast: false };
+          return { kind: "value", value: "example" };
         }
         case "number":
-          return { kind: "value", value: 0, needsCast: false };
+          return { kind: "value", value: 0 };
         case "boolean":
-          return { kind: "value", value: false, needsCast: false };
+          return { kind: "value", value: false };
         case "unknown":
           return {
             kind: "todo",
@@ -163,32 +164,30 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): TypeSynthes
 
     case "nullable": {
       const inner = synthesizeType(type.inner, context);
-      return inner.kind === "todo" ? { kind: "value", value: null, needsCast: false } : inner;
+      return inner.kind === "todo" ? { kind: "value", value: null } : inner;
     }
 
     case "array": {
       const element = synthesizeType(type.element, context);
       if (element.kind === "todo") {
-        return { kind: "value", value: [], needsCast: false };
+        return { kind: "value", value: [] };
       }
       return {
         kind: "value",
         value: element.kind === "void" ? [] : [element.value],
-        needsCast: false,
       };
     }
 
     case "dictionary": {
       const value = synthesizeType(type.value, context);
       if (value.kind === "todo") {
-        return { kind: "value", value: {}, needsCast: false };
+        return { kind: "value", value: {} };
       }
       // An empty dictionary is assignable to Record<string, T> for every T;
       // {key: null} is not (S7).
       return {
         kind: "value",
         value: value.kind === "void" ? {} : { key: value.value },
-        needsCast: false,
       };
     }
 
@@ -199,7 +198,7 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): TypeSynthes
           message: `Endpoint "${context.endpointName}" uses an empty string union.`,
         };
       }
-      return { kind: "value", value: type.values[0], needsCast: false };
+      return { kind: "value", value: type.values[0] };
 
     case "intUnion":
       if (type.values.length === 0) {
@@ -208,10 +207,10 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): TypeSynthes
           message: `Endpoint "${context.endpointName}" uses an empty int union.`,
         };
       }
-      return { kind: "value", value: type.values[0], needsCast: false };
+      return { kind: "value", value: type.values[0] };
 
     case "literal":
-      return { kind: "value", value: type.value, needsCast: false };
+      return { kind: "value", value: type.value };
 
     case "union": {
       for (const variant of type.variants) {
@@ -236,7 +235,7 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): TypeSynthes
           };
         }
         context.state.needsCast = true;
-        return { kind: "value", value: enumValues[0] as string | number, needsCast: true };
+        return { kind: "value", value: enumValues[0] as string | number };
       }
 
       const typeDef = context.typeDefinitions.get(type.name);

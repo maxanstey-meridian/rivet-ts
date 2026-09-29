@@ -40,7 +40,6 @@ const createSyntheticCompilerOptions = (absoluteEntryPath: string): ts.CompilerO
 export type ResolvedTypeScriptProject = Readonly<{
   absoluteEntryPath: string;
   compilerOptions: ts.CompilerOptions;
-  configFilePath: string | null;
   configDiagnostics: readonly ts.Diagnostic[];
 }>;
 
@@ -87,7 +86,6 @@ export const resolveTypeScriptProject = (
       absoluteEntryPath,
       compilerOptions: createSyntheticCompilerOptions(absoluteEntryPath),
       configDiagnostics: [],
-      configFilePath: null,
     };
   }
 
@@ -98,7 +96,6 @@ export const resolveTypeScriptProject = (
       absoluteEntryPath,
       compilerOptions: DEFAULT_COMPILER_OPTIONS,
       configDiagnostics: [readConfigResult.error],
-      configFilePath: resolvedTsconfigPath,
     };
   }
 
@@ -118,6 +115,5 @@ export const resolveTypeScriptProject = (
       noEmit: true,
     },
     configDiagnostics: parsedConfig.errors,
-    configFilePath: resolvedTsconfigPath,
   };
 };
