@@ -473,6 +473,8 @@ describe("responses", () => {
   });
 });
 
+const sharedConflict = rivetHttpError(409, { code: "conflict" } satisfies ConflictDto);
+
 describe("RivetHttpError", () => {
   it("serializes an explicit non-2xx status thrown by a handler", async () => {
     class ConflictingSearchHandler implements RivetInvokable<DirectoryContract, "Search"> {
@@ -531,6 +533,56 @@ describe("RivetHttpError", () => {
       code: "internal_error",
       message: "Unexpected error.",
     });
+  });
+
+  it("keeps headers middleware set before next() on thrown and binding-error responses", async () => {
+    const app = new Hono();
+    app.use(async (context, next) => {
+      context.header("x-mw", "yes");
+      await next();
+    });
+    registerRivetHonoRoutes<DirectoryContract>(app, directory, {
+      group: "directory",
+      handlers: {
+        ...directoryHandlers,
+        Health: async () => {
+          throw rivetHttpError(409, { code: "conflict" } satisfies ConflictDto, {
+            headers: { "x-retry-after": "5" },
+          });
+        },
+      },
+    });
+
+    const thrown = await app.request("/api/directory/health");
+    expect(thrown.status).toBe(409);
+    expect(thrown.headers.get("x-mw")).toBe("yes");
+    expect(thrown.headers.get("x-retry-after")).toBe("5");
+    await expect(thrown.json()).resolves.toEqual({ code: "conflict" });
+
+    const binding = await postJson(app, "/api/directory/search", "{not json");
+    expect(binding.status).toBe(400);
+    expect(binding.headers.get("x-mw")).toBe("yes");
+  });
+
+  it("answers every request that throws the same error instance", async () => {
+    const app = new Hono();
+    registerRivetHonoRoutes<DirectoryContract>(app, directory, {
+      group: "directory",
+      handlers: {
+        ...directoryHandlers,
+        Health: async () => {
+          throw sharedConflict;
+        },
+      },
+    });
+
+    for (const _ of [1, 2]) {
+      const response = await app.request("/api/directory/health");
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toEqual({ code: "conflict" });
+    }
+    await expect(sharedConflict.getResponse().json()).resolves.toEqual({ code: "conflict" });
+    await expect(sharedConflict.getResponse().json()).resolves.toEqual({ code: "conflict" });
   });
 
   it("is recognised as an HTTPException by Hono error handling when route middleware throws it", async () => {

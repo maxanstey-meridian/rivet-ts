@@ -1,4 +1,4 @@
-import { type Context, type Env, Hono, type MiddlewareHandler, type Schema } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import {
@@ -379,12 +379,13 @@ const toHeaders = (headers: RivetHeadersInit): Headers => {
 
 /**
  * A contract result other than the success response. It is Hono's
- * `HTTPException`, so any Hono error handling recognises it; the route that
- * threw it answers with `getResponse()` (the JSON `data`, or no body when
- * `data` is undefined).
+ * `HTTPException`, so any Hono error handling recognises it. The route that
+ * threw it answers with the JSON `data`, or no body when `data` is undefined;
+ * `getResponse()` builds the same response outside a route.
  */
 export class RivetHttpError<TData = unknown> extends HTTPException {
   public readonly data: TData;
+  public readonly headers: RivetHeadersInit;
 
   public constructor(input: {
     status: ContentfulStatusCode;
@@ -392,18 +393,30 @@ export class RivetHttpError<TData = unknown> extends HTTPException {
     headers?: RivetHeadersInit;
     message?: string;
   }) {
-    const headers = toHeaders(input.headers ?? {});
-    super(input.status, {
-      message: input.message ?? `Rivet HTTP error ${input.status}`,
-      res:
-        input.data === undefined
-          ? new Response(null, { status: input.status, headers })
-          : Response.json(input.data, { status: input.status, headers }),
-    });
+    // The type excludes 204/205/304, but a widened status can still reach here.
+    if (input.data !== undefined && isBodylessStatus(input.status)) {
+      throw new TypeError(`RivetHttpError status ${input.status} must not carry a body.`);
+    }
+    super(input.status, { message: input.message ?? `Rivet HTTP error ${input.status}` });
     this.name = "RivetHttpError";
     this.data = input.data;
+    this.headers = input.headers ?? {};
+  }
+
+  // A Response body can be read once, so each call builds a fresh one.
+  public override getResponse(): Response {
+    const headers = toHeaders(this.headers);
+    return this.data === undefined
+      ? new Response(null, { status: this.status, headers })
+      : Response.json(this.data, { status: this.status, headers });
   }
 }
+
+// Built through the context so headers set by middleware before `next()` stay.
+const writeErrorResponse = (context: Context, error: RivetHttpError): Response =>
+  error.data === undefined
+    ? context.body(null, error.status, error.headers)
+    : context.json(error.data, error.status, error.headers);
 
 export const rivetHttpError = <TData>(
   status: ContentfulStatusCode,
@@ -420,7 +433,16 @@ export const rivetHttpError = <TData>(
     message: options?.message,
   });
 
-export const registerRivetHonoRoutes = <TContract, TApp extends Hono<Env, Schema, string> = Hono>(
+/**
+ * What registration needs of a Hono app. Structural because `Hono`'s `Env` is
+ * invariant: no `Hono<…>` constraint accepts every app's `Bindings`/`Variables`,
+ * and callers pass `TContract` explicitly, so `TApp` is not inferred.
+ */
+type HonoRouteTarget = {
+  on(method: string, paths: string[], ...handlers: MiddlewareHandler[]): unknown;
+};
+
+export const registerRivetHonoRoutes = <TContract, TApp extends HonoRouteTarget = HonoRouteTarget>(
   app: TApp,
   contract: ContractJson,
   options: RegisterRivetHonoRoutesOptions<TContract>,
@@ -512,7 +534,7 @@ export const registerRivetHonoRoutes = <TContract, TApp extends Hono<Env, Schema
         // Contract results answer from the route that threw them; anything
         // else reaches the app's onError.
         if (error instanceof RivetHttpError) {
-          return error.getResponse();
+          return writeErrorResponse(context, error);
         }
         throw error;
       }
