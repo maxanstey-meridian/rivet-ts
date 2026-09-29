@@ -502,4 +502,49 @@ describe("vite plugin lifecycle", () => {
       fixture.lastGoodSchemaSource,
     );
   }, 20_000);
+
+  const buildWithFakeRivet = async (
+    prefix: string,
+    binarySource: string,
+    rivet: { readonly timeoutMs?: number } = {},
+  ) => {
+    const fixture = await createSpecDropoutFixture(prefix);
+    await fs.writeFile(fixture.binaryPath, `#!/usr/bin/env node\n${binarySource}\n`);
+    const { rivetTs } = await import("../../src/vite.js");
+
+    return build({
+      configFile: false,
+      root: fixture.uiRoot,
+      logLevel: "silent",
+      plugins: [
+        rivetTs({
+          entry: fixture.entryPath,
+          apiRoot: fixture.tempDirectory,
+          rivet: { binaryPath: fixture.binaryPath, ...rivet },
+        }),
+      ],
+    });
+  };
+
+  it("accepts more than 1 MB of Rivet output", async () => {
+    const writesSpecAfterFlooding = [
+      'import fs from "node:fs";',
+      'import path from "node:path";',
+      'const outputDir = process.argv[process.argv.indexOf("--output") + 1];',
+      `process.stdout.write("x".repeat(${2 * 1024 * 1024}));`,
+      'fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify({ openapi: "3.1.0", info: { title: "t", version: "1" }, paths: {} }));',
+    ].join("\n");
+
+    await expect(
+      buildWithFakeRivet("rivet-ts-vite-plugin-flood-", writesSpecAfterFlooding),
+    ).resolves.toBeDefined();
+  }, 20_000);
+
+  it("fails the build when the Rivet binary outlives rivet.timeoutMs", async () => {
+    await expect(
+      buildWithFakeRivet("rivet-ts-vite-plugin-hang-", "setInterval(() => undefined, 1000);", {
+        timeoutMs: 300,
+      }),
+    ).rejects.toThrow("rivet-ts/vite: the Rivet binary did not finish within 300ms.");
+  }, 20_000);
 });

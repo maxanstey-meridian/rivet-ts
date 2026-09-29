@@ -1213,3 +1213,90 @@ describe("CLI argument handling and diagnostics", () => {
     expect(entryNotFoundLines).toHaveLength(1);
   });
 });
+
+describe("rivet passthrough", () => {
+  const FAKE_RIVET_VERSION = "0.0.0-fake";
+  const RIDS: Record<string, string> = {
+    "darwin-arm64": "osx-arm64",
+    "darwin-x64": "osx-x64",
+    "linux-x64": "linux-x64",
+  };
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // Seeds the real binary cache (under a throwaway HOME) so the passthrough
+  // resolves the fake exactly as it would a downloaded Rivet release.
+  const installFakeRivet = async (source: string): Promise<void> => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-passthrough-"));
+    onTestFinished(() => fs.rm(home, { recursive: true, force: true }));
+    vi.stubEnv("HOME", home);
+    vi.stubEnv("XDG_CACHE_HOME", path.join(home, ".cache"));
+    vi.stubEnv("RIVET_VERSION", FAKE_RIVET_VERSION);
+
+    const rid = RIDS[`${process.platform}-${process.arch}`];
+    if (!rid) {
+      throw new Error(`No Rivet rid for ${process.platform}-${process.arch}.`);
+    }
+    const cacheRoot =
+      process.platform === "darwin"
+        ? path.join(home, "Library", "Caches", "rivet-ts")
+        : path.join(home, ".cache", "rivet-ts");
+    const installDirectory = path.join(cacheRoot, "rivet", `v${FAKE_RIVET_VERSION}`, rid);
+    const executablePath = path.join(installDirectory, `rivet-${rid}`);
+    await fs.mkdir(installDirectory, { recursive: true });
+    await fs.writeFile(executablePath, `#!/usr/bin/env node\n${source}\n`);
+    await fs.chmod(executablePath, 0o755);
+  };
+
+  const runPassthrough = async (args: readonly string[]) => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const exitCode = await runCli(["rivet", ...args], {
+      stdout: (text) => stdout.push(text),
+      stderr: (text) => stderr.push(text),
+    });
+    return { exitCode, stdout: stdout.join(""), stderr: stderr.join("") };
+  };
+
+  it("streams more than 1 MB of Rivet output and keeps its exit code", async () => {
+    const size = 2 * 1024 * 1024;
+    await installFakeRivet(`process.stdout.write("x".repeat(${size}));`);
+
+    const { exitCode, stdout, stderr } = await runPassthrough(["--from", "contract.json"]);
+
+    expect(stderr).toBe("");
+    expect(exitCode).toBe(0);
+    expect(stdout).toHaveLength(size);
+  });
+
+  it("passes --help and --version after the subcommand to the Rivet binary", async () => {
+    await installFakeRivet('console.log(`fake-rivet ${process.argv.slice(2).join(" ")}`);');
+
+    expect(await runPassthrough(["--", "--version"])).toEqual({
+      exitCode: 0,
+      stdout: "fake-rivet --version\n",
+      stderr: "",
+    });
+    expect((await runPassthrough(["--help"])).stdout).toBe("fake-rivet --help\n");
+  });
+
+  it("reports a Rivet binary killed by a signal as 128 + the signal number", async () => {
+    await installFakeRivet('process.kill(process.pid, "SIGTERM");');
+
+    const { exitCode } = await runPassthrough([]);
+
+    expect(exitCode).toBe(128 + os.constants.signals.SIGTERM);
+  });
+
+  it("forwards a non-zero Rivet exit code", async () => {
+    await installFakeRivet('process.stderr.write("RIV1102: refused\\n"); process.exitCode = 3;');
+
+    expect(await runPassthrough(["--from", "contract.json"])).toEqual({
+      exitCode: 3,
+      stdout: "",
+      stderr: "RIV1102: refused\n",
+    });
+  });
+});

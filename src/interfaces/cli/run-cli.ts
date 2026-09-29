@@ -122,6 +122,11 @@ const runCli = async (
   io: CliIO,
   dependencies: CliDependencies,
 ): Promise<number> => {
+  // Everything after `rivet` belongs to the Rivet binary, including --help/--version.
+  if (args[0] === "rivet") {
+    return runRivetPassthrough(args.slice(1), io, dependencies);
+  }
+
   if (args.includes("--help") || args.includes("-h")) {
     io.stdout(USAGE);
     return 0;
@@ -142,10 +147,6 @@ const runCli = async (
 
   if (args[0] === "generate") {
     return runGenerate(args.slice(1), io, dependencies);
-  }
-
-  if (args[0] === "rivet") {
-    return runRivetPassthrough(args.slice(1), io, dependencies);
   }
 
   const parsed = parseFlags(args, ["--entry", "--out"]);

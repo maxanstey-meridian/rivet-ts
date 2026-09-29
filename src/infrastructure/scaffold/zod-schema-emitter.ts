@@ -2,8 +2,8 @@ import type {
   RivetContractDocument,
   RivetPropertyConstraints,
   RivetType,
-  RivetTypeDefinition,
 } from "../../domain/rivet-contract.js";
+import { createTypeWalkContext, enterTypeDefinition, type TypeWalkContext } from "./type-walk.js";
 
 /**
  * IR → Zod source, at SCAFFOLD time only (the schemas are owned by the user
@@ -20,13 +20,6 @@ import type {
 export type ZodSourceResult = {
   readonly source: string;
   readonly exact: boolean;
-};
-
-type Context = {
-  readonly typeDefinitions: ReadonlyMap<string, RivetTypeDefinition>;
-  readonly enumValues: ReadonlyMap<string, readonly (string | number)[]>;
-  readonly substitutions: ReadonlyMap<string, RivetType>;
-  readonly visiting: ReadonlySet<string>;
 };
 
 const inexact = (todo: string): ZodSourceResult => ({
@@ -48,7 +41,7 @@ type ConstrainableKind = "array" | "number" | "other" | "string";
 
 const resolveConstrainableKind = (
   type: RivetType,
-  context: Context,
+  context: TypeWalkContext,
   seen: ReadonlySet<string> = new Set(),
 ): ConstrainableKind => {
   switch (type.kind) {
@@ -151,7 +144,7 @@ const constraintChain = (
  */
 const synthesizeConstrained = (
   type: RivetType,
-  context: Context,
+  context: TypeWalkContext,
   constraints: RivetPropertyConstraints | undefined,
 ): ZodSourceResult => {
   if (!constraints) {
@@ -182,7 +175,7 @@ const synthesizeObject = (
     optional?: boolean;
     constraints?: RivetPropertyConstraints;
   }[],
-  context: Context,
+  context: TypeWalkContext,
 ): ZodSourceResult => {
   const parts: string[] = [];
   let exact = true;
@@ -197,7 +190,7 @@ const synthesizeObject = (
   return { source: `z.object({ ${parts.join(", ")} })`, exact };
 };
 
-const synthesize = (type: RivetType, context: Context): ZodSourceResult => {
+const synthesize = (type: RivetType, context: TypeWalkContext): ZodSourceResult => {
   switch (type.kind) {
     case "primitive":
       switch (type.type) {
@@ -288,10 +281,7 @@ const synthesize = (type: RivetType, context: Context): ZodSourceResult => {
         return inexact(`generic type "${type.name}" without arguments`);
       }
 
-      const nested: Context = {
-        ...context,
-        visiting: new Set([...context.visiting, type.name]),
-      };
+      const nested = enterTypeDefinition(context, typeDef);
       return typeDef.type
         ? synthesize(typeDef.type, nested)
         : synthesizeObject(typeDef.properties, nested);
@@ -306,19 +296,7 @@ const synthesize = (type: RivetType, context: Context): ZodSourceResult => {
         return inexact(`recursive generic type "${type.name}"`);
       }
 
-      const substitutions = new Map(context.substitutions);
-      for (const [index, parameter] of typeDef.typeParameters.entries()) {
-        const argument = type.typeArgs[index];
-        if (argument) {
-          substitutions.set(parameter, argument);
-        }
-      }
-
-      const nested: Context = {
-        ...context,
-        substitutions,
-        visiting: new Set([...context.visiting, type.name]),
-      };
+      const nested = enterTypeDefinition(context, typeDef, type.typeArgs);
       return typeDef.type
         ? synthesize(typeDef.type, nested)
         : synthesizeObject(typeDef.properties, nested);
@@ -353,15 +331,4 @@ const synthesize = (type: RivetType, context: Context): ZodSourceResult => {
 export const zodSourceForType = (
   type: RivetType,
   document: RivetContractDocument,
-): ZodSourceResult =>
-  synthesize(type, {
-    typeDefinitions: new Map(document.types.map((definition) => [definition.name, definition])),
-    enumValues: new Map(
-      document.enums.map((entry) => [
-        entry.name,
-        "values" in entry ? entry.values : entry.intValues,
-      ]),
-    ),
-    substitutions: new Map(),
-    visiting: new Set(),
-  });
+): ZodSourceResult => synthesize(type, createTypeWalkContext(document));

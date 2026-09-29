@@ -45,7 +45,10 @@ export type RivetTsVitePluginOptions = {
   readonly runtimeContractOut?: string;
   readonly clientOutDir?: string;
   readonly tsconfig?: string;
-  readonly rivet?: RivetBinaryConfig;
+  readonly rivet?: RivetBinaryConfig & {
+    /** How long one Rivet run may take before the build fails. Default 120000. */
+    readonly timeoutMs?: number;
+  };
 };
 
 type NormalizedPluginOptions = {
@@ -56,6 +59,7 @@ type NormalizedPluginOptions = {
   readonly clientOutDir: string;
   readonly openApiPath: string;
   readonly binaryConfig: ResolvedRivetBinaryConfig;
+  readonly rivetTimeoutMs: number;
 };
 
 const resolveEntryPath = (options: RivetTsVitePluginOptions, baseDir: string): string => {
@@ -99,6 +103,7 @@ const normalizeOptions = (
     clientOutDir,
     openApiPath: path.join(clientOutDir, "openapi.json"),
     binaryConfig: resolveRivetBinaryConfig(options.rivet),
+    rivetTimeoutMs: options.rivet?.timeoutMs ?? 120_000,
   };
 };
 
@@ -166,10 +171,17 @@ const generateArtifacts = async (
       ["--from", options.runtimeContractPath, "--output", options.clientOutDir],
       {
         cwd: options.apiRoot,
+        maxBuffer: Infinity,
+        signal: AbortSignal.timeout(options.rivetTimeoutMs),
       },
     );
   } catch (error) {
     await restorePreviousSpec();
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(
+        `rivet-ts/vite: the Rivet binary did not finish within ${options.rivetTimeoutMs}ms.`,
+      );
+    }
     throw error;
   }
 

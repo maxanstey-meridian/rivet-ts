@@ -1,4 +1,5 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
+import os from "node:os";
 import { getConfiguredRivetVersion, resolveRivetBinaryConfig } from "./config/rivet-binary.js";
 import { emitClientPackage } from "./infrastructure/codegen/client-package-emitter.js";
 import {
@@ -22,14 +23,16 @@ const runRivet = async (args: readonly string[], io: CliIO): Promise<number> => 
   );
 
   return new Promise<number>((resolve) => {
-    const child = execFile(binary.executablePath, [...args]);
-    child.stdout?.on("data", (chunk: string | Buffer) => io.stdout(chunk.toString()));
-    child.stderr?.on("data", (chunk: string | Buffer) => io.stderr(chunk.toString()));
+    const child = spawn(binary.executablePath, args, { stdio: ["inherit", "pipe", "pipe"] });
+    child.stdout.setEncoding("utf8").on("data", io.stdout);
+    child.stderr.setEncoding("utf8").on("data", io.stderr);
     child.on("error", (error) => {
       io.stderr(`${error.message}\n`);
       resolve(1);
     });
-    child.on("close", (code) => resolve(code ?? 1));
+    child.on("close", (code, signal) =>
+      resolve(code ?? (signal ? 128 + os.constants.signals[signal] : 1)),
+    );
   });
 };
 

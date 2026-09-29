@@ -5,8 +5,8 @@ import type {
   RivetEndpointExampleValue,
   RivetResponseExample,
   RivetType,
-  RivetTypeDefinition,
 } from "../../domain/rivet-contract.js";
+import { createTypeWalkContext, enterTypeDefinition, type TypeWalkContext } from "./type-walk.js";
 
 type MockGenerationSuccess =
   | { kind: "value"; value: RivetEndpointExampleValue; needsCast: boolean }
@@ -21,12 +21,8 @@ type MockGenerationFailure = {
 export type MockGenerationResult = MockGenerationSuccess | MockGenerationFailure;
 type TypeSynthesisResult = Exclude<MockGenerationResult, { kind: "source" }>;
 
-type TypeContext = {
+type TypeContext = TypeWalkContext & {
   readonly endpointName: string;
-  readonly typeDefinitions: ReadonlyMap<string, RivetTypeDefinition>;
-  readonly enumValues: ReadonlyMap<string, readonly (string | number)[]>;
-  readonly substitutions: ReadonlyMap<string, RivetType>;
-  readonly visiting: ReadonlySet<string>;
   readonly depth: number;
   /** Mutable: set when the synthesized value passes through a TS enum ref or a
    * brand — raw JSON literals are not assignable to either, so the emitted
@@ -53,18 +49,6 @@ const FORMAT_MOCK_VALUES: Record<string, string> = {
 /** Backstop against unbounded recursion in mock synthesis; deep real-world DTOs stay far below this. */
 const MAX_SYNTHESIS_DEPTH = 64;
 
-const createTypeDefinitions = (
-  document: RivetContractDocument,
-): ReadonlyMap<string, RivetTypeDefinition> =>
-  new Map(document.types.map((typeDef) => [typeDef.name, typeDef]));
-
-const createEnumValues = (
-  document: RivetContractDocument,
-): ReadonlyMap<string, readonly (string | number)[]> =>
-  new Map(
-    document.enums.map((entry) => [entry.name, "values" in entry ? entry.values : entry.intValues]),
-  );
-
 const findSuccessResponse = (endpoint: RivetEndpointDefinition) =>
   endpoint.responses.find((response) => response.statusCode >= 200 && response.statusCode < 300) ??
   endpoint.responses[0];
@@ -81,76 +65,6 @@ const parseExample = (example: RivetResponseExample): RivetEndpointExampleValue 
   } catch {
     return undefined;
   }
-};
-
-/**
- * Rewrites every type parameter reference inside `type` using `substitutions`.
- * Type arguments must be resolved against the *outer* frame before being stored
- * for the inner frame; otherwise `Wrapper<T>` inside `Page<T>` maps `T` to the
- * unresolved `typeParam("T")` and mock synthesis recurses forever (S2).
- */
-const substituteTypeParams = (
-  type: RivetType,
-  substitutions: ReadonlyMap<string, RivetType>,
-): RivetType => {
-  switch (type.kind) {
-    case "typeParam":
-      return substitutions.get(type.name) ?? type;
-    case "nullable":
-      return { ...type, inner: substituteTypeParams(type.inner, substitutions) };
-    case "array":
-      return { ...type, element: substituteTypeParams(type.element, substitutions) };
-    case "dictionary":
-      return { ...type, value: substituteTypeParams(type.value, substitutions) };
-    case "generic":
-      return {
-        ...type,
-        typeArgs: type.typeArgs.map((typeArg) => substituteTypeParams(typeArg, substitutions)),
-      };
-    case "brand":
-      return { ...type, underlying: substituteTypeParams(type.underlying, substitutions) };
-    case "inlineObject":
-      return {
-        ...type,
-        properties: type.properties.map((property) => ({
-          ...property,
-          type: substituteTypeParams(property.type, substitutions),
-        })),
-      };
-    case "taggedUnion":
-      return {
-        ...type,
-        variants: type.variants.map((variant) => ({
-          ...variant,
-          type: substituteTypeParams(variant.type, substitutions),
-        })),
-      };
-    default:
-      return type;
-  }
-};
-
-const withSubstitutions = (
-  context: TypeContext,
-  typeDef: RivetTypeDefinition,
-  typeArgs: readonly RivetType[],
-): ReadonlyMap<string, RivetType> => {
-  const substitutions = new Map(context.substitutions);
-
-  for (const [index, typeParameter] of typeDef.typeParameters.entries()) {
-    const typeArg = typeArgs[index];
-    if (typeArg) {
-      substitutions.set(typeParameter, substituteTypeParams(typeArg, context.substitutions));
-    }
-  }
-
-  return substitutions;
-};
-
-const withVisiting = (context: TypeContext, name: string): ReadonlySet<string> => {
-  const visiting = new Set(context.visiting);
-  visiting.add(name);
-  return visiting;
 };
 
 const synthesizeObject = (
@@ -347,10 +261,7 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): TypeSynthes
         };
       }
 
-      const nestedContext: TypeContext = {
-        ...context,
-        visiting: withVisiting(context, type.name),
-      };
+      const nestedContext = enterTypeDefinition(context, typeDef);
 
       if (typeDef.type) {
         return synthesizeType(typeDef.type, nestedContext);
@@ -375,11 +286,7 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): TypeSynthes
         };
       }
 
-      const nestedContext: TypeContext = {
-        ...context,
-        substitutions: withSubstitutions(context, typeDef, type.typeArgs),
-        visiting: withVisiting(context, type.name),
-      };
+      const nestedContext = enterTypeDefinition(context, typeDef, type.typeArgs);
 
       if (typeDef.type) {
         return synthesizeType(typeDef.type, nestedContext);
@@ -452,11 +359,8 @@ export const generateEndpointMock = (
 
   const state = { needsCast: false };
   const synthesized = synthesizeType(responseType, {
+    ...createTypeWalkContext(document),
     endpointName: endpoint.name,
-    typeDefinitions: createTypeDefinitions(document),
-    enumValues: createEnumValues(document),
-    substitutions: new Map(),
-    visiting: new Set(),
     depth: 0,
     state,
   });

@@ -30,6 +30,42 @@ const synthesizeRequest = (
 const evaluate = (source: string): z.ZodType =>
   new Function("z", `return ${source};`)(z) as z.ZodType;
 
+describe("zod-schema-emitter generics", () => {
+  it("resolves a type argument that is itself the outer type parameter", () => {
+    const typeParam: RivetType = { kind: "typeParam", name: "T" };
+    const document = new RivetContractDocument({
+      types: [
+        new RivetTypeDefinition({
+          name: "Wrapper",
+          typeParameters: ["T"],
+          properties: [{ name: "value", type: typeParam, optional: false }],
+        }),
+        new RivetTypeDefinition({
+          name: "Page",
+          typeParameters: ["T"],
+          properties: [
+            {
+              name: "data",
+              type: { kind: "generic", name: "Wrapper", typeArgs: [typeParam] },
+              optional: false,
+            },
+          ],
+        }),
+      ],
+    });
+
+    const result = zodSourceForType(
+      { kind: "generic", name: "Page", typeArgs: [stringType] },
+      document,
+    );
+
+    expect(result).toEqual({
+      source: 'z.object({ "data": z.object({ "value": z.string() }) })',
+      exact: true,
+    });
+  });
+});
+
 describe("zod-schema-emitter constraints", () => {
   it("emits exact heterogeneous scalar unions", () => {
     const result = zodSourceForType(

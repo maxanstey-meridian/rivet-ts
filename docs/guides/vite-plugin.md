@@ -48,6 +48,7 @@ export default defineConfig({
 | `rivet.autoInstall`  | Auto-download the binary when missing (default `true`)                                        |
 | `rivet.binaryPath`   | Use an explicit Rivet binary instead of auto-install                                          |
 | `rivet.cacheDir`     | Override the auto-installed binary cache directory                                            |
+| `rivet.timeoutMs`    | Fail the build when one Rivet run takes longer than this (default `120000`)                   |
 
 Relative option paths resolve against the directory the Vite config file lives in (falling back to the resolved root), never `process.cwd()` — `vite -c myapp/vite.config.ts` from a parent directory works.
 
