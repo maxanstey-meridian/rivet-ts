@@ -1,4 +1,8 @@
-import type { Contract, Endpoint, EndpointAuthoringSpec } from "../../../dist/index.js";
+import type {
+  Contract,
+  Endpoint,
+  EndpointAuthoringSpec,
+} from "../../../src/domain/authoring-types.js";
 import type { CreateMemberRequest } from "./models.js";
 import {
   createMemberRequestExample,

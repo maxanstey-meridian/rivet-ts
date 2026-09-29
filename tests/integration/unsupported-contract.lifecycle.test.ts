@@ -1,21 +1,14 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { lowerContracts } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
-
-const getFixturePath = (relativePath: string): string => {
-  const currentFilePath = fileURLToPath(import.meta.url);
-  return path.resolve(path.dirname(currentFilePath), "..", "fixtures", relativePath);
-};
+import { parseContractJson } from "../support/lower.js";
+import { fixturePath } from "../support/paths.js";
 
 describe("Unsupported contract lifecycle", () => {
   it("emits explicit diagnostics for unsupported TS constructs", async () => {
-    const lowered = lowerContracts(
-      getFixturePath(path.join("unsupported-contract", "contracts.ts")),
-    );
+    const lowered = lowerContracts(fixturePath("unsupported-contract", "contracts.ts"));
 
     expect(lowered.hasErrors).toBe(true);
 
-    const modelsPath = getFixturePath(path.join("unsupported-contract", "models.ts"));
+    const modelsPath = fixturePath("unsupported-contract", "models.ts");
     expect(lowered.diagnostics).toEqual([
       expect.objectContaining({
         severity: "error",
@@ -42,11 +35,7 @@ describe("Unsupported contract lifecycle", () => {
 
     // Unsupported constructs are dropped, while the formerly unsupported
     // inline optional property survives with explicit optionality.
-    const payload = JSON.parse(lowered.toJson()) as {
-      endpoints: Array<{ name: string; responses: Array<{ dataType: unknown }> }>;
-      types: unknown[];
-      enums: unknown[];
-    };
+    const payload = parseContractJson(lowered.toJson());
     expect(payload.endpoints.map((endpoint) => endpoint.name)).toEqual([
       "search",
       "details",

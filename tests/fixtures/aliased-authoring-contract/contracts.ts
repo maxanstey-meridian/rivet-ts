@@ -4,7 +4,7 @@ import type {
   EndpointAuthoringSpec,
   EndpointErrorAuthoringSpec,
   EndpointSecurityAuthoringSpec,
-} from "../../../dist/index.js";
+} from "../../../src/domain/authoring-types.js";
 
 export interface MemberDto {
   id: string;

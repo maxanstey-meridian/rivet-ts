@@ -1,21 +1,14 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { lowerContracts } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
-
-const getFixturePath = (relativePath: string): string => {
-  const currentFilePath = fileURLToPath(import.meta.url);
-  return path.resolve(path.dirname(currentFilePath), "..", "fixtures", relativePath);
-};
+import { parseContractJson } from "../support/lower.js";
+import { fixturePath } from "../support/paths.js";
 
 describe("Invalid tagged union contract lifecycle", () => {
   it("emits explicit diagnostics for unsupported discriminated union shapes", async () => {
-    const lowered = lowerContracts(
-      getFixturePath(path.join("invalid-tagged-union-contract", "contracts.ts")),
-    );
+    const lowered = lowerContracts(fixturePath("invalid-tagged-union-contract", "contracts.ts"));
 
     expect(lowered.hasErrors).toBe(true);
 
-    const modelsPath = getFixturePath(path.join("invalid-tagged-union-contract", "models.ts"));
+    const modelsPath = fixturePath("invalid-tagged-union-contract", "models.ts");
     expect(lowered.diagnostics).toEqual([
       // DifferentDiscriminatorState: members disagree on the discriminator
       // property, so the union falls through to the generic rejection.
@@ -61,11 +54,7 @@ describe("Invalid tagged union contract lifecycle", () => {
 
     // Invalid unions are dropped; the variant with an optional non-discriminator
     // property now survives as a tagged union.
-    const payload = JSON.parse(lowered.toJson()) as {
-      endpoints: Array<{ name: string; responses: Array<{ dataType: unknown }> }>;
-      types: Array<{ name: string; type?: unknown }>;
-      enums: unknown[];
-    };
+    const payload = parseContractJson(lowered.toJson());
     expect(payload.endpoints.map((endpoint) => endpoint.name)).toEqual([
       "differentDiscriminator",
       "duplicateTag",

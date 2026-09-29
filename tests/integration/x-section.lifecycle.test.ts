@@ -2,66 +2,27 @@
 // extraction-pipeline finding in the 2026-06-10 review (doc retired; see git history). The conversion rule under
 // test: silent wrong output is never acceptable — each unsupported construct
 // either works correctly or produces a loud diagnostic with a location.
-import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { lowerContracts } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { expectValidContractDocument } from "../contract-schema.js";
-
-type DocumentPayload = {
-  types: Array<{
-    name: string;
-    properties?: Array<{
-      name: string;
-      optional?: boolean;
-      type: Record<string, unknown>;
-    }>;
-  }>;
-  enums: Array<{ name: string; values?: string[]; intValues?: number[] }>;
-  endpoints: Array<{
-    name: string;
-    params: Array<{
-      name: string;
-      source: string;
-      isOptional: boolean;
-      type: Record<string, unknown>;
-    }>;
-    responses: Array<{ statusCode: number }>;
-  }>;
-};
-
-const getProjectRoot = (): string => {
-  const currentFilePath = fileURLToPath(import.meta.url);
-  return path.resolve(path.dirname(currentFilePath), "..", "..");
-};
-
-const toImportPath = (fromDirectory: string, targetFilePath: string): string => {
-  const relativePath = path.relative(fromDirectory, targetFilePath).split(path.sep).join("/");
-  return relativePath.startsWith(".") ? relativePath : `./${relativePath}`;
-};
+import { writeContractProject } from "../support/contract-project.js";
+import { parseContractJson } from "../support/lower.js";
+import { AUTHORING_TYPES } from "../support/paths.js";
 
 const writeFixtureProject = async (
   prefix: string,
   files: Record<string, readonly string[]>,
 ): Promise<{ tempDirectory: string; entryPath: string }> => {
-  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
-  const normalizedImportPath = toImportPath(
-    tempDirectory,
-    path.join(getProjectRoot(), "dist", "index.js"),
+  const entryPath = await writeContractProject(
+    Object.fromEntries(
+      Object.entries(files).map(([fileName, lines]) => [
+        fileName,
+        lines.join("\n").replaceAll("__IMPORT_PATH__", AUTHORING_TYPES),
+      ]),
+    ),
+    prefix,
   );
-
-  await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
-
-  for (const [fileName, lines] of Object.entries(files)) {
-    await fs.writeFile(
-      path.join(tempDirectory, fileName),
-      lines.join("\n").replaceAll("__IMPORT_PATH__", normalizedImportPath),
-      "utf8",
-    );
-  }
-
-  return { tempDirectory, entryPath: path.join(tempDirectory, "contracts.ts") };
+  return { tempDirectory: path.dirname(entryPath), entryPath };
 };
 
 const extractAndLower = async (entryPath: string) => {
@@ -102,7 +63,7 @@ describe("X-section extraction pipeline fixtures", () => {
 
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
-    const payload = JSON.parse(lowered.toJson()) as DocumentPayload;
+    const payload = parseContractJson(lowered.toJson());
     expectValidContractDocument(payload);
     expect(payload.endpoints[0]?.responses.map((response) => response.statusCode)).toEqual([202]);
   });
@@ -144,7 +105,7 @@ describe("X-section extraction pipeline fixtures", () => {
       ]),
     );
     // The endpoint must not survive into the document.
-    const payload = JSON.parse(lowered.toJson()) as DocumentPayload;
+    const payload = parseContractJson(lowered.toJson());
     expect(payload.endpoints).toEqual([]);
     expect(JSON.stringify(payload)).not.toContain('"T"');
   });
@@ -178,7 +139,7 @@ describe("X-section extraction pipeline fixtures", () => {
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
 
-    const payload = JSON.parse(lowered.toJson()) as DocumentPayload;
+    const payload = parseContractJson(lowered.toJson());
     expectValidContractDocument(payload);
     const get = payload.endpoints.find((endpoint) => endpoint.name === "get");
     expect(get?.params).toEqual([
@@ -224,7 +185,7 @@ describe("X-section extraction pipeline fixtures", () => {
 
     expect(lowered.hasErrors).toBe(false);
 
-    const payload = JSON.parse(lowered.toJson()) as DocumentPayload;
+    const payload = parseContractJson(lowered.toJson());
     expectValidContractDocument(payload);
     const search = payload.endpoints.find((endpoint) => endpoint.name === "search");
     expect(search?.params).toEqual(
@@ -261,7 +222,7 @@ describe("X-section extraction pipeline fixtures", () => {
     const { lowered } = await extractAndLower(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
-    const payload = JSON.parse(lowered.toJson()) as DocumentPayload;
+    const payload = parseContractJson(lowered.toJson());
     const get = payload.endpoints.find((endpoint) => endpoint.name === "get");
     expect(get?.params).toEqual(
       expect.arrayContaining([
@@ -389,7 +350,7 @@ describe("X-section extraction pipeline fixtures", () => {
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
 
-    const payload = JSON.parse(lowered.toJson()) as DocumentPayload;
+    const payload = parseContractJson(lowered.toJson());
     expectValidContractDocument(payload);
     const userDto = payload.types.find((type) => type.name === "UserDto");
     expect(userDto?.properties?.map((property) => property.name).sort()).toEqual([
@@ -422,7 +383,7 @@ describe("X-section extraction pipeline fixtures", () => {
     expect(lowered.diagnostics).toEqual([]);
     expect(lowered.contracts).toHaveLength(1);
     expect(lowered.contracts[0]?.name).toBe("UsersContract");
-    const payload = JSON.parse(lowered.toJson()) as DocumentPayload;
+    const payload = parseContractJson(lowered.toJson());
     expect(payload.endpoints.map((endpoint) => endpoint.name)).toEqual(["ping"]);
   });
 
@@ -488,7 +449,7 @@ describe("X-section extraction pipeline fixtures", () => {
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
 
-    const payload = JSON.parse(lowered.toJson()) as DocumentPayload;
+    const payload = parseContractJson(lowered.toJson());
     expectValidContractDocument(payload);
     const eventDto = payload.types.find((type) => type.name === "EventDto");
     expect(eventDto?.properties?.find((property) => property.name === "occurredAt")?.type).toEqual({
@@ -566,7 +527,7 @@ describe("X-section extraction pipeline fixtures", () => {
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
 
-    const payload = JSON.parse(lowered.toJson()) as DocumentPayload;
+    const payload = parseContractJson(lowered.toJson());
     expectValidContractDocument(payload);
     const profileDto = payload.types.find((type) => type.name === "ProfileDto");
     expect(profileDto?.properties?.find((property) => property.name === "nickname")).toMatchObject({
@@ -601,7 +562,7 @@ describe("X-section extraction pipeline fixtures", () => {
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
 
-    const payload = JSON.parse(lowered.toJson()) as DocumentPayload;
+    const payload = parseContractJson(lowered.toJson());
     expectValidContractDocument(payload);
     const ownerDto = payload.types.find((type) => type.name === "OwnerDto");
     const pet = ownerDto?.properties?.find((property) => property.name === "pet");
@@ -641,7 +602,7 @@ describe("X-section extraction pipeline fixtures", () => {
     const { lowered } = await extractAndLower(entryPath);
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
-    const payload = JSON.parse(lowered.toJson()) as DocumentPayload;
+    const payload = parseContractJson(lowered.toJson());
     expectValidContractDocument(payload);
     const settings = payload.types.find((type) => type.name === "SettingsDto");
     expect(
@@ -693,10 +654,16 @@ describe("X-section extraction pipeline fixtures", () => {
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
 
-    const payload = JSON.parse(lowered.toJson()) as DocumentPayload;
+    const payload = parseContractJson(lowered.toJson());
     expectValidContractDocument(payload);
-    expect(payload.enums.find((entry) => entry.name === "Role")?.intValues).toEqual([0, 1]);
-    expect(payload.enums.find((entry) => entry.name === "Offset")?.intValues).toEqual([-1, 0, 1]);
+    expect(payload.enums.find((entry) => entry.name === "Role")).toEqual({
+      name: "Role",
+      intValues: [0, 1],
+    });
+    expect(payload.enums.find((entry) => entry.name === "Offset")).toEqual({
+      name: "Offset",
+      intValues: [-1, 0, 1],
+    });
   });
 
   // X23: Contract<""> previously slipped through extraction and surfaced

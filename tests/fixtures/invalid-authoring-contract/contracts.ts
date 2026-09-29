@@ -1,4 +1,4 @@
-import type { Contract, Endpoint } from "../../../dist/index.js";
+import type { Contract, Endpoint } from "../../../src/domain/authoring-types.js";
 
 export interface InvalidAuthoringContract extends Contract<"InvalidAuthoringContract"> {
   BrokenTopLevel: Endpoint<{

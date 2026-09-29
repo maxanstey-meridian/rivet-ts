@@ -2,62 +2,33 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { runCli } from "../../src/cli.js";
 import { expectValidContractDocument } from "../contract-schema.js";
+import { runCliCaptured } from "../support/cli.js";
+import { writeContractProject } from "../support/contract-project.js";
+import { parseContractJson } from "../support/lower.js";
+import { AUTHORING_TYPES, PROJECT_ROOT, fixturePath } from "../support/paths.js";
+import { tempDir } from "../support/temp.js";
 
 const execFileAsync = promisify(execFile);
 
-const getProjectRoot = (): string => {
-  const currentFilePath = fileURLToPath(import.meta.url);
-  return path.resolve(path.dirname(currentFilePath), "..", "..");
-};
-
-const toImportPath = (fromDirectory: string, targetFilePath: string): string => {
-  const relativePath = path.relative(fromDirectory, targetFilePath).split(path.sep).join("/");
-  return relativePath.startsWith(".") ? relativePath : `./${relativePath}`;
-};
-
-const getFixturePath = (relativePath: string): string => {
-  const currentFilePath = fileURLToPath(import.meta.url);
-  return path.resolve(path.dirname(currentFilePath), "..", "fixtures", relativePath);
-};
-
 describe("CLI lifecycle", () => {
   it("writes Rivet contract JSON to an output file", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-"));
+    const tempDirectory = await tempDir("rivet-ts-");
     const outputPath = path.join(tempDirectory, "contract.json");
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-
-    const exitCode = await runCli(
-      [
-        "--entry",
-        getFixturePath(path.join("members-contract", "contracts.ts")),
-        "--out",
-        outputPath,
-      ],
-      {
-        stdout: (text) => stdout.push(text),
-        stderr: (text) => stderr.push(text),
-      },
-    );
+    const { exitCode, stdout, stderr } = await runCliCaptured([
+      "--entry",
+      fixturePath("members-contract", "contracts.ts"),
+      "--out",
+      outputPath,
+    ]);
 
     expect(exitCode).toBe(0);
     expect(stdout).toHaveLength(0);
     expect(stderr).toHaveLength(0);
 
     const fileContents = await fs.readFile(outputPath, "utf8");
-    const payload = JSON.parse(fileContents) as {
-      endpoints: Array<{
-        name: string;
-        httpMethod: string;
-        routeTemplate: string;
-        params: Array<{ name: string; source: string; isOptional: boolean }>;
-        responses: Array<{ statusCode: number }>;
-      }>;
-    };
+    const payload = parseContractJson(fileContents);
 
     expectValidContractDocument(payload);
 
@@ -84,48 +55,21 @@ describe("CLI lifecycle", () => {
   });
 
   it("writes Rivet contract JSON for aliased endpoint specs through the real CLI path", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-"));
+    const tempDirectory = await tempDir("rivet-ts-");
     const outputPath = path.join(tempDirectory, "aliased-contract.json");
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-
-    const exitCode = await runCli(
-      [
-        "--entry",
-        getFixturePath(path.join("aliased-authoring-contract", "contracts.ts")),
-        "--out",
-        outputPath,
-      ],
-      {
-        stdout: (text) => stdout.push(text),
-        stderr: (text) => stderr.push(text),
-      },
-    );
+    const { exitCode, stdout, stderr } = await runCliCaptured([
+      "--entry",
+      fixturePath("aliased-authoring-contract", "contracts.ts"),
+      "--out",
+      outputPath,
+    ]);
 
     expect(exitCode).toBe(0);
     expect(stdout).toHaveLength(0);
     expect(stderr).toHaveLength(0);
 
     const fileContents = await fs.readFile(outputPath, "utf8");
-    const payload = JSON.parse(fileContents) as {
-      types: Array<{
-        name: string;
-        properties: Array<{ name: string }>;
-      }>;
-      endpoints: Array<{
-        name: string;
-        routeTemplate: string;
-        returnType?: { kind: string; element?: { kind: string; name?: string } };
-        summary?: string;
-        description?: string;
-        security?: { scheme?: string; isAnonymous: boolean };
-        responses: Array<{
-          statusCode: number;
-          description?: string;
-          dataType?: { kind: string; element?: { kind: string; name?: string } };
-        }>;
-      }>;
-    };
+    const payload = parseContractJson(fileContents);
 
     expect(payload.types).toEqual(
       expect.arrayContaining([
@@ -198,46 +142,30 @@ describe("CLI lifecycle", () => {
   });
 
   it("writes plural requestExamples JSON for the dedicated fixture through the real CLI path", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-request-examples-"));
+    const tempDirectory = await tempDir("rivet-ts-request-examples-");
     const outputPath = path.join(tempDirectory, "request-examples-contract.json");
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-
-    const exitCode = await runCli(
-      [
-        "--entry",
-        getFixturePath(path.join("request-examples-contract", "contracts.ts")),
-        "--out",
-        outputPath,
-      ],
-      {
-        stdout: (text) => stdout.push(text),
-        stderr: (text) => stderr.push(text),
-      },
-    );
+    const { exitCode, stdout, stderr } = await runCliCaptured([
+      "--entry",
+      fixturePath("request-examples-contract", "contracts.ts"),
+      "--out",
+      outputPath,
+    ]);
 
     expect(exitCode).toBe(0);
     expect(stdout).toHaveLength(0);
     expect(stderr).toHaveLength(0);
 
     const fileContents = await fs.readFile(outputPath, "utf8");
-    const payload = JSON.parse(fileContents) as unknown;
+    const payload = parseContractJson(fileContents);
 
     expectValidContractDocument(payload);
 
-    const typedPayload = payload as {
-      endpoints: Array<{
-        name: string;
-        requestExamples?: Array<{ json: string; mediaType: string }>;
-      }>;
-    };
-
-    expect(typedPayload.endpoints.map((endpoint) => endpoint.name).sort()).toEqual([
+    expect(payload.endpoints.map((endpoint) => endpoint.name).sort()).toEqual([
       "create",
       "legacyCreate",
     ]);
 
-    expect(typedPayload.endpoints.find((endpoint) => endpoint.name === "create")).toMatchObject({
+    expect(payload.endpoints.find((endpoint) => endpoint.name === "create")).toMatchObject({
       requestExamples: [
         {
           json: JSON.stringify({
@@ -255,55 +183,34 @@ describe("CLI lifecycle", () => {
         },
       ],
     });
-    expect(typedPayload.endpoints.every((endpoint) => !("requestExample" in endpoint))).toBe(true);
+    expect(payload.endpoints.every((endpoint) => !("requestExample" in endpoint))).toBe(true);
   });
 
   it("writes status-scoped response examples JSON for the dedicated fixture through the real CLI path", async () => {
-    const tempDirectory = await fs.mkdtemp(
-      path.join(os.tmpdir(), "rivet-ts-response-examples-cli-"),
-    );
+    const tempDirectory = await tempDir("rivet-ts-response-examples-cli-");
     const outputPath = path.join(tempDirectory, "response-examples-contract.json");
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-
-    const exitCode = await runCli(
-      [
-        "--entry",
-        getFixturePath(path.join("response-examples-contract", "contracts.ts")),
-        "--out",
-        outputPath,
-      ],
-      {
-        stdout: (text) => stdout.push(text),
-        stderr: (text) => stderr.push(text),
-      },
-    );
+    const { exitCode, stdout, stderr } = await runCliCaptured([
+      "--entry",
+      fixturePath("response-examples-contract", "contracts.ts"),
+      "--out",
+      outputPath,
+    ]);
 
     expect(exitCode).toBe(0);
     expect(stdout).toHaveLength(0);
     expect(stderr).toHaveLength(0);
 
     const fileContents = await fs.readFile(outputPath, "utf8");
-    const payload = JSON.parse(fileContents) as unknown;
+    const payload = parseContractJson(fileContents);
 
     expectValidContractDocument(payload);
 
-    const typedPayload = payload as {
-      endpoints: Array<{
-        name: string;
-        responses: Array<{
-          statusCode: number;
-          examples?: Array<{ mediaType: string; json: string }>;
-        }>;
-      }>;
-    };
-
-    expect(typedPayload.endpoints.map((endpoint) => endpoint.name).sort()).toEqual([
+    expect(payload.endpoints.map((endpoint) => endpoint.name).sort()).toEqual([
       "create",
       "legacyCreate",
     ]);
 
-    const create = typedPayload.endpoints.find((endpoint) => endpoint.name === "create");
+    const create = payload.endpoints.find((endpoint) => endpoint.name === "create");
     const create201 = create?.responses.find((r) => r.statusCode === 201);
     expect(create201?.examples).toEqual([
       {
@@ -323,7 +230,7 @@ describe("CLI lifecycle", () => {
       },
     ]);
 
-    const legacy = typedPayload.endpoints.find((endpoint) => endpoint.name === "legacyCreate");
+    const legacy = payload.endpoints.find((endpoint) => endpoint.name === "legacyCreate");
     const legacy201 = legacy?.responses.find((r) => r.statusCode === 201);
     expect(legacy201?.examples).toEqual([
       {
@@ -332,94 +239,75 @@ describe("CLI lifecycle", () => {
       },
     ]);
 
-    expect(
-      typedPayload.endpoints.every((endpoint) => !("successResponseExample" in endpoint)),
-    ).toBe(true);
+    expect(payload.endpoints.every((endpoint) => !("successResponseExample" in endpoint))).toBe(
+      true,
+    );
   });
 
   it("writes named inline and ref-backed request examples through the real CLI path", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-request-examples-v2-"));
-    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const entryPath = await writeContractProject(
+      {
+        "contracts.ts": [
+          `import type { Contract, Endpoint } from "${AUTHORING_TYPES}";`,
+          "",
+          "export interface CreateMemberRequest {",
+          "  email: string;",
+          "  role: string;",
+          "}",
+          "",
+          "export const defaultRequestExample = {",
+          '  email: "jane@example.com",',
+          '  role: "admin",',
+          "} satisfies CreateMemberRequest;",
+          "",
+          "export const namedRequestExample = {",
+          '  email: "alex@example.com",',
+          '  role: "reviewer",',
+          "} satisfies CreateMemberRequest;",
+          "",
+          "export const componentResolvedRequestExample = {",
+          '  email: "component@example.com",',
+          '  role: "member",',
+          "} satisfies CreateMemberRequest;",
+          "",
+          'export interface TempContract extends Contract<"TempContract"> {',
+          "  Create: Endpoint<{",
+          '    method: "POST";',
+          '    route: "/api/temp";',
+          "    input: CreateMemberRequest;",
+          "    response: void;",
+          "    requestExamples: [",
+          "      typeof defaultRequestExample,",
+          '      { name: "plain-text"; mediaType: "text/plain"; json: typeof namedRequestExample },',
+          "      {",
+          '        name: "component-backed";',
+          '        mediaType: "application/json";',
+          '        componentExampleId: "CreateMemberExample";',
+          "        resolvedJson: typeof componentResolvedRequestExample;",
+          "      },",
+          "    ];",
+          "  }>;",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      "rivet-ts-request-examples-v2-",
+    );
+    const tempDirectory = path.dirname(entryPath);
     const outputPath = path.join(tempDirectory, "contract.json");
-    const normalizedImportPath = toImportPath(
-      tempDirectory,
-      path.join(getProjectRoot(), "dist", "index.js"),
-    );
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-
-    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
-
-    await fs.writeFile(
+    const { exitCode, stdout, stderr } = await runCliCaptured([
+      "--entry",
       entryPath,
-      [
-        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
-        "",
-        "export interface CreateMemberRequest {",
-        "  email: string;",
-        "  role: string;",
-        "}",
-        "",
-        "export const defaultRequestExample = {",
-        '  email: "jane@example.com",',
-        '  role: "admin",',
-        "} satisfies CreateMemberRequest;",
-        "",
-        "export const namedRequestExample = {",
-        '  email: "alex@example.com",',
-        '  role: "reviewer",',
-        "} satisfies CreateMemberRequest;",
-        "",
-        "export const componentResolvedRequestExample = {",
-        '  email: "component@example.com",',
-        '  role: "member",',
-        "} satisfies CreateMemberRequest;",
-        "",
-        'export interface TempContract extends Contract<"TempContract"> {',
-        "  Create: Endpoint<{",
-        '    method: "POST";',
-        '    route: "/api/temp";',
-        "    input: CreateMemberRequest;",
-        "    response: void;",
-        "    requestExamples: [",
-        "      typeof defaultRequestExample,",
-        '      { name: "plain-text"; mediaType: "text/plain"; json: typeof namedRequestExample },',
-        "      {",
-        '        name: "component-backed";',
-        '        mediaType: "application/json";',
-        '        componentExampleId: "CreateMemberExample";',
-        "        resolvedJson: typeof componentResolvedRequestExample;",
-        "      },",
-        "    ];",
-        "  }>;",
-        "}",
-        "",
-      ].join("\n"),
-      "utf8",
-    );
-
-    const exitCode = await runCli(["--entry", entryPath, "--out", outputPath], {
-      stdout: (text) => stdout.push(text),
-      stderr: (text) => stderr.push(text),
-    });
+      "--out",
+      outputPath,
+    ]);
 
     expect(exitCode).toBe(0);
     expect(stdout).toHaveLength(0);
     expect(stderr).toHaveLength(0);
 
     const fileContents = await fs.readFile(outputPath, "utf8");
-    const payload = JSON.parse(fileContents) as {
-      endpoints: Array<{
-        name: string;
-        requestExamples?: Array<{
-          name?: string;
-          mediaType: string;
-          json?: string;
-          componentExampleId?: string;
-          resolvedJson?: string;
-        }>;
-      }>;
-    };
+    const payload = parseContractJson(fileContents);
 
     expect(
       payload.endpoints.find((endpoint) => endpoint.name === "create")?.requestExamples,
@@ -452,156 +340,132 @@ describe("CLI lifecycle", () => {
   });
 
   it("reports request example descriptors that mix inline and ref-backed fields through the real CLI path", async () => {
-    const tempDirectory = await fs.mkdtemp(
-      path.join(os.tmpdir(), "rivet-ts-invalid-request-example-descriptor-cli-"),
+    const entryPath = await writeContractProject(
+      {
+        "contracts.ts": [
+          `import type { Contract, Endpoint } from "${AUTHORING_TYPES}";`,
+          "",
+          "export interface CreateMemberRequest {",
+          "  email: string;",
+          "}",
+          "",
+          "export const createMemberRequestExample = {",
+          '  email: "jane@example.com",',
+          "} satisfies CreateMemberRequest;",
+          "",
+          'export interface TempContract extends Contract<"TempContract"> {',
+          "  Create: Endpoint<{",
+          '    method: "POST";',
+          '    route: "/api/temp";',
+          "    input: CreateMemberRequest;",
+          "    response: void;",
+          "    requestExamples: [",
+          "      {",
+          "        json: typeof createMemberRequestExample;",
+          '        componentExampleId: "CreateMemberExample";',
+          "        resolvedJson: typeof createMemberRequestExample;",
+          "      },",
+          "    ];",
+          "  }>;",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      "rivet-ts-invalid-request-example-descriptor-cli-",
     );
-    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const tempDirectory = path.dirname(entryPath);
     const outputPath = path.join(tempDirectory, "contract.json");
-    const normalizedImportPath = toImportPath(
-      tempDirectory,
-      path.join(getProjectRoot(), "dist", "index.js"),
-    );
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-
-    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
-
-    await fs.writeFile(
+    const { exitCode, stdout, stderr } = await runCliCaptured([
+      "--entry",
       entryPath,
-      [
-        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
-        "",
-        "export interface CreateMemberRequest {",
-        "  email: string;",
-        "}",
-        "",
-        "export const createMemberRequestExample = {",
-        '  email: "jane@example.com",',
-        "} satisfies CreateMemberRequest;",
-        "",
-        'export interface TempContract extends Contract<"TempContract"> {',
-        "  Create: Endpoint<{",
-        '    method: "POST";',
-        '    route: "/api/temp";',
-        "    input: CreateMemberRequest;",
-        "    response: void;",
-        "    requestExamples: [",
-        "      {",
-        "        json: typeof createMemberRequestExample;",
-        '        componentExampleId: "CreateMemberExample";',
-        "        resolvedJson: typeof createMemberRequestExample;",
-        "      },",
-        "    ];",
-        "  }>;",
-        "}",
-        "",
-      ].join("\n"),
-      "utf8",
-    );
-
-    const exitCode = await runCli(["--entry", entryPath, "--out", outputPath], {
-      stdout: (text) => stdout.push(text),
-      stderr: (text) => stderr.push(text),
-    });
+      "--out",
+      outputPath,
+    ]);
 
     expect(exitCode).toBe(1);
     expect(stdout).toHaveLength(0);
-    const requestExampleDiagnostics = stderr.filter((line) =>
-      line.includes("[INVALID_ENDPOINT_EXAMPLE_REFERENCE]"),
-    );
+    const requestExampleDiagnostics = stderr
+      .split("\n")
+      .filter((line) => line.includes("[INVALID_ENDPOINT_EXAMPLE_REFERENCE]"));
     expect(requestExampleDiagnostics).toHaveLength(1);
 
     const fileContents = await fs.readFile(outputPath, "utf8");
-    const payload = JSON.parse(fileContents) as {
-      endpoints: Array<{ name: string; requestExamples?: unknown }>;
-    };
+    const payload = parseContractJson(fileContents);
     expect(payload.endpoints.find((endpoint) => endpoint.name === "create")).not.toHaveProperty(
       "requestExamples",
     );
   });
 
   it("reports invalid security helper usage through the real CLI path", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-invalid-security-"));
-    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const entryPath = await writeContractProject(
+      {
+        "contracts.ts": [
+          `import type { Contract, Endpoint, EndpointSecurityAuthoringSpec } from "${AUTHORING_TYPES}";`,
+          "",
+          'export interface TempContract extends Contract<"TempContract"> {',
+          "  Create: Endpoint<{",
+          '    method: "POST";',
+          '    route: "/api/temp";',
+          "    response: void;",
+          "    security: EndpointSecurityAuthoringSpec;",
+          "  }>;",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      "rivet-ts-invalid-security-",
+    );
+    const tempDirectory = path.dirname(entryPath);
     const outputPath = path.join(tempDirectory, "contract.json");
-    const normalizedImportPath = toImportPath(
-      tempDirectory,
-      path.join(getProjectRoot(), "dist", "index.js"),
-    );
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-
-    await fs.writeFile(
+    const { exitCode, stdout, stderr } = await runCliCaptured([
+      "--entry",
       entryPath,
-      [
-        `import type { Contract, Endpoint, EndpointSecurityAuthoringSpec } from "${normalizedImportPath}";`,
-        "",
-        'export interface TempContract extends Contract<"TempContract"> {',
-        "  Create: Endpoint<{",
-        '    method: "POST";',
-        '    route: "/api/temp";',
-        "    response: void;",
-        "    security: EndpointSecurityAuthoringSpec;",
-        "  }>;",
-        "}",
-        "",
-      ].join("\n"),
-      "utf8",
-    );
-
-    const exitCode = await runCli(["--entry", entryPath, "--out", outputPath], {
-      stdout: (text) => stdout.push(text),
-      stderr: (text) => stderr.push(text),
-    });
+      "--out",
+      outputPath,
+    ]);
 
     expect(exitCode).toBe(1);
     expect(stdout).toHaveLength(0);
-    const invalidSecurityDiagnostics = stderr.filter((line) =>
-      line.includes("[INVALID_SECURITY_SPEC]"),
-    );
+    const invalidSecurityDiagnostics = stderr
+      .split("\n")
+      .filter((line) => line.includes("[INVALID_SECURITY_SPEC]"));
     expect(invalidSecurityDiagnostics).toHaveLength(1);
     expect(invalidSecurityDiagnostics[0]).toContain("security.scheme as a string literal");
   });
 
   it("reports contradictory anonymous and security metadata through the real CLI path", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-conflicting-cli-"));
-    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const entryPath = await writeContractProject(
+      {
+        "contracts.ts": [
+          `import type { Contract, Endpoint } from "${AUTHORING_TYPES}";`,
+          "",
+          'export interface TempContract extends Contract<"TempContract"> {',
+          "  Ping: Endpoint<{",
+          '    method: "GET";',
+          '    route: "/api/ping";',
+          "    anonymous: true;",
+          '    security: { scheme: "admin" };',
+          "  }>;",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      "rivet-ts-conflicting-cli-",
+    );
+    const tempDirectory = path.dirname(entryPath);
     const outputPath = path.join(tempDirectory, "contract.json");
-    const normalizedImportPath = toImportPath(
-      tempDirectory,
-      path.join(getProjectRoot(), "dist", "index.js"),
-    );
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-
-    await fs.writeFile(
+    const { exitCode, stdout, stderr } = await runCliCaptured([
+      "--entry",
       entryPath,
-      [
-        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
-        "",
-        'export interface TempContract extends Contract<"TempContract"> {',
-        "  Ping: Endpoint<{",
-        '    method: "GET";',
-        '    route: "/api/ping";',
-        "    anonymous: true;",
-        '    security: { scheme: "admin" };',
-        "  }>;",
-        "}",
-        "",
-      ].join("\n"),
-      "utf8",
-    );
-
-    const exitCode = await runCli(["--entry", entryPath, "--out", outputPath], {
-      stdout: (text) => stdout.push(text),
-      stderr: (text) => stderr.push(text),
-    });
+      "--out",
+      outputPath,
+    ]);
 
     expect(exitCode).toBe(1);
     expect(stdout).toHaveLength(0);
-    const conflictingSecurityDiagnostics = stderr.filter((line) =>
-      line.includes("[CONFLICTING_SECURITY_SPEC]"),
-    );
+    const conflictingSecurityDiagnostics = stderr
+      .split("\n")
+      .filter((line) => line.includes("[CONFLICTING_SECURITY_SPEC]"));
     expect(conflictingSecurityDiagnostics).toHaveLength(1);
     expect(conflictingSecurityDiagnostics[0]).toContain(
       "cannot declare both anonymous and security",
@@ -609,130 +473,105 @@ describe("CLI lifecycle", () => {
   });
 
   it("propagates malformed endpoint example diagnostics through the real CLI path", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-invalid-example-cli-"));
-    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const entryPath = await writeContractProject(
+      {
+        "contracts.ts": [
+          `import type { Contract, Endpoint } from "${AUTHORING_TYPES}";`,
+          "",
+          "interface CreateMemberRequest {",
+          "  email: string;",
+          "  role: string;",
+          "}",
+          "",
+          'const baseRequest = { role: "admin" };',
+          "export const createMemberRequestExample = {",
+          '  email: "jane@example.com",',
+          "  ...baseRequest,",
+          "} satisfies CreateMemberRequest;",
+          "",
+          'export interface TempContract extends Contract<"TempContract"> {',
+          "  Create: Endpoint<{",
+          '    method: "POST";',
+          '    route: "/api/temp";',
+          "    input: CreateMemberRequest;",
+          "    requestExample: typeof createMemberRequestExample;",
+          "    response: void;",
+          "  }>;",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      "rivet-ts-invalid-example-cli-",
+    );
+    const tempDirectory = path.dirname(entryPath);
     const outputPath = path.join(tempDirectory, "contract.json");
-    const normalizedImportPath = toImportPath(
-      tempDirectory,
-      path.join(getProjectRoot(), "dist", "index.js"),
-    );
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-
-    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
-
-    await fs.writeFile(
+    const { exitCode, stdout, stderr } = await runCliCaptured([
+      "--entry",
       entryPath,
-      [
-        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
-        "",
-        "interface CreateMemberRequest {",
-        "  email: string;",
-        "  role: string;",
-        "}",
-        "",
-        'const baseRequest = { role: "admin" };',
-        "export const createMemberRequestExample = {",
-        '  email: "jane@example.com",',
-        "  ...baseRequest,",
-        "} satisfies CreateMemberRequest;",
-        "",
-        'export interface TempContract extends Contract<"TempContract"> {',
-        "  Create: Endpoint<{",
-        '    method: "POST";',
-        '    route: "/api/temp";',
-        "    input: CreateMemberRequest;",
-        "    requestExample: typeof createMemberRequestExample;",
-        "    response: void;",
-        "  }>;",
-        "}",
-        "",
-      ].join("\n"),
-      "utf8",
-    );
-
-    const exitCode = await runCli(["--entry", entryPath, "--out", outputPath], {
-      stdout: (text) => stdout.push(text),
-      stderr: (text) => stderr.push(text),
-    });
+      "--out",
+      outputPath,
+    ]);
 
     expect(exitCode).toBe(1);
     expect(stdout).toHaveLength(0);
-    const exampleDiagnostics = stderr.filter((line) =>
-      line.includes("[UNSUPPORTED_ENDPOINT_EXAMPLE_VALUE]"),
-    );
+    const exampleDiagnostics = stderr
+      .split("\n")
+      .filter((line) => line.includes("[UNSUPPORTED_ENDPOINT_EXAMPLE_VALUE]"));
     expect(exampleDiagnostics).toHaveLength(1);
 
     const fileContents = await fs.readFile(outputPath, "utf8");
-    const payload = JSON.parse(fileContents) as {
-      endpoints: Array<{ name: string; requestExamples?: unknown }>;
-    };
+    const payload = parseContractJson(fileContents);
     expect(payload.endpoints.find((endpoint) => endpoint.name === "create")).not.toHaveProperty(
       "requestExamples",
     );
   });
 
   it("emits shorthand-property endpoint examples through the real CLI path", async () => {
-    const tempDirectory = await fs.mkdtemp(
-      path.join(os.tmpdir(), "rivet-ts-shorthand-example-cli-"),
+    const entryPath = await writeContractProject(
+      {
+        "contracts.ts": [
+          `import type { Contract, Endpoint } from "${AUTHORING_TYPES}";`,
+          "",
+          "export interface CreateMemberRequest {",
+          "  email: string;",
+          "  role: string;",
+          "}",
+          "",
+          'const email = "jane@example.com";',
+          "export const createMemberRequestExample = {",
+          "  email,",
+          '  role: "admin",',
+          "} satisfies CreateMemberRequest;",
+          "",
+          'export interface TempContract extends Contract<"TempContract"> {',
+          "  Create: Endpoint<{",
+          '    method: "POST";',
+          '    route: "/api/temp";',
+          "    input: CreateMemberRequest;",
+          "    requestExample: typeof createMemberRequestExample;",
+          "    response: void;",
+          "  }>;",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      "rivet-ts-shorthand-example-cli-",
     );
-    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const tempDirectory = path.dirname(entryPath);
     const outputPath = path.join(tempDirectory, "contract.json");
-    const normalizedImportPath = toImportPath(
-      tempDirectory,
-      path.join(getProjectRoot(), "dist", "index.js"),
-    );
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-
-    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
-
-    await fs.writeFile(
+    const { exitCode, stdout, stderr } = await runCliCaptured([
+      "--entry",
       entryPath,
-      [
-        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
-        "",
-        "export interface CreateMemberRequest {",
-        "  email: string;",
-        "  role: string;",
-        "}",
-        "",
-        'const email = "jane@example.com";',
-        "export const createMemberRequestExample = {",
-        "  email,",
-        '  role: "admin",',
-        "} satisfies CreateMemberRequest;",
-        "",
-        'export interface TempContract extends Contract<"TempContract"> {',
-        "  Create: Endpoint<{",
-        '    method: "POST";',
-        '    route: "/api/temp";',
-        "    input: CreateMemberRequest;",
-        "    requestExample: typeof createMemberRequestExample;",
-        "    response: void;",
-        "  }>;",
-        "}",
-        "",
-      ].join("\n"),
-      "utf8",
-    );
-
-    const exitCode = await runCli(["--entry", entryPath, "--out", outputPath], {
-      stdout: (text) => stdout.push(text),
-      stderr: (text) => stderr.push(text),
-    });
+      "--out",
+      outputPath,
+    ]);
 
     expect(exitCode).toBe(0);
     expect(stdout).toHaveLength(0);
     expect(stderr).toHaveLength(0);
 
     const fileContents = await fs.readFile(outputPath, "utf8");
-    const payload = JSON.parse(fileContents) as {
-      endpoints: Array<{
-        name: string;
-        requestExamples?: Array<{ json: unknown; mediaType: string }>;
-      }>;
-    };
+    const payload = parseContractJson(fileContents);
 
     expect(
       payload.endpoints.find((endpoint) => endpoint.name === "create")?.requestExamples,
@@ -758,51 +597,42 @@ describe("CLI lifecycle", () => {
   ])(
     "reports malformed error metadata through the real CLI path via %s",
     async (_, errorsType, expectedCode) => {
-      const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-invalid-errors-"));
-      const entryPath = path.join(tempDirectory, "contracts.ts");
+      const entryPath = await writeContractProject(
+        {
+          "contracts.ts": [
+            `import type { Contract, Endpoint, EndpointErrorAuthoringSpec } from "${AUTHORING_TYPES}";`,
+            "",
+            'export interface TempContract extends Contract<"TempContract"> {',
+            "  Create: Endpoint<{",
+            '    method: "POST";',
+            '    route: "/api/temp";',
+            "    response: void;",
+            `    errors: ${errorsType};`,
+            "  }>;",
+            "}",
+            "",
+          ].join("\n"),
+        },
+        "rivet-ts-invalid-errors-",
+      );
+      const tempDirectory = path.dirname(entryPath);
       const outputPath = path.join(tempDirectory, "contract.json");
-      const normalizedImportPath = toImportPath(
-        tempDirectory,
-        path.join(getProjectRoot(), "dist", "index.js"),
-      );
-      const stdout: string[] = [];
-      const stderr: string[] = [];
-
-      await fs.writeFile(
+      const { exitCode, stdout, stderr } = await runCliCaptured([
+        "--entry",
         entryPath,
-        [
-          `import type { Contract, Endpoint, EndpointErrorAuthoringSpec } from "${normalizedImportPath}";`,
-          "",
-          'export interface TempContract extends Contract<"TempContract"> {',
-          "  Create: Endpoint<{",
-          '    method: "POST";',
-          '    route: "/api/temp";',
-          "    response: void;",
-          `    errors: ${errorsType};`,
-          "  }>;",
-          "}",
-          "",
-        ].join("\n"),
-        "utf8",
-      );
-
-      const exitCode = await runCli(["--entry", entryPath, "--out", outputPath], {
-        stdout: (text) => stdout.push(text),
-        stderr: (text) => stderr.push(text),
-      });
+        "--out",
+        outputPath,
+      ]);
 
       expect(exitCode).toBe(1);
       expect(stdout).toHaveLength(0);
-      const errorDiagnostics = stderr.filter((line) => line.includes(`[${expectedCode}]`));
+      const errorDiagnostics = stderr
+        .split("\n")
+        .filter((line) => line.includes(`[${expectedCode}]`));
       expect(errorDiagnostics.length).toBeGreaterThan(0);
 
       const fileContents = await fs.readFile(outputPath, "utf8");
-      const payload = JSON.parse(fileContents) as {
-        endpoints: Array<{
-          name: string;
-          responses: Array<{ statusCode: number; description?: string }>;
-        }>;
-      };
+      const payload = parseContractJson(fileContents);
       const createEndpoint = payload.endpoints.find((endpoint) => endpoint.name === "create");
 
       expect(createEndpoint?.responses).toEqual([expect.objectContaining({ statusCode: 201 })]);
@@ -810,13 +640,13 @@ describe("CLI lifecycle", () => {
   );
 
   it("supports the documented installed-consumer package import and CLI bin path", async () => {
-    const packDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-pack-"));
-    const consumerDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-consumer-"));
+    const packDirectory = await tempDir("rivet-ts-pack-");
+    const consumerDirectory = await tempDir("rivet-ts-consumer-");
     const { stdout: packStdout } = await execFileAsync(
       "pnpm",
       ["pack", "--pack-destination", packDirectory],
       {
-        cwd: getProjectRoot(),
+        cwd: PROJECT_ROOT,
       },
     );
     const tarballName = packStdout.trim().split("\n").at(-1);
@@ -852,8 +682,8 @@ describe("CLI lifecycle", () => {
       path.join(consumerDirectory, "pnpm-workspace.yaml"),
       [
         "overrides:",
-        `  typescript: "file:${path.join(getProjectRoot(), "node_modules", "typescript")}"`,
-        `  tar: "file:${path.join(getProjectRoot(), "node_modules", "tar")}"`,
+        `  typescript: "file:${path.join(PROJECT_ROOT, "node_modules", "typescript")}"`,
+        `  tar: "file:${path.join(PROJECT_ROOT, "node_modules", "tar")}"`,
         "",
       ].join("\n"),
       "utf8",
@@ -924,23 +754,9 @@ describe("CLI lifecycle", () => {
       },
     );
 
-    const payload = JSON.parse(
+    const payload = parseContractJson(
       await fs.readFile(path.join(consumerDirectory, "contract.json"), "utf8"),
-    ) as {
-      types: Array<{ name: string }>;
-      endpoints: Array<{
-        name: string;
-        routeTemplate: string;
-        description?: string;
-        requestExamples?: Array<{ json: string; mediaType: string }>;
-        security?: { isAnonymous: boolean };
-        responses: Array<{
-          statusCode: number;
-          dataType?: { name?: string };
-          examples?: Array<{ mediaType: string; json: string }>;
-        }>;
-      }>;
-    };
+    );
 
     expect(payload.types).toEqual(
       expect.arrayContaining([
@@ -983,35 +799,20 @@ describe("CLI lifecycle", () => {
   }, 60000);
 
   it("writes Rivet contract JSON for a form-encoded endpoint through the real CLI path", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-form-encoded-"));
+    const tempDirectory = await tempDir("rivet-ts-form-encoded-");
     const outputPath = path.join(tempDirectory, "form-encoded-contract.json");
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-
-    const exitCode = await runCli(
-      [
-        "--entry",
-        getFixturePath(path.join("form-encoded-contract", "contracts.ts")),
-        "--out",
-        outputPath,
-      ],
-      {
-        stdout: (text) => stdout.push(text),
-        stderr: (text) => stderr.push(text),
-      },
-    );
+    const { exitCode, stderr } = await runCliCaptured([
+      "--entry",
+      fixturePath("form-encoded-contract", "contracts.ts"),
+      "--out",
+      outputPath,
+    ]);
 
     expect(exitCode).toBe(0);
     expect(stderr).toHaveLength(0);
 
     const fileContents = await fs.readFile(outputPath, "utf8");
-    const payload = JSON.parse(fileContents) as {
-      endpoints: Array<{
-        name: string;
-        isFormEncoded?: boolean;
-        requestExamples?: Array<{ mediaType: string; json: string }>;
-      }>;
-    };
+    const payload = parseContractJson(fileContents);
 
     expectValidContractDocument(payload);
 
@@ -1031,35 +832,20 @@ describe("CLI lifecycle", () => {
   });
 
   it("writes Rivet contract JSON for a multipart endpoint through the real CLI path", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-multipart-"));
+    const tempDirectory = await tempDir("rivet-ts-multipart-");
     const outputPath = path.join(tempDirectory, "multipart-contract.json");
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-
-    const exitCode = await runCli(
-      [
-        "--entry",
-        getFixturePath(path.join("multipart-contract", "contracts.ts")),
-        "--out",
-        outputPath,
-      ],
-      {
-        stdout: (text) => stdout.push(text),
-        stderr: (text) => stderr.push(text),
-      },
-    );
+    const { exitCode, stderr } = await runCliCaptured([
+      "--entry",
+      fixturePath("multipart-contract", "contracts.ts"),
+      "--out",
+      outputPath,
+    ]);
 
     expect(exitCode).toBe(0);
     expect(stderr).toHaveLength(0);
 
     const fileContents = await fs.readFile(outputPath, "utf8");
-    const payload = JSON.parse(fileContents) as {
-      endpoints: Array<{
-        name: string;
-        inputTypeName?: string;
-        params: Array<{ name: string; source: string; type: { kind: string; type?: string } }>;
-      }>;
-    };
+    const payload = parseContractJson(fileContents);
 
     expectValidContractDocument(payload);
 
@@ -1080,25 +866,13 @@ describe("CLI lifecycle", () => {
 });
 
 describe("CLI argument handling and diagnostics", () => {
-  const runCapture = async (
-    args: readonly string[],
-  ): Promise<{ exitCode: number; stdout: string[]; stderr: string[] }> => {
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-    const exitCode = await runCli(args, {
-      stdout: (text) => stdout.push(text),
-      stderr: (text) => stderr.push(text),
-    });
-    return { exitCode, stdout, stderr };
-  };
-
   // C2: --help and --version exit 0 with output on stdout.
   it("prints usage for --help with exit code 0, covering every subcommand", async () => {
-    const { exitCode, stdout, stderr } = await runCapture(["--help"]);
+    const { exitCode, stdout, stderr } = await runCliCaptured(["--help"]);
 
     expect(exitCode).toBe(0);
     expect(stderr).toHaveLength(0);
-    const usage = stdout.join("");
+    const usage = stdout;
     expect(usage).toContain("Usage");
     expect(usage).toContain("rivet-ts --entry");
     expect(usage).toContain("scaffold-mock");
@@ -1107,33 +881,33 @@ describe("CLI argument handling and diagnostics", () => {
 
   it("prints the package version for --version with exit code 0", async () => {
     const { version } = JSON.parse(
-      await fs.readFile(path.join(getProjectRoot(), "package.json"), "utf8"),
+      await fs.readFile(path.join(PROJECT_ROOT, "package.json"), "utf8"),
     ) as { version: string };
 
-    const { exitCode, stdout, stderr } = await runCapture(["--version"]);
+    const { exitCode, stdout, stderr } = await runCliCaptured(["--version"]);
 
     expect(exitCode).toBe(0);
     expect(stderr).toHaveLength(0);
-    expect(stdout.join("")).toContain(version);
+    expect(stdout).toContain(version);
   });
 
   // C3: unknown flags are loud errors, not silent no-ops.
   it("fails loudly on an unknown flag instead of silently ignoring it", async () => {
-    const { exitCode, stdout, stderr } = await runCapture([
+    const { exitCode, stdout, stderr } = await runCliCaptured([
       "--entry",
-      getFixturePath(path.join("members-contract", "contracts.ts")),
+      fixturePath("members-contract", "contracts.ts"),
       "--tsconfg",
       "tsconfig.json",
     ]);
 
     expect(exitCode).toBe(1);
     expect(stdout).toHaveLength(0);
-    expect(stderr.join("")).toContain("Unknown argument");
-    expect(stderr.join("")).toContain("--tsconfg");
+    expect(stderr).toContain("Unknown argument");
+    expect(stderr).toContain("--tsconfg");
   });
 
   it("fails loudly on an unknown scaffold-mock flag", async () => {
-    const { exitCode, stderr } = await runCapture([
+    const { exitCode, stderr } = await runCliCaptured([
       "scaffold-mock",
       "--entry",
       "x.ts",
@@ -1144,81 +918,69 @@ describe("CLI argument handling and diagnostics", () => {
     ]);
 
     expect(exitCode).toBe(1);
-    expect(stderr.join("")).toContain("Unknown argument");
-    expect(stderr.join("")).toContain("--nme");
+    expect(stderr).toContain("Unknown argument");
+    expect(stderr).toContain("--nme");
   });
 
   // C3: a flag missing its value is a loud error, not a silent redirect.
   it("fails loudly when --out is missing its value", async () => {
-    const { exitCode, stdout, stderr } = await runCapture([
+    const { exitCode, stdout, stderr } = await runCliCaptured([
       "--entry",
-      getFixturePath(path.join("members-contract", "contracts.ts")),
+      fixturePath("members-contract", "contracts.ts"),
       "--out",
     ]);
 
     expect(exitCode).toBe(1);
     expect(stdout).toHaveLength(0);
-    expect(stderr.join("")).toContain("--out");
-    expect(stderr.join("")).toContain("missing a value");
+    expect(stderr).toContain("--out");
+    expect(stderr).toContain("missing a value");
   });
 
   it("lowers with the tsconfig passed via --tsconfig", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-lower-tsconfig-"));
-    onTestFinished(() => fs.rm(tempDirectory, { recursive: true, force: true }));
-    const entryPath = path.join(tempDirectory, "contracts.ts");
-    const tsconfigPath = path.join(tempDirectory, "tsconfig.contracts.json");
-    const packageTypesPath = toImportPath(
-      tempDirectory,
-      path.join(getProjectRoot(), "dist", "index.js"),
-    );
-    await fs.mkdir(path.join(tempDirectory, "models"));
-    await fs.writeFile(
-      path.join(tempDirectory, "models", "member.ts"),
-      "export interface MemberDto { id: string }\n",
-    );
-    await fs.writeFile(
-      entryPath,
-      `import type { Contract, Endpoint } from "${packageTypesPath}";
+    const entryPath = await writeContractProject(
+      {
+        "models/member.ts": "export interface MemberDto { id: string }\n",
+        "contracts.ts": `import type { Contract, Endpoint } from "${AUTHORING_TYPES}";
 import type { MemberDto } from "@models/member";
 
 export interface MembersContract extends Contract<"MembersContract"> {
   List: Endpoint<{ method: "GET"; route: "/api/members"; response: MemberDto[] }>;
 }
 `,
+        "tsconfig.contracts.json": JSON.stringify({
+          compilerOptions: {
+            module: "ESNext",
+            moduleResolution: "Bundler",
+            strict: true,
+            paths: { "@models/*": ["./models/*"] },
+          },
+        }),
+      },
+      "rivet-ts-lower-tsconfig-",
     );
-    await fs.writeFile(
-      tsconfigPath,
-      JSON.stringify({
-        compilerOptions: {
-          module: "ESNext",
-          moduleResolution: "Bundler",
-          strict: true,
-          paths: { "@models/*": ["./models/*"] },
-        },
-      }),
-    );
+    const tsconfigPath = path.join(path.dirname(entryPath), "tsconfig.contracts.json");
 
-    const { exitCode, stdout, stderr } = await runCapture([
+    const { exitCode, stdout, stderr } = await runCliCaptured([
       "--entry",
       entryPath,
       "--tsconfig",
       tsconfigPath,
     ]);
 
-    expect(stderr).toEqual([]);
+    expect(stderr).toBe("");
     expect(exitCode).toBe(0);
-    const payload = JSON.parse(stdout.join("")) as { types: Array<{ name: string }> };
+    const payload = parseContractJson(stdout);
     expect(payload.types.map((type) => type.name)).toEqual(["MemberDto"]);
   });
 
   // C1: --out into a directory that does not exist yet creates it.
   it("creates missing parent directories for --out", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-out-create-"));
+    const tempDirectory = await tempDir("rivet-ts-out-create-");
     const outputPath = path.join(tempDirectory, "deeply", "nested", "contract.json");
 
-    const { exitCode, stderr } = await runCapture([
+    const { exitCode, stderr } = await runCliCaptured([
       "--entry",
-      getFixturePath(path.join("members-contract", "contracts.ts")),
+      fixturePath("members-contract", "contracts.ts"),
       "--out",
       outputPath,
     ]);
@@ -1226,23 +988,21 @@ export interface MembersContract extends Contract<"MembersContract"> {
     expect(exitCode).toBe(0);
     expect(stderr).toHaveLength(0);
 
-    const payload = JSON.parse(await fs.readFile(outputPath, "utf8")) as {
-      endpoints: unknown[];
-    };
+    const payload = parseContractJson(await fs.readFile(outputPath, "utf8"));
     expect(payload.endpoints.length).toBeGreaterThan(0);
   });
 
   // C4: an entry that defines no contracts produces a loud warning diagnostic,
   // not silent empty output.
   it("warns on stderr when the entry contains no contracts", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-no-contracts-"));
+    const tempDirectory = await tempDir("rivet-ts-no-contracts-");
     const entryPath = path.join(tempDirectory, "contracts.ts");
     await fs.writeFile(entryPath, "export interface NotAContract { id: string }\n", "utf8");
 
-    const { exitCode, stderr } = await runCapture(["--entry", entryPath]);
+    const { exitCode, stderr } = await runCliCaptured(["--entry", entryPath]);
 
     expect(exitCode).toBe(0);
-    const warningLines = stderr.filter((line) => line.includes("[ENTRY_NO_CONTRACTS]"));
+    const warningLines = stderr.split("\n").filter((line) => line.includes("[ENTRY_NO_CONTRACTS]"));
     expect(warningLines).toHaveLength(1);
     expect(warningLines[0]).toContain("warning");
     expect(warningLines[0]).toContain(entryPath);
@@ -1252,13 +1012,15 @@ export interface MembersContract extends Contract<"MembersContract"> {
   // C4/V3 root cause: a missing entry must be reported exactly once, not by
   // both the frontend and the lowerer.
   it("reports a missing entry exactly once", async () => {
-    const { exitCode, stderr } = await runCapture([
+    const { exitCode, stderr } = await runCliCaptured([
       "--entry",
       "/definitely/does/not/exist/contracts.ts",
     ]);
 
     expect(exitCode).toBe(1);
-    const entryNotFoundLines = stderr.filter((line) => line.includes("[ENTRY_NOT_FOUND]"));
+    const entryNotFoundLines = stderr
+      .split("\n")
+      .filter((line) => line.includes("[ENTRY_NOT_FOUND]"));
     expect(entryNotFoundLines).toHaveLength(1);
   });
 });
@@ -1278,8 +1040,7 @@ describe("rivet passthrough", () => {
   // Seeds the real binary cache (under a throwaway HOME) so the passthrough
   // resolves the fake exactly as it would a downloaded Rivet release.
   const installFakeRivet = async (source: string): Promise<void> => {
-    const home = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-passthrough-"));
-    onTestFinished(() => fs.rm(home, { recursive: true, force: true }));
+    const home = await tempDir("rivet-ts-passthrough-");
     vi.stubEnv("HOME", home);
     vi.stubEnv("XDG_CACHE_HOME", path.join(home, ".cache"));
     vi.stubEnv("RIVET_VERSION", FAKE_RIVET_VERSION);
@@ -1299,21 +1060,11 @@ describe("rivet passthrough", () => {
     await fs.chmod(executablePath, 0o755);
   };
 
-  const runPassthrough = async (args: readonly string[]) => {
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-    const exitCode = await runCli(["rivet", ...args], {
-      stdout: (text) => stdout.push(text),
-      stderr: (text) => stderr.push(text),
-    });
-    return { exitCode, stdout: stdout.join(""), stderr: stderr.join("") };
-  };
-
   it("streams more than 1 MB of Rivet output and keeps its exit code", async () => {
     const size = 2 * 1024 * 1024;
     await installFakeRivet(`process.stdout.write("x".repeat(${size}));`);
 
-    const { exitCode, stdout, stderr } = await runPassthrough(["--from", "contract.json"]);
+    const { exitCode, stdout, stderr } = await runCliCaptured(["rivet", "--from", "contract.json"]);
 
     expect(stderr).toBe("");
     expect(exitCode).toBe(0);
@@ -1323,18 +1074,18 @@ describe("rivet passthrough", () => {
   it("passes --help and --version after the subcommand to the Rivet binary", async () => {
     await installFakeRivet('console.log(`fake-rivet ${process.argv.slice(2).join(" ")}`);');
 
-    expect(await runPassthrough(["--", "--version"])).toEqual({
+    expect(await runCliCaptured(["rivet", "--", "--version"])).toEqual({
       exitCode: 0,
       stdout: "fake-rivet --version\n",
       stderr: "",
     });
-    expect((await runPassthrough(["--help"])).stdout).toBe("fake-rivet --help\n");
+    expect((await runCliCaptured(["rivet", "--help"])).stdout).toBe("fake-rivet --help\n");
   });
 
   it("reports a Rivet binary killed by a signal as 128 + the signal number", async () => {
     await installFakeRivet('process.kill(process.pid, "SIGTERM");');
 
-    const { exitCode } = await runPassthrough([]);
+    const { exitCode } = await runCliCaptured(["rivet"]);
 
     expect(exitCode).toBe(128 + os.constants.signals.SIGTERM);
   });
@@ -1342,7 +1093,7 @@ describe("rivet passthrough", () => {
   it("forwards a non-zero Rivet exit code", async () => {
     await installFakeRivet('process.stderr.write("RIV1102: refused\\n"); process.exitCode = 3;');
 
-    expect(await runPassthrough(["--from", "contract.json"])).toEqual({
+    expect(await runCliCaptured(["rivet", "--from", "contract.json"])).toEqual({
       exitCode: 3,
       stdout: "",
       stderr: "RIV1102: refused\n",

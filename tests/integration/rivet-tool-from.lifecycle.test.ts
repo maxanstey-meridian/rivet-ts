@@ -1,11 +1,12 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { lowerContracts } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
+import { parseContractJson } from "../support/lower.js";
+import { fixturePath } from "../support/paths.js";
+import { tempDir } from "../support/temp.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -21,11 +22,6 @@ if (!rivetToolAvailable) {
       "Set RIVET_DOTNET_TOOL_PATH to the Rivet.Tool project directory to enable it.",
   );
 }
-
-const getFixturePath = (relativePath: string): string => {
-  const currentFilePath = fileURLToPath(import.meta.url);
-  return path.resolve(path.dirname(currentFilePath), "..", "fixtures", relativePath);
-};
 
 type OpenApiDoc = {
   paths: Record<
@@ -69,13 +65,11 @@ type OpenApiDoc = {
 
 describe.skipIf(!rivetToolAvailable)("Rivet.Tool --from OpenAPI smoke", () => {
   it("generates valid OpenAPI from TS-authored Rivet contract JSON", async () => {
-    const lowered = lowerContracts(
-      getFixturePath(path.join("openapi-smoke-contract", "contracts.ts")),
-    );
+    const lowered = lowerContracts(fixturePath("openapi-smoke-contract", "contracts.ts"));
 
     expect(lowered.hasErrors).toBe(false);
 
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-openapi-smoke-"));
+    const tempDirectory = await tempDir("rivet-ts-openapi-smoke-");
     const contractPath = path.join(tempDirectory, "contract.json");
     const openApiFileName = "openapi.json";
 
@@ -84,13 +78,7 @@ describe.skipIf(!rivetToolAvailable)("Rivet.Tool --from OpenAPI smoke", () => {
     // The wire-format facts the .NET tool consumes: optional query params and
     // queryAuth must be present in the contract JSON handed to --from. The
     // fixture previously had neither — exactly how N1/N3 escaped this test.
-    const wireContract = JSON.parse(await fs.readFile(contractPath, "utf8")) as {
-      endpoints: Array<{
-        name: string;
-        params?: Array<{ name: string; source: string; isOptional: boolean }>;
-        queryAuth?: { parameterName: string };
-      }>;
-    };
+    const wireContract = parseContractJson(await fs.readFile(contractPath, "utf8"));
     const searchEndpoint = wireContract.endpoints.find(
       (endpoint) => endpoint.name === "searchItems",
     );

@@ -1,38 +1,16 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { lowerContracts } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { expectValidContractDocument } from "../contract-schema.js";
-
-const getFixturePath = (relativePath: string): string => {
-  const currentFilePath = fileURLToPath(import.meta.url);
-  return path.resolve(path.dirname(currentFilePath), "..", "fixtures", relativePath);
-};
+import { parseContractJson } from "../support/lower.js";
+import { fixturePath } from "../support/paths.js";
 
 describe("Expressive contract lifecycle", () => {
   it("lowers a broader supported DSL surface into Rivet JSON", async () => {
-    const lowered = lowerContracts(
-      getFixturePath(path.join("expressive-contract", "contracts.ts")),
-    );
+    const lowered = lowerContracts(fixturePath("expressive-contract", "contracts.ts"));
 
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
 
-    const payload = JSON.parse(lowered.toJson()) as {
-      enums: Array<{ name: string; values?: string[]; intValues?: number[] }>;
-      endpoints: Array<{
-        name: string;
-        params: Array<{ name: string; source: string; type: Record<string, unknown> }>;
-        responses: Array<{
-          statusCode: number;
-          examples?: Array<{ mediaType: string; json: string }>;
-        }>;
-        requestExamples?: Array<{ json: string; mediaType: string }>;
-      }>;
-      types: Array<{
-        name: string;
-        properties: Array<Record<string, unknown>>;
-      }>;
-    };
+    const payload = parseContractJson(lowered.toJson());
 
     expectValidContractDocument(payload);
 

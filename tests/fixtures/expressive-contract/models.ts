@@ -1,4 +1,4 @@
-import type { Brand, Format } from "../../../dist/index.js";
+import type { Brand, Format } from "../../../src/domain/authoring-types.js";
 
 export enum MemberStatus {
   Active = "active",

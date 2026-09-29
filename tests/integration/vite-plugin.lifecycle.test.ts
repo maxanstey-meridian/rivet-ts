@@ -1,22 +1,15 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { build, createServer } from "vite";
-
-const getProjectRoot = (): string => {
-  const currentFilePath = fileURLToPath(import.meta.url);
-  return path.resolve(path.dirname(currentFilePath), "..", "..");
-};
+import { PROJECT_ROOT } from "../support/paths.js";
+import { tempDir } from "../support/temp.js";
 
 describe("vite plugin lifecycle", () => {
   it("generates contract artifacts and local transport for a scaffolded api package", async () => {
-    const projectRoot = getProjectRoot();
+    const projectRoot = PROJECT_ROOT;
     // realpath: macOS tmpdir lives behind the /var -> /private/var symlink,
     // which breaks Vite's root-relative asset names when paths mix.
-    const tempDirectory = await fs.realpath(
-      await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-vite-plugin-")),
-    );
+    const tempDirectory = await tempDir("rivet-ts-vite-plugin-");
     const sampleRoot = path.join(tempDirectory, "myapp");
     const nodeModulesDirectory = path.join(sampleRoot, "node_modules");
 
@@ -272,9 +265,7 @@ describe("vite plugin lifecycle", () => {
   // V3: the plugin used to concatenate frontend diagnostics with the lowerer
   // result (which already includes them), reporting everything twice.
   it("reports each contract diagnostic exactly once when generation fails", async () => {
-    const tempDirectory = await fs.realpath(
-      await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-vite-plugin-broken-")),
-    );
+    const tempDirectory = await tempDir("rivet-ts-vite-plugin-broken-");
     const uiRoot = path.join(tempDirectory, "ui");
     await fs.mkdir(uiRoot, { recursive: true });
     await fs.writeFile(
@@ -332,8 +323,8 @@ describe("vite plugin lifecycle", () => {
     readonly bootstrapSpecSource: string;
     readonly lastGoodSchemaSource: string;
   }> => {
-    const projectRoot = getProjectRoot();
-    const tempDirectory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), prefix)));
+    const projectRoot = PROJECT_ROOT;
+    const tempDirectory = await tempDir(prefix);
     const uiRoot = path.join(tempDirectory, "ui");
     const generatedRoot = path.join(tempDirectory, "generated");
     await fs.mkdir(uiRoot, { recursive: true });

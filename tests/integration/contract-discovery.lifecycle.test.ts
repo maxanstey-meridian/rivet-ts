@@ -5,87 +5,32 @@
 // with the ContractBundle IR; every surviving fact is asserted against the
 // lowered RivetContractDocument or the lowering diagnostics, with the same
 // diagnostic codes and file paths the frontend used to report.
-import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { lowerContracts } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
+import { writeContractProject } from "../support/contract-project.js";
+import { parseContractJson } from "../support/lower.js";
+import { AUTHORING_TYPES, fixturePath } from "../support/paths.js";
 
-type EndpointPayload = {
-  name: string;
-  httpMethod: string;
-  routeTemplate: string;
-  controllerName: string;
-  summary?: string;
-  description?: string;
-  fileContentType?: string;
-  isFormEncoded?: boolean;
-  security?: { isAnonymous?: boolean; scheme?: string };
-  requestExamples?: Array<{
-    json?: string;
-    mediaType: string;
-    name?: string;
-    componentExampleId?: string;
-    resolvedJson?: string;
-  }>;
-  responses: Array<{
-    statusCode: number;
-    description?: string;
-    examples?: Array<{ mediaType: string; json: string }>;
-  }>;
-};
-
-type DocumentPayload = {
-  types: Array<{ name: string }>;
-  endpoints: EndpointPayload[];
-};
-
-const getProjectRoot = (): string => {
-  const currentFilePath = fileURLToPath(import.meta.url);
-  return path.resolve(path.dirname(currentFilePath), "..", "..");
-};
-
-const toImportPath = (fromDirectory: string, targetFilePath: string): string => {
-  const relativePath = path.relative(fromDirectory, targetFilePath).split(path.sep).join("/");
-  return relativePath.startsWith(".") ? relativePath : `./${relativePath}`;
-};
-
-const getFixturePath = (relativePath: string): string => {
-  const currentFilePath = fileURLToPath(import.meta.url);
-  return path.resolve(path.dirname(currentFilePath), "..", "fixtures", relativePath);
-};
-
-const lowerEntry = async (entryPath: string) => {
-  return lowerContracts(entryPath);
-};
-
-const parseDocument = (lowered: { toJson(): string }): DocumentPayload =>
-  JSON.parse(lowered.toJson()) as DocumentPayload;
+const parseDocument = (lowered: { toJson(): string }) => parseContractJson(lowered.toJson());
 
 const writeTempEntry = async (
   prefix: string,
   fileLines: readonly string[],
 ): Promise<{ tempDirectory: string; entryPath: string }> => {
-  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
-  const entryPath = path.join(tempDirectory, "contracts.ts");
-  const normalizedImportPath = toImportPath(
-    tempDirectory,
-    path.join(getProjectRoot(), "dist", "index.js"),
+  const entryPath = await writeContractProject(
+    {
+      "contracts.ts": fileLines.join("\n").replaceAll("__IMPORT_PATH__", AUTHORING_TYPES),
+    },
+    prefix,
   );
-
-  await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
-  await fs.writeFile(
-    entryPath,
-    fileLines.join("\n").replaceAll("__IMPORT_PATH__", normalizedImportPath),
-    "utf8",
-  );
+  const tempDirectory = path.dirname(entryPath);
 
   return { tempDirectory, entryPath };
 };
 
 describe("Contract discovery lifecycle", () => {
   it("discovers contracts and lowers endpoint metadata from a real TS fixture program", async () => {
-    const lowered = await lowerEntry(getFixturePath(path.join("members-contract", "contracts.ts")));
+    const lowered = lowerContracts(fixturePath("members-contract", "contracts.ts"));
 
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.contracts).toHaveLength(1);
@@ -129,9 +74,7 @@ describe("Contract discovery lifecycle", () => {
   });
 
   it("lowers the broader supported endpoint metadata surface from the public DSL", async () => {
-    const lowered = await lowerEntry(
-      getFixturePath(path.join("expressive-contract", "contracts.ts")),
-    );
+    const lowered = lowerContracts(fixturePath("expressive-contract", "contracts.ts"));
 
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
@@ -183,9 +126,7 @@ describe("Contract discovery lifecycle", () => {
   });
 
   it("carries extracted endpoint examples through the lowered Rivet contract document", async () => {
-    const lowered = await lowerEntry(
-      getFixturePath(path.join("expressive-contract", "contracts.ts")),
-    );
+    const lowered = lowerContracts(fixturePath("expressive-contract", "contracts.ts"));
 
     expect(lowered.hasErrors).toBe(false);
 
@@ -235,9 +176,7 @@ describe("Contract discovery lifecycle", () => {
   });
 
   it("lowers aliased endpoint authoring specs exported from the public DSL", async () => {
-    const lowered = await lowerEntry(
-      getFixturePath(path.join("aliased-authoring-contract", "contracts.ts")),
-    );
+    const lowered = lowerContracts(fixturePath("aliased-authoring-contract", "contracts.ts"));
 
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
@@ -306,7 +245,7 @@ describe("Contract discovery lifecycle", () => {
       "",
     ]);
 
-    const lowered = await lowerEntry(entryPath);
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
     const payload = parseDocument(lowered);
@@ -363,7 +302,7 @@ describe("Contract discovery lifecycle", () => {
       "",
     ]);
 
-    const lowered = await lowerEntry(entryPath);
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
@@ -397,31 +336,25 @@ describe("Contract discovery lifecycle", () => {
   });
 
   it("discovers contracts from a temp consumer entry without requiring local node ambient types", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-consumer-"));
-    const entryPath = path.join(tempDirectory, "contracts.ts");
-    const normalizedImportPath = toImportPath(
-      tempDirectory,
-      path.join(getProjectRoot(), "dist", "index.js"),
+    const entryPath = await writeContractProject(
+      {
+        "contracts.ts": [
+          `import type { Contract, Endpoint } from "${AUTHORING_TYPES}";`,
+          "",
+          'export interface TempContract extends Contract<"TempContract"> {',
+          "  Ping: Endpoint<{",
+          '    method: "GET";',
+          '    route: "/api/ping";',
+          "    response: void;",
+          "  }>;",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      "rivet-ts-consumer-",
     );
 
-    await fs.writeFile(
-      entryPath,
-      [
-        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
-        "",
-        'export interface TempContract extends Contract<"TempContract"> {',
-        "  Ping: Endpoint<{",
-        '    method: "GET";',
-        '    route: "/api/ping";',
-        "    response: void;",
-        "  }>;",
-        "}",
-        "",
-      ].join("\n"),
-      "utf8",
-    );
-
-    const lowered = await lowerEntry(entryPath);
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
@@ -458,7 +391,7 @@ describe("Contract discovery lifecycle", () => {
       "",
     ]);
 
-    const lowered = await lowerEntry(entryPath);
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
@@ -601,7 +534,7 @@ describe("Contract discovery lifecycle", () => {
     async (_, fileLines, expectedCode) => {
       const { entryPath } = await writeTempEntry("rivet-ts-examples-invalid-", fileLines);
 
-      const lowered = await lowerEntry(entryPath);
+      const lowered = lowerContracts(entryPath);
 
       expect(lowered.hasErrors).toBe(true);
       expect(lowered.diagnostics).toEqual(
@@ -642,7 +575,7 @@ describe("Contract discovery lifecycle", () => {
       "",
     ]);
 
-    const lowered = await lowerEntry(entryPath);
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(true);
     expect(lowered.diagnostics).toEqual(
@@ -689,7 +622,7 @@ describe("Contract discovery lifecycle", () => {
       "",
     ]);
 
-    const lowered = await lowerEntry(entryPath);
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(true);
     expect(lowered.diagnostics).toEqual(
@@ -743,7 +676,7 @@ describe("Contract discovery lifecycle", () => {
       "",
     ]);
 
-    const lowered = await lowerEntry(entryPath);
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(true);
     expect(lowered.diagnostics).toEqual(
@@ -767,60 +700,48 @@ describe("Contract discovery lifecycle", () => {
   });
 
   it("attributes imported malformed example diagnostics to the source module that declares the initializer", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-examples-imported-"));
-    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const entryPath = await writeContractProject(
+      {
+        "examples.ts": [
+          "interface CreateMemberRequest {",
+          "  email: string;",
+          "  role: string;",
+          "}",
+          "",
+          'const baseRequest = { role: "admin" };',
+          "export const createMemberRequestExample = {",
+          '  email: "jane@example.com",',
+          "  ...baseRequest,",
+          "} satisfies CreateMemberRequest;",
+          "",
+        ].join("\n"),
+        "contracts.ts": [
+          `import type { Contract, Endpoint } from "${AUTHORING_TYPES}";`,
+          'import { createMemberRequestExample } from "./examples.js";',
+          "",
+          "interface CreateMemberRequest {",
+          "  email: string;",
+          "  role: string;",
+          "}",
+          "",
+          'export interface TempContract extends Contract<"TempContract"> {',
+          "  Create: Endpoint<{",
+          '    method: "POST";',
+          '    route: "/api/temp";',
+          "    input: CreateMemberRequest;",
+          "    requestExample: typeof createMemberRequestExample;",
+          "    response: void;",
+          "  }>;",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      "rivet-ts-examples-imported-",
+    );
+    const tempDirectory = path.dirname(entryPath);
     const examplesPath = path.join(tempDirectory, "examples.ts");
-    const normalizedImportPath = toImportPath(
-      tempDirectory,
-      path.join(getProjectRoot(), "dist", "index.js"),
-    );
 
-    await fs.writeFile(path.join(tempDirectory, "package.json"), '{ "type": "module" }\n', "utf8");
-
-    await fs.writeFile(
-      examplesPath,
-      [
-        "interface CreateMemberRequest {",
-        "  email: string;",
-        "  role: string;",
-        "}",
-        "",
-        'const baseRequest = { role: "admin" };',
-        "export const createMemberRequestExample = {",
-        '  email: "jane@example.com",',
-        "  ...baseRequest,",
-        "} satisfies CreateMemberRequest;",
-        "",
-      ].join("\n"),
-      "utf8",
-    );
-
-    await fs.writeFile(
-      entryPath,
-      [
-        `import type { Contract, Endpoint } from "${normalizedImportPath}";`,
-        'import { createMemberRequestExample } from "./examples.js";',
-        "",
-        "interface CreateMemberRequest {",
-        "  email: string;",
-        "  role: string;",
-        "}",
-        "",
-        'export interface TempContract extends Contract<"TempContract"> {',
-        "  Create: Endpoint<{",
-        '    method: "POST";',
-        '    route: "/api/temp";',
-        "    input: CreateMemberRequest;",
-        "    requestExample: typeof createMemberRequestExample;",
-        "    response: void;",
-        "  }>;",
-        "}",
-        "",
-      ].join("\n"),
-      "utf8",
-    );
-
-    const lowered = await lowerEntry(entryPath);
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(true);
     expect(lowered.diagnostics).toEqual(
@@ -860,7 +781,7 @@ describe("Contract discovery lifecycle", () => {
       "",
     ]);
 
-    const lowered = await lowerEntry(entryPath);
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
     const payload = parseDocument(lowered);
@@ -896,7 +817,7 @@ describe("Contract discovery lifecycle", () => {
       "",
     ]);
 
-    const lowered = await lowerEntry(entryPath);
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
     const payload = parseDocument(lowered);
@@ -932,7 +853,7 @@ describe("Contract discovery lifecycle", () => {
       "",
     ]);
 
-    const lowered = await lowerEntry(entryPath);
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
     const payload = parseDocument(lowered);
@@ -957,32 +878,26 @@ describe("Contract discovery lifecycle", () => {
   ])(
     "reports diagnostics for malformed error metadata via %s",
     async (_, errorsType, expectedCode) => {
-      const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-errors-invalid-"));
-      const entryPath = path.join(tempDirectory, "contracts.ts");
-      const normalizedImportPath = toImportPath(
-        tempDirectory,
-        path.join(getProjectRoot(), "dist", "index.js"),
+      const entryPath = await writeContractProject(
+        {
+          "contracts.ts": [
+            `import type { Contract, Endpoint, EndpointErrorAuthoringSpec } from "${AUTHORING_TYPES}";`,
+            "",
+            'export interface TempContract extends Contract<"TempContract"> {',
+            "  Create: Endpoint<{",
+            '    method: "POST";',
+            '    route: "/api/temp";',
+            "    response: void;",
+            `    errors: ${errorsType};`,
+            "  }>;",
+            "}",
+            "",
+          ].join("\n"),
+        },
+        "rivet-ts-errors-invalid-",
       );
 
-      await fs.writeFile(
-        entryPath,
-        [
-          `import type { Contract, Endpoint, EndpointErrorAuthoringSpec } from "${normalizedImportPath}";`,
-          "",
-          'export interface TempContract extends Contract<"TempContract"> {',
-          "  Create: Endpoint<{",
-          '    method: "POST";',
-          '    route: "/api/temp";',
-          "    response: void;",
-          `    errors: ${errorsType};`,
-          "  }>;",
-          "}",
-          "",
-        ].join("\n"),
-        "utf8",
-      );
-
-      const lowered = await lowerEntry(entryPath);
+      const lowered = lowerContracts(entryPath);
 
       expect(lowered.hasErrors).toBe(true);
       expect(lowered.diagnostics).toEqual(
@@ -1000,32 +915,26 @@ describe("Contract discovery lifecycle", () => {
   );
 
   it("reports diagnostics when security uses the helper shape without a string literal scheme", async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-security-helper-"));
-    const entryPath = path.join(tempDirectory, "contracts.ts");
-    const normalizedImportPath = toImportPath(
-      tempDirectory,
-      path.join(getProjectRoot(), "dist", "index.js"),
+    const entryPath = await writeContractProject(
+      {
+        "contracts.ts": [
+          `import type { Contract, Endpoint, EndpointSecurityAuthoringSpec } from "${AUTHORING_TYPES}";`,
+          "",
+          'export interface TempContract extends Contract<"TempContract"> {',
+          "  Create: Endpoint<{",
+          '    method: "POST";',
+          '    route: "/api/temp";',
+          "    response: void;",
+          "    security: EndpointSecurityAuthoringSpec;",
+          "  }>;",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      "rivet-ts-security-helper-",
     );
 
-    await fs.writeFile(
-      entryPath,
-      [
-        `import type { Contract, Endpoint, EndpointSecurityAuthoringSpec } from "${normalizedImportPath}";`,
-        "",
-        'export interface TempContract extends Contract<"TempContract"> {',
-        "  Create: Endpoint<{",
-        '    method: "POST";',
-        '    route: "/api/temp";',
-        "    response: void;",
-        "    security: EndpointSecurityAuthoringSpec;",
-        "  }>;",
-        "}",
-        "",
-      ].join("\n"),
-      "utf8",
-    );
-
-    const lowered = await lowerEntry(entryPath);
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(true);
     expect(lowered.diagnostics).toEqual(
@@ -1040,9 +949,7 @@ describe("Contract discovery lifecycle", () => {
   });
 
   it("reports compiler diagnostics when endpoint metadata includes unsupported keys", async () => {
-    const lowered = await lowerEntry(
-      getFixturePath(path.join("invalid-authoring-contract", "contracts.ts")),
-    );
+    const lowered = lowerContracts(fixturePath("invalid-authoring-contract", "contracts.ts"));
 
     expect(lowered.hasErrors).toBe(true);
     expect(lowered.diagnostics).toEqual(
@@ -1073,9 +980,7 @@ describe("Contract discovery lifecycle", () => {
   });
 
   it("lowers status-scoped response examples from the dedicated fixture", async () => {
-    const lowered = await lowerEntry(
-      getFixturePath(path.join("response-examples-contract", "contracts.ts")),
-    );
+    const lowered = lowerContracts(fixturePath("response-examples-contract", "contracts.ts"));
 
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
@@ -1102,9 +1007,7 @@ describe("Contract discovery lifecycle", () => {
   });
 
   it("normalizes legacy successResponseExample into status-scoped response examples", async () => {
-    const lowered = await lowerEntry(
-      getFixturePath(path.join("response-examples-contract", "contracts.ts")),
-    );
+    const lowered = lowerContracts(fixturePath("response-examples-contract", "contracts.ts"));
 
     expect(lowered.hasErrors).toBe(false);
 
@@ -1142,7 +1045,7 @@ describe("Contract discovery lifecycle", () => {
       "",
     ]);
 
-    const lowered = await lowerEntry(entryPath);
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(true);
     expect(lowered.diagnostics).toEqual(
@@ -1175,7 +1078,7 @@ describe("Contract discovery lifecycle", () => {
       "",
     ]);
 
-    const lowered = await lowerEntry(entryPath);
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(true);
     expect(lowered.diagnostics).toEqual(
@@ -1188,9 +1091,7 @@ describe("Contract discovery lifecycle", () => {
   });
 
   it("lowers the formEncoded flag from a form-encoded endpoint", async () => {
-    const lowered = await lowerEntry(
-      getFixturePath(path.join("form-encoded-contract", "contracts.ts")),
-    );
+    const lowered = lowerContracts(fixturePath("form-encoded-contract", "contracts.ts"));
 
     expect(lowered.hasErrors).toBe(false);
 
@@ -1204,9 +1105,7 @@ describe("Contract discovery lifecycle", () => {
   });
 
   it("defaults formEncoded to false when not declared", async () => {
-    const lowered = await lowerEntry(
-      getFixturePath(path.join("request-examples-contract", "contracts.ts")),
-    );
+    const lowered = lowerContracts(fixturePath("request-examples-contract", "contracts.ts"));
 
     expect(lowered.hasErrors).toBe(false);
 

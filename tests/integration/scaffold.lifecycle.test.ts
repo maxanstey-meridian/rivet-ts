@@ -1,16 +1,17 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import { runCli } from "../../src/cli.js";
 import { emitGoldenConfigSources } from "../../src/infrastructure/scaffold/workspace-emitter.js";
+import { runCliCaptured } from "../support/cli.js";
+import { parseContractJson } from "../support/lower.js";
+import { PROJECT_ROOT } from "../support/paths.js";
 import {
   PLUMB_EXECUTABLE,
   expectPlumbClean,
-  getProjectRoot,
   linkScaffoldDependencies,
   plumbAvailable,
   typecheckScaffoldedWorkspace,
 } from "../support/scaffold-oracles.js";
+import { makeTempDir, removeDir } from "../support/temp.js";
 
 /**
  * The `scaffold` command is the engine behind `plumb init --ts-backend`:
@@ -22,17 +23,20 @@ describe("scaffold lifecycle", () => {
   let outputDirectory: string;
 
   beforeAll(async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-"));
+    const tempDirectory = await makeTempDir("rivet-ts-scaffold-");
     outputDirectory = path.join(tempDirectory, "demo-app");
 
-    const stderr: string[] = [];
-    const exitCode = await runCli(["scaffold", "--out", outputDirectory, "--name", "demo"], {
-      stdout: () => undefined,
-      stderr: (text) => stderr.push(text),
-    });
+    const { exitCode, stderr } = await runCliCaptured([
+      "scaffold",
+      "--out",
+      outputDirectory,
+      "--name",
+      "demo",
+    ]);
 
     expect(exitCode).toBe(0);
-    expect(stderr).toHaveLength(0);
+    expect(stderr).toBe("");
+    return () => removeDir(tempDirectory);
   }, 120000);
 
   it("emits the golden workspace shape with the worked quotes example", async () => {
@@ -121,12 +125,12 @@ describe("scaffold lifecycle", () => {
 
     // The bootstrap contract derives from lowering the EMITTED entry through
     // the real pipeline — never a hand-maintained copy that can drift.
-    const contractJson = JSON.parse(
+    const contractJson = parseContractJson(
       await fs.readFile(
         path.join(outputDirectory, "apps", "api", "generated", "api.contract.json"),
         "utf8",
       ),
-    ) as { endpoints: Array<{ name: string; routeTemplate: string }> };
+    );
     expect(contractJson.endpoints.map((endpoint) => endpoint.name).sort()).toEqual([
       "addQuote",
       "listQuotes",
@@ -277,14 +281,16 @@ describe("scaffold lifecycle", () => {
   });
 
   it("refuses to overwrite a non-empty output directory unless --force is passed", async () => {
-    const stderr: string[] = [];
-    const exitCode = await runCli(["scaffold", "--out", outputDirectory, "--name", "demo"], {
-      stdout: () => undefined,
-      stderr: (text) => stderr.push(text),
-    });
+    const { exitCode, stderr } = await runCliCaptured([
+      "scaffold",
+      "--out",
+      outputDirectory,
+      "--name",
+      "demo",
+    ]);
 
     expect(exitCode).toBe(1);
-    expect(stderr.join("")).toContain("--force");
+    expect(stderr).toContain("--force");
   });
 });
 
@@ -297,20 +303,21 @@ describe("scaffold --no-api lifecycle", () => {
   let outputDirectory: string;
 
   beforeAll(async () => {
-    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-scaffold-noapi-"));
+    const tempDirectory = await makeTempDir("rivet-ts-scaffold-noapi-");
     outputDirectory = path.join(tempDirectory, "fe-app");
 
-    const stderr: string[] = [];
-    const exitCode = await runCli(
-      ["scaffold", "--out", outputDirectory, "--name", "fe-demo", "--no-api"],
-      {
-        stdout: () => undefined,
-        stderr: (text) => stderr.push(text),
-      },
-    );
+    const { exitCode, stderr } = await runCliCaptured([
+      "scaffold",
+      "--out",
+      outputDirectory,
+      "--name",
+      "fe-demo",
+      "--no-api",
+    ]);
 
     expect(exitCode).toBe(0);
-    expect(stderr).toHaveLength(0);
+    expect(stderr).toBe("");
+    return () => removeDir(tempDirectory);
   }, 60000);
 
   it("emits ui + contracts and no api app", async () => {
@@ -345,7 +352,7 @@ describe("scaffold --no-api lifecycle", () => {
 
   it("typechecks the contracts package", async () => {
     await linkScaffoldDependencies(outputDirectory);
-    const tscPath = path.join(getProjectRoot(), "node_modules", ".bin", "tsc");
+    const tscPath = path.join(PROJECT_ROOT, "node_modules", ".bin", "tsc");
     const { execFile } = await import("node:child_process");
     const { promisify } = await import("node:util");
     await promisify(execFile)(tscPath, [

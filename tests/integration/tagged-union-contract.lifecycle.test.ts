@@ -1,37 +1,14 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { lowerContracts } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
-
-const getFixturePath = (relativePath: string): string => {
-  const currentFilePath = fileURLToPath(import.meta.url);
-  return path.resolve(path.dirname(currentFilePath), "..", "fixtures", relativePath);
-};
+import { parseContractJson } from "../support/lower.js";
+import { fixturePath } from "../support/paths.js";
 
 describe("Tagged union contract lifecycle", () => {
   it("lowers discriminated object unions into tagged union contract types", async () => {
-    const lowered = lowerContracts(
-      getFixturePath(path.join("tagged-union-contract", "contracts.ts")),
-    );
+    const lowered = lowerContracts(fixturePath("tagged-union-contract", "contracts.ts"));
 
     expect(lowered.hasErrors).toBe(false);
 
-    const payload = JSON.parse(lowered.toJson()) as {
-      types: Array<{
-        name: string;
-        type?: {
-          kind: string;
-          discriminator: string;
-          variants: Array<{
-            tag: string;
-            type: { kind: string; properties: Array<{ name: string }> };
-          }>;
-        };
-      }>;
-      endpoints: Array<{
-        name: string;
-        responses: Array<{ statusCode: number; dataType?: { kind: string; name?: string } }>;
-      }>;
-    };
+    const payload = parseContractJson(lowered.toJson());
 
     const displayState = payload.types.find((type) => type.name === "DisplayStateContract");
     expect(displayState?.type).toEqual(

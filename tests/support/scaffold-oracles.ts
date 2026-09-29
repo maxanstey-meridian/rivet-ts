@@ -1,15 +1,10 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { PROJECT_ROOT } from "./paths.js";
 
 const execFileAsync = promisify(execFile);
-
-export const getProjectRoot = (): string => {
-  const currentFilePath = fileURLToPath(import.meta.url);
-  return path.resolve(path.dirname(currentFilePath), "..", "..");
-};
 
 /**
  * Makes a scaffolded workspace resolvable offline: every top-level entry of
@@ -18,7 +13,7 @@ export const getProjectRoot = (): string => {
  * CURRENT runtime, not the pinned GitHub tag).
  */
 export const linkScaffoldDependencies = async (outputDirectory: string): Promise<void> => {
-  const projectRoot = getProjectRoot();
+  const projectRoot = PROJECT_ROOT;
   const sourceModules = path.join(projectRoot, "node_modules");
   const targetModules = path.join(outputDirectory, "node_modules");
   await fs.mkdir(targetModules, { recursive: true });
@@ -36,7 +31,7 @@ export const linkScaffoldDependencies = async (outputDirectory: string): Promise
 };
 
 const runTsc = async (tsconfigPath: string): Promise<void> => {
-  const tscPath = path.join(getProjectRoot(), "node_modules", ".bin", "tsc");
+  const tscPath = path.join(PROJECT_ROOT, "node_modules", ".bin", "tsc");
 
   try {
     await execFileAsync(tscPath, ["--noEmit", "-p", tsconfigPath]);

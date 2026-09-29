@@ -1,4 +1,4 @@
-import type { Contract, Endpoint } from "../../../dist/index.js";
+import type { Contract, Endpoint } from "../../../src/domain/authoring-types.js";
 import type { DisplayStateContract, RefreshDisplayRequest } from "./models.js";
 
 export interface DisplayContract extends Contract<"DisplayContract"> {
