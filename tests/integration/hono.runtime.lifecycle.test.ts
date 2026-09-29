@@ -1,1198 +1,563 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { expect, test } from "vitest";
-import type { Contract, Endpoint } from "../../src/domain/authoring-types.js";
 import { registerRivetHonoRoutes, rivetHttpError, type RivetInvokable } from "../../src/hono.js";
-import type { RivetHandler } from "../../src/index.js";
+import type { Contract, Endpoint, RivetHandler, RivetHandlerInput } from "../../src/index.js";
+import type {
+  CatalogContract,
+  ConflictDto,
+  DirectoryContract,
+  DirectorySearchRequest,
+  DirectorySearchResponse,
+  DirectoryStatusResponse,
+  PetContract,
+} from "../fixtures/hono-runtime/directory.js";
+import type { OwnersContract, PetsContract } from "../fixtures/hono-runtime/pets-and-owners.js";
+import { type ContractJson, lowerFixture } from "../support/lower.js";
 
-interface DirectorySearchRequest {
-  readonly query: string;
-}
+// The runtime is driven by the contract JSON the real lowerer produces from
+// the TS contracts the handlers are typed against.
+const lowerHonoFixture = (file: string): ContractJson => {
+  const { lowered, document } = lowerFixture("hono-runtime", file);
+  expect(lowered.diagnostics).toEqual([]);
+  return document;
+};
 
-interface DirectorySearchResponse {
-  readonly query: string;
-}
+let directory: ContractJson;
+let petsAndOwners: ContractJson;
+let sharedEndpointNames: ContractJson;
+let sharedRoutes: ContractJson;
 
-interface DirectoryStatusResponse {
-  readonly status: "ok";
-}
-
-interface ConflictDto {
-  readonly code: "conflict";
-}
-
-interface SubmitFormRequest {
-  readonly name: string;
-  readonly email: string;
-}
-
-interface UploadDocumentRequest {
-  readonly file: File;
-  readonly title: string;
-  readonly description: string;
-}
-
-interface DirectoryContract extends Contract<"DirectoryContract"> {
-  Search: Endpoint<{
-    method: "POST";
-    route: "/api/directory/search";
-    input: DirectorySearchRequest;
-    response: DirectorySearchResponse;
-    successStatus: 201;
-    errors: [{ status: 409; response: ConflictDto }];
-  }>;
-
-  Health: Endpoint<{
-    method: "GET";
-    route: "/api/directory/health";
-    response: DirectoryStatusResponse;
-  }>;
-
-  Export: Endpoint<{
-    method: "GET";
-    route: "/api/directory/export";
-    fileResponse: true;
-    fileContentType: "text/csv";
-    response: void;
-  }>;
-
-  SubmitForm: Endpoint<{
-    method: "POST";
-    route: "/api/directory/forms";
-    input: SubmitFormRequest;
-    response: DirectorySearchResponse;
-    formEncoded: true;
-  }>;
-
-  UploadDocument: Endpoint<{
-    method: "PUT";
-    route: "/api/directory/documents/{documentId}";
-    params: { documentId: string };
-    input: UploadDocumentRequest;
-    response: void;
-    acceptsFile: true;
-  }>;
-}
+beforeAll(() => {
+  directory = lowerHonoFixture("directory.ts");
+  petsAndOwners = lowerHonoFixture("pets-and-owners.ts");
+  sharedEndpointNames = lowerHonoFixture("shared-endpoint-names.ts");
+  sharedRoutes = lowerHonoFixture("shared-routes.ts");
+});
 
 const searchEchoHandler: RivetHandler<DirectoryContract, "Search"> = async ({ body }) => ({
   query: body.query,
 });
 
-const healthHandler: RivetHandler<DirectoryContract, "Health"> = async () => ({
-  status: "ok",
-});
-
-const exportHandler: RivetHandler<DirectoryContract, "Export"> = async () =>
-  new Blob(["id,name\n1,Ada\n"], { type: "text/csv" });
-
-const submitFormHandler: RivetHandler<DirectoryContract, "SubmitForm"> = async ({ body }) => ({
-  query: `${body.name}:${body.email}`,
-});
-
-const uploadDocumentNoopHandler: RivetHandler<DirectoryContract, "UploadDocument"> = async () =>
-  undefined;
-
-const contract = {
-  endpoints: [
-    {
-      name: "search",
-      httpMethod: "POST",
-      routeTemplate: "/api/directory/search",
-      controllerName: "directory",
-      params: [
-        {
-          name: "body",
-          source: "body",
-          type: { kind: "ref", name: "DirectorySearchRequest" },
-          isOptional: false,
-        },
-      ],
-      responses: [
-        {
-          statusCode: 201,
-        },
-        {
-          statusCode: 409,
-        },
-      ],
-    },
-    {
-      name: "health",
-      httpMethod: "GET",
-      routeTemplate: "/api/directory/health",
-      controllerName: "directory",
-      params: [],
-      responses: [
-        {
-          statusCode: 200,
-        },
-      ],
-    },
-    {
-      name: "export",
-      httpMethod: "GET",
-      routeTemplate: "/api/directory/export",
-      controllerName: "directory",
-      params: [],
-      responses: [
-        {
-          statusCode: 200,
-        },
-      ],
-      fileContentType: "text/csv",
-    },
-    {
-      name: "submitForm",
-      httpMethod: "POST",
-      routeTemplate: "/api/directory/forms",
-      controllerName: "directory",
-      params: [
-        {
-          name: "body",
-          source: "body",
-          type: { kind: "ref", name: "SubmitFormRequest" },
-          isOptional: false,
-        },
-      ],
-      responses: [
-        {
-          statusCode: 200,
-        },
-      ],
-      isFormEncoded: true,
-    },
-    {
-      name: "uploadDocument",
-      httpMethod: "PUT",
-      routeTemplate: "/api/directory/documents/{documentId}",
-      controllerName: "directory",
-      params: [
-        {
-          name: "documentId",
-          source: "route",
-          type: { kind: "primitive", type: "string" },
-          isOptional: false,
-        },
-        {
-          name: "file",
-          source: "file",
-          type: { kind: "primitive", type: "File" },
-          isOptional: false,
-        },
-        {
-          name: "title",
-          source: "formField",
-          type: { kind: "primitive", type: "string" },
-          isOptional: false,
-        },
-        {
-          name: "description",
-          source: "formField",
-          type: { kind: "primitive", type: "string" },
-          isOptional: false,
-        },
-      ],
-      responses: [
-        {
-          statusCode: 204,
-        },
-      ],
-    },
-  ],
-} as const;
-
-test("registerRivetHonoRoutes uses plain function handlers directly", async () => {
-  const app = new Hono();
-
-  registerRivetHonoRoutes<DirectoryContract>(app, contract, {
-    group: "directory",
-    handlers: {
-      Search: searchEchoHandler,
-      Health: healthHandler,
-      Export: exportHandler,
-      SubmitForm: submitFormHandler,
-      UploadDocument: uploadDocumentNoopHandler,
-    },
-  });
-
-  const response = await app.request("/api/directory/search", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ query: "Ada" }),
-  });
-
-  expect(response.status).toBe(201);
-  await expect(response.json()).resolves.toEqual({
-    query: "Ada",
-  });
-});
-
-test("registerRivetHonoRoutes instantiates zero-arg class handlers once per request", async () => {
-  let constructorCalls = 0;
-
-  class HealthHandler implements RivetInvokable<DirectoryContract, "Health"> {
-    public constructor() {
-      constructorCalls += 1;
-    }
-
-    public async handle(): Promise<DirectoryStatusResponse> {
-      return { status: "ok" };
-    }
-  }
-
-  const app = new Hono();
-  registerRivetHonoRoutes<DirectoryContract>(app, contract, {
-    group: "directory",
-    handlers: {
-      Search: searchEchoHandler,
-      Health: HealthHandler,
-      Export: exportHandler,
-      SubmitForm: submitFormHandler,
-      UploadDocument: uploadDocumentNoopHandler,
-    },
-  });
-
-  const firstResponse = await app.request("/api/directory/health");
-  expect(firstResponse.status).toBe(200);
-  await expect(firstResponse.json()).resolves.toEqual({ status: "ok" });
-
-  const secondResponse = await app.request("/api/directory/health");
-  expect(secondResponse.status).toBe(200);
-  await expect(secondResponse.json()).resolves.toEqual({ status: "ok" });
-
-  expect(constructorCalls).toBe(2);
-});
-
-test("registerRivetHonoRoutes resolves class handlers through resolveHandler at bootstrap", async () => {
-  class SearchHandler implements RivetInvokable<DirectoryContract, "Search"> {
-    public constructor(private readonly prefix: string) {}
-
-    public async handle({
-      body,
-    }: {
-      body: DirectorySearchRequest;
-    }): Promise<DirectorySearchResponse> {
-      return {
-        query: `${this.prefix}:${body.query}`,
-      };
-    }
-  }
-
-  const app = new Hono();
-  registerRivetHonoRoutes<DirectoryContract>(app, contract, {
-    group: "directory",
-    handlers: {
-      Search: SearchHandler,
-      Health: healthHandler,
-      Export: exportHandler,
-      SubmitForm: submitFormHandler,
-      UploadDocument: uploadDocumentNoopHandler,
-    },
-    resolveHandler: (Handler) => new Handler("directory"),
-  });
-
-  const response = await app.request("/api/directory/search", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ query: "Ada" }),
-  });
-
-  expect(response.status).toBe(201);
-  await expect(response.json()).resolves.toEqual({
-    query: "directory:Ada",
-  });
-});
-
-test("registerRivetHonoRoutes supports rich endpoint entries with Hono middleware", async () => {
-  const app = new Hono();
-
-  registerRivetHonoRoutes<DirectoryContract>(app, contract, {
-    group: "directory",
-    handlers: {
-      Search: {
-        handler: searchEchoHandler,
-        middleware: [
-          async (context, next) => {
-            if (context.req.header("x-allow-search") !== "yes") {
-              return context.json({ code: "forbidden" }, 403);
-            }
-
-            await next();
-          },
-        ],
-      },
-      Health: healthHandler,
-      Export: exportHandler,
-      SubmitForm: submitFormHandler,
-      UploadDocument: uploadDocumentNoopHandler,
-    },
-  });
-
-  const blockedResponse = await app.request("/api/directory/search", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ query: "Ada" }),
-  });
-
-  expect(blockedResponse.status).toBe(403);
-  await expect(blockedResponse.json()).resolves.toEqual({ code: "forbidden" });
-
-  const allowedResponse = await app.request("/api/directory/search", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-allow-search": "yes",
-    },
-    body: JSON.stringify({ query: "Ada" }),
-  });
-
-  expect(allowedResponse.status).toBe(201);
-  await expect(allowedResponse.json()).resolves.toEqual({
-    query: "Ada",
-  });
-});
-
-test("registerRivetHonoRoutes throws when a class handler needs DI but no resolver is supplied", () => {
-  class SearchHandler implements RivetInvokable<DirectoryContract, "Search"> {
-    public constructor(private readonly prefix: string) {}
-
-    public async handle({
-      body,
-    }: {
-      body: DirectorySearchRequest;
-    }): Promise<DirectorySearchResponse> {
-      return {
-        query: `${this.prefix}:${body.query}`,
-      };
-    }
-  }
-
-  const app = new Hono();
-
-  expect(() =>
-    registerRivetHonoRoutes<DirectoryContract>(app, contract, {
-      group: "directory",
-      handlers: {
-        Search: SearchHandler,
-        Health: healthHandler,
-        Export: exportHandler,
-        SubmitForm: submitFormHandler,
-        UploadDocument: uploadDocumentNoopHandler,
-      },
-    }),
-  ).toThrow(
-    'Handler class "SearchHandler" for endpoint "search" requires constructor dependencies. Supply "resolveHandler" at registration.',
-  );
-});
-
-test("registerRivetHonoRoutes serializes explicit non-2xx Rivet HTTP errors", async () => {
-  class SearchHandler implements RivetInvokable<DirectoryContract, "Search"> {
-    public async handle(): Promise<DirectorySearchResponse> {
-      throw rivetHttpError(409, { code: "conflict" } satisfies ConflictDto);
-    }
-  }
-
-  const app = new Hono();
-  registerRivetHonoRoutes<DirectoryContract>(app, contract, {
-    group: "directory",
-    handlers: {
-      Search: SearchHandler,
-      Health: healthHandler,
-      Export: exportHandler,
-      SubmitForm: submitFormHandler,
-      UploadDocument: uploadDocumentNoopHandler,
-    },
-  });
-
-  const response = await app.request("/api/directory/search", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ query: "Ada" }),
-  });
-
-  expect(response.status).toBe(409);
-  await expect(response.json()).resolves.toEqual({ code: "conflict" });
-});
-
-test("registerRivetHonoRoutes returns file responses as file bodies", async () => {
-  const app = new Hono();
-  registerRivetHonoRoutes<DirectoryContract>(app, contract, {
-    group: "directory",
-    handlers: {
-      Search: searchEchoHandler,
-      Health: healthHandler,
-      Export: exportHandler,
-      SubmitForm: submitFormHandler,
-      UploadDocument: uploadDocumentNoopHandler,
-    },
-  });
-
-  const response = await app.request("/api/directory/export");
-
-  expect(response.status).toBe(200);
-  expect(response.headers.get("content-type")).toBe("text/csv");
-  await expect(response.text()).resolves.toBe("id,name\n1,Ada\n");
-});
-
-test("registerRivetHonoRoutes parses form-encoded bodies into handler input", async () => {
-  const app = new Hono();
-  registerRivetHonoRoutes<DirectoryContract>(app, contract, {
-    group: "directory",
-    handlers: {
-      Search: searchEchoHandler,
-      Health: healthHandler,
-      Export: exportHandler,
-      SubmitForm: submitFormHandler,
-      UploadDocument: uploadDocumentNoopHandler,
-    },
-  });
-
-  const form = new URLSearchParams();
-  form.set("name", "Jane");
-  form.set("email", "jane@example.com");
-
-  const response = await app.request("/api/directory/forms", {
-    method: "POST",
-    headers: {
-      "content-type": "application/x-www-form-urlencoded",
-    },
-    body: form.toString(),
-  });
-
-  expect(response.status).toBe(200);
-  await expect(response.json()).resolves.toEqual({
-    query: "Jane:jane@example.com",
-  });
-});
-
-test("registerRivetHonoRoutes parses multipart inputs into body plus params", async () => {
-  const app = new Hono();
-  registerRivetHonoRoutes<DirectoryContract>(app, contract, {
-    group: "directory",
-    handlers: {
-      Search: searchEchoHandler,
-      Health: healthHandler,
-      Export: exportHandler,
-      SubmitForm: submitFormHandler,
-      UploadDocument: async ({ body, params }) => {
-        expect(params.documentId).toBe("doc_123");
-        expect(body.title).toBe("Quarterly report");
-        expect(body.description).toBe("Draft");
-        expect(body.file).toBeInstanceOf(File);
-        expect(await body.file.text()).toBe("hello");
-      },
-    },
-  });
-
-  const form = new FormData();
-  form.set("file", new File(["hello"], "report.txt", { type: "text/plain" }));
-  form.set("title", "Quarterly report");
-  form.set("description", "Draft");
-
-  const response = await app.request("/api/directory/documents/doc_123", {
-    method: "PUT",
-    body: form,
-  });
-
-  expect(response.status).toBe(204);
-  await expect(response.text()).resolves.toBe("");
-});
-
-test("registerRivetHonoRoutes fails fast when a selected endpoint handler is missing", () => {
-  const app = new Hono();
-
-  expect(() =>
-    registerRivetHonoRoutes<DirectoryContract>(app, contract, {
-      group: "directory",
-      handlers: {
-        Search: searchEchoHandler,
-      },
-    }),
-  ).toThrow('No handler was provided for endpoint "health".');
-});
-
-test("registerRivetHonoRoutes fails fast on unused handlers", () => {
-  const app = new Hono();
-
-  expect(() =>
-    registerRivetHonoRoutes<DirectoryContract>(app, contract, {
-      group: "directory",
-      handlers: {
-        Search: searchEchoHandler,
-        Health: healthHandler,
-        Export: exportHandler,
-        SubmitForm: submitFormHandler,
-        UploadDocument: uploadDocumentNoopHandler,
-        Unknown: async () => ({ status: "ok" as const }),
-      } as never,
-    }),
-  ).toThrow("Unused handlers were provided: Unknown.");
-});
-
-// -- Default success-status fallback table (N4): POST -> 201; DELETE void -> 204; else 200 --
-
-interface StatusTableContract extends Contract<"StatusTableContract"> {
-  CreateItem: Endpoint<{
-    method: "POST";
-    route: "/api/items";
-    input: { readonly name: string };
-    response: { readonly id: string };
-  }>;
-
-  GetItem: Endpoint<{
-    method: "GET";
-    route: "/api/items";
-    response: { readonly id: string };
-  }>;
-
-  RemoveItem: Endpoint<{
-    method: "DELETE";
-    route: "/api/items";
-    response: void;
-  }>;
-}
-
-test("registerRivetHonoRoutes falls back to the method default status when responses carry no 2xx entry", async () => {
-  // Endpoints deliberately omit success responses so the adapter's
-  // method-default table (shared with the lowerer and SuccessStatus) is hit.
-  const statusTableContract = {
-    endpoints: [
-      {
-        name: "createItem",
-        httpMethod: "POST",
-        routeTemplate: "/api/items",
-        controllerName: "items",
-        params: [
-          {
-            name: "body",
-            source: "body",
-            type: { kind: "ref", name: "Thing" },
-            isOptional: false,
-          },
-        ],
-        responses: [],
-      },
-      {
-        name: "getItem",
-        httpMethod: "GET",
-        routeTemplate: "/api/items",
-        controllerName: "items",
-        params: [],
-        responses: [],
-      },
-      {
-        name: "removeItem",
-        httpMethod: "DELETE",
-        routeTemplate: "/api/items",
-        controllerName: "items",
-        params: [],
-        responses: [],
-      },
-    ],
-  } as const;
-
-  const app = new Hono();
-  registerRivetHonoRoutes<StatusTableContract>(app, statusTableContract, {
-    group: "items",
-    handlers: {
-      CreateItem: async () => ({ id: "item_1" }),
-      GetItem: async () => ({ id: "item_1" }),
-      RemoveItem: async () => undefined,
-    },
-  });
-
-  const postResponse = await app.request("/api/items", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name: "Ada" }),
-  });
-  expect(postResponse.status).toBe(201);
-  await expect(postResponse.json()).resolves.toEqual({ id: "item_1" });
-
-  const getResponse = await app.request("/api/items");
-  expect(getResponse.status).toBe(200);
-  await expect(getResponse.json()).resolves.toEqual({ id: "item_1" });
-
-  const deleteResponse = await app.request("/api/items", { method: "DELETE" });
-  expect(deleteResponse.status).toBe(204);
-  await expect(deleteResponse.text()).resolves.toBe("");
-});
-
-// Relocated from scaffold-mock.lifecycle.test.ts: this is a Hono runtime
-// behavior test (group filtering + empty-body responses), not a scaffold test.
-test("filters endpoints by group and returns empty responses correctly", async () => {
-  interface MultiContract extends Contract<"MultiContract"> {
-    Ping: Endpoint<{
-      method: "POST";
-      route: "/api/ping";
-      response: void;
-    }>;
-    Health: Endpoint<{
-      method: "GET";
-      route: "/api/health";
-      response: { status: "ok" };
-    }>;
-  }
-
-  const pingHandler: RivetHandler<MultiContract, "Ping"> = async () => undefined;
-
-  const app = new Hono();
-  registerRivetHonoRoutes<MultiContract>(
-    app,
-    {
-      endpoints: [
-        {
-          name: "ping",
-          httpMethod: "POST",
-          routeTemplate: "/api/ping",
-          controllerName: "pet",
-          params: [],
-          responses: [{ statusCode: 204 }],
-        },
-        {
-          name: "health",
-          httpMethod: "GET",
-          routeTemplate: "/api/health",
-          controllerName: "summary",
-          params: [],
-          responses: [{ statusCode: 200 }],
-        },
-      ],
-    },
-    {
-      handlers: {
-        Ping: pingHandler,
-      },
-      group: "pet",
-    },
-  );
-
-  const pingResponse = await app.request("http://local/api/ping", { method: "POST" });
-  const healthResponse = await app.request("http://local/api/health", { method: "GET" });
-
-  expect(pingResponse.status).toBe(204);
-  await expect(pingResponse.text()).resolves.toBe("");
-  expect(healthResponse.status).toBe(404);
-});
-
-// -- H1/H2: typed query/route binding honesty --
-// For bodyless methods the lowerer turns `input` into query params (and the
-// type level maps input -> { query }), so the adapter must deliver values
-// coerced to the contract-declared types, not raw first-value strings.
-
-interface CatalogItemDto {
-  readonly id: number;
-}
-
-interface CatalogContract extends Contract<"CatalogContract"> {
-  GetItem: Endpoint<{
-    method: "GET";
-    route: "/api/catalog/{id}";
-    params: { readonly id: number };
-    response: CatalogItemDto;
-  }>;
-
-  ListItems: Endpoint<{
-    method: "GET";
-    route: "/api/catalog";
-    input: {
-      readonly page: number;
-      readonly includeArchived?: boolean;
-      readonly tags?: readonly string[];
-      readonly q?: string;
-    };
-    response: {
-      readonly page: number;
-      readonly includeArchived?: boolean;
-      readonly tags?: readonly string[];
-      readonly q?: string;
-    };
-  }>;
-}
-
-const catalogContract = {
-  endpoints: [
-    {
-      name: "getItem",
-      httpMethod: "GET",
-      routeTemplate: "/api/catalog/{id}",
-      controllerName: "catalog",
-      params: [
-        {
-          name: "id",
-          source: "route",
-          type: { kind: "primitive", type: "number" },
-          isOptional: false,
-        },
-      ],
-      responses: [{ statusCode: 200 }],
-    },
-    {
-      name: "listItems",
-      httpMethod: "GET",
-      routeTemplate: "/api/catalog",
-      controllerName: "catalog",
-      params: [
-        {
-          name: "page",
-          source: "query",
-          type: { kind: "primitive", type: "number" },
-          isOptional: false,
-        },
-        {
-          name: "includeArchived",
-          source: "query",
-          type: { kind: "primitive", type: "boolean" },
-          isOptional: true,
-        },
-        {
-          name: "tags",
-          source: "query",
-          type: { kind: "array", element: { kind: "primitive", type: "string" } },
-          isOptional: true,
-        },
-        {
-          name: "q",
-          source: "query",
-          type: { kind: "nullable", inner: { kind: "primitive", type: "string" } },
-          isOptional: true,
-        },
-      ],
-      responses: [{ statusCode: 200 }],
-    },
-  ],
-} as const;
-
-const buildCatalogApp = (): Hono => {
-  const app = new Hono();
-  registerRivetHonoRoutes<CatalogContract>(app, catalogContract, {
-    group: "catalog",
-    handlers: {
-      GetItem: async ({ params }) => ({ id: params.id }),
-      ListItems: async ({ query }) => ({ ...query }),
-    },
-  });
-  return app;
+const healthHandler: RivetHandler<DirectoryContract, "Health"> = async () => ({ status: "ok" });
+
+const directoryHandlers = {
+  Search: searchEchoHandler,
+  Health: healthHandler,
+  Export: (async () => new Blob(["id,name\n1,Ada\n"], { type: "text/csv" })) satisfies RivetHandler<
+    DirectoryContract,
+    "Export"
+  >,
+  SubmitForm: (async ({ body }) => ({
+    query: `${body.name}:${body.email}`,
+  })) satisfies RivetHandler<DirectoryContract, "SubmitForm">,
+  UploadDocument: (async () => undefined) satisfies RivetHandler<
+    DirectoryContract,
+    "UploadDocument"
+  >,
 };
 
-test("GET input round-trips as typed query values (H1 runtime + H2 coercion)", async () => {
-  const app = buildCatalogApp();
+const postJson = (app: Hono, route: string, body: string) =>
+  app.request(route, { method: "POST", headers: { "content-type": "application/json" }, body });
 
-  const response = await app.request("/api/catalog?page=2&includeArchived=true&tags=a&tags=b");
+const search = (app: Hono) =>
+  postJson(app, "/api/directory/search", JSON.stringify({ query: "Ada" }));
 
-  expect(response.status).toBe(200);
-  await expect(response.json()).resolves.toEqual({
-    page: 2,
-    includeArchived: true,
-    tags: ["a", "b"],
+describe("handler resolution", () => {
+  it("uses plain function handlers directly", async () => {
+    const app = new Hono();
+    registerRivetHonoRoutes<DirectoryContract>(app, directory, {
+      group: "directory",
+      handlers: directoryHandlers,
+    });
+
+    const response = await search(app);
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toEqual({ query: "Ada" });
   });
-});
 
-test("single value for an array-typed query param arrives as a one-element array (H2)", async () => {
-  const app = buildCatalogApp();
+  it("instantiates zero-arg class handlers once per request", async () => {
+    let constructorCalls = 0;
+    class HealthHandler implements RivetInvokable<DirectoryContract, "Health"> {
+      public constructor() {
+        constructorCalls += 1;
+      }
 
-  const response = await app.request("/api/catalog?page=1&tags=solo");
+      public async handle(): Promise<DirectoryStatusResponse> {
+        return { status: "ok" };
+      }
+    }
+    const app = new Hono();
+    registerRivetHonoRoutes<DirectoryContract>(app, directory, {
+      group: "directory",
+      handlers: { ...directoryHandlers, Health: HealthHandler },
+    });
 
-  expect(response.status).toBe(200);
-  await expect(response.json()).resolves.toEqual({
-    page: 1,
-    tags: ["solo"],
+    for (const _ of [1, 2]) {
+      const response = await app.request("/api/directory/health");
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ status: "ok" });
+    }
+    expect(constructorCalls).toBe(2);
   });
-});
 
-test("repeated values for a non-array query param return 400 (H2, loud)", async () => {
-  const app = buildCatalogApp();
+  class PrefixedSearchHandler implements RivetInvokable<DirectoryContract, "Search"> {
+    public constructor(private readonly prefix: string) {}
 
-  const response = await app.request("/api/catalog?page=1&page=2");
+    public async handle({
+      body,
+    }: {
+      body: DirectorySearchRequest;
+    }): Promise<DirectorySearchResponse> {
+      return { query: `${this.prefix}:${body.query}` };
+    }
+  }
 
-  expect(response.status).toBe(400);
-  await expect(response.json()).resolves.toEqual({
-    code: "REPEATED_QUERY_PARAMETER",
-    message: expect.stringContaining("page") as string,
+  it("resolves class handlers through resolveHandler", async () => {
+    const app = new Hono();
+    registerRivetHonoRoutes<DirectoryContract>(app, directory, {
+      group: "directory",
+      handlers: { ...directoryHandlers, Search: PrefixedSearchHandler },
+      resolveHandler: (Handler) => new Handler("directory"),
+    });
+
+    const response = await search(app);
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toEqual({ query: "directory:Ada" });
   });
-});
 
-test("missing required query param returns 400, not undefined-into-handler (H2)", async () => {
-  const app = buildCatalogApp();
-
-  const response = await app.request("/api/catalog");
-
-  expect(response.status).toBe(400);
-  await expect(response.json()).resolves.toEqual({
-    code: "MISSING_REQUIRED_PARAMETER",
-    message: expect.stringContaining("page") as string,
+  it("throws when a class handler needs constructor dependencies but no resolver is supplied", () => {
+    expect(() =>
+      registerRivetHonoRoutes<DirectoryContract>(new Hono(), directory, {
+        group: "directory",
+        handlers: { ...directoryHandlers, Search: PrefixedSearchHandler },
+      }),
+    ).toThrow(
+      'Handler class "PrefixedSearchHandler" for endpoint "search" requires constructor dependencies. Supply "resolveHandler" at registration.',
+    );
   });
-});
 
-test("non-numeric value for a number query param returns 400 (H2)", async () => {
-  const app = buildCatalogApp();
-
-  const response = await app.request("/api/catalog?page=abc");
-
-  expect(response.status).toBe(400);
-  await expect(response.json()).resolves.toEqual({
-    code: "INVALID_PARAMETER_VALUE",
-    message: expect.stringContaining("page") as string,
-  });
-});
-
-test("non-boolean value for a boolean query param returns 400 (H2)", async () => {
-  const app = buildCatalogApp();
-
-  const response = await app.request("/api/catalog?page=1&includeArchived=maybe");
-
-  expect(response.status).toBe(400);
-  await expect(response.json()).resolves.toEqual({
-    code: "INVALID_PARAMETER_VALUE",
-    message: expect.stringContaining("includeArchived") as string,
-  });
-});
-
-test("route params coerce to the contract-declared number type (H2)", async () => {
-  const app = buildCatalogApp();
-
-  const response = await app.request("/api/catalog/42");
-
-  expect(response.status).toBe(200);
-  await expect(response.json()).resolves.toEqual({ id: 42 });
-});
-
-test("non-numeric value for a number route param returns 400 (H2)", async () => {
-  const app = buildCatalogApp();
-
-  const response = await app.request("/api/catalog/not-a-number");
-
-  expect(response.status).toBe(400);
-  await expect(response.json()).resolves.toEqual({
-    code: "INVALID_PARAMETER_VALUE",
-    message: expect.stringContaining("id") as string,
-  });
-});
-
-// -- H3: invalid JSON body --
-
-test("malformed JSON body returns 400 with a structured error and never invokes the handler (H3)", async () => {
-  let handlerCalls = 0;
-
-  const app = new Hono();
-  registerRivetHonoRoutes<DirectoryContract>(app, contract, {
-    group: "directory",
-    handlers: {
-      Search: async ({ body }) => {
-        handlerCalls += 1;
-        return { query: body.query };
+  it("runs the Hono middleware of a rich endpoint entry before its handler", async () => {
+    const app = new Hono();
+    registerRivetHonoRoutes<DirectoryContract>(app, directory, {
+      group: "directory",
+      handlers: {
+        ...directoryHandlers,
+        Search: {
+          handler: searchEchoHandler,
+          middleware: [
+            async (context, next) => {
+              if (context.req.header("x-allow-search") !== "yes") {
+                return context.json({ code: "forbidden" }, 403);
+              }
+              await next();
+            },
+          ],
+        },
       },
-      Health: healthHandler,
-      Export: exportHandler,
-      SubmitForm: submitFormHandler,
-      UploadDocument: uploadDocumentNoopHandler,
-    },
+    });
+
+    const blocked = await search(app);
+    expect(blocked.status).toBe(403);
+    await expect(blocked.json()).resolves.toEqual({ code: "forbidden" });
+
+    const allowed = await app.request("/api/directory/search", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-allow-search": "yes" },
+      body: JSON.stringify({ query: "Ada" }),
+    });
+    expect(allowed.status).toBe(201);
+    await expect(allowed.json()).resolves.toEqual({ query: "Ada" });
   });
 
-  const response = await app.request("/api/directory/search", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: "{not json",
+  it("fails fast when a selected endpoint has no handler", () => {
+    expect(() =>
+      registerRivetHonoRoutes<DirectoryContract>(new Hono(), directory, {
+        group: "directory",
+        handlers: { Search: searchEchoHandler },
+      }),
+    ).toThrow('No handler was provided for endpoint "health".');
   });
 
-  expect(response.status).toBe(400);
-  await expect(response.json()).resolves.toEqual({
-    code: "INVALID_REQUEST_BODY",
-    message: expect.stringContaining("search") as string,
+  it("fails fast on unused handlers", () => {
+    expect(() =>
+      registerRivetHonoRoutes<DirectoryContract>(new Hono(), directory, {
+        group: "directory",
+        handlers: {
+          ...directoryHandlers,
+          Unknown: async () => ({ status: "ok" as const }),
+        } as never,
+      }),
+    ).toThrow("Unused handlers were provided: Unknown.");
   });
-  expect(handlerCalls).toBe(0);
 });
 
-// -- H4: no-`group` multi-contract registration --
+describe("groups", () => {
+  it("mounts only the selected group and answers a void success with an empty body", async () => {
+    const pingHandler: RivetHandler<PetContract, "Ping"> = async () => undefined;
+    const app = new Hono();
+    registerRivetHonoRoutes<PetContract>(app, directory, {
+      group: "pet",
+      handlers: { Ping: pingHandler },
+    });
 
-interface PetsAndOwnersContract extends Contract<"PetsAndOwnersContract"> {
-  ListPets: Endpoint<{
-    method: "GET";
-    route: "/api/pets";
-    response: { readonly kind: "pets" };
-  }>;
+    const ping = await app.request("/api/ping", { method: "POST" });
+    expect(ping.status).toBe(204);
+    await expect(ping.text()).resolves.toBe("");
+    expect((await app.request("/api/health")).status).toBe(404);
+  });
 
-  ListOwners: Endpoint<{
-    method: "GET";
-    route: "/api/owners";
-    response: { readonly kind: "owners" };
-  }>;
+  it("mounts every contract's endpoints at their own routes when group is omitted", async () => {
+    const app = new Hono();
+    registerRivetHonoRoutes<PetsContract & OwnersContract>(app, petsAndOwners, {
+      handlers: {
+        ListPets: async () => ({ kind: "pets" as const }),
+        ListOwners: async () => ({ kind: "owners" as const }),
+      },
+    });
+
+    await expect((await app.request("/api/pets")).json()).resolves.toEqual({ kind: "pets" });
+    await expect((await app.request("/api/owners")).json()).resolves.toEqual({ kind: "owners" });
+  });
+
+  it("fails loudly without a group when one handler key matches endpoints in several groups", () => {
+    expect(() =>
+      registerRivetHonoRoutes(new Hono(), sharedEndpointNames, {
+        handlers: { Get: async () => "x" } as never,
+      }),
+    ).toThrow(/matched multiple endpoints/);
+  });
+
+  it("fails loudly at registration when two contracts share a route and method", () => {
+    expect(() =>
+      registerRivetHonoRoutes(new Hono(), sharedRoutes, {
+        handlers: { ListPets: async () => "x", ListOwners: async () => "x" } as never,
+      }),
+    ).toThrow(/Duplicate route/);
+  });
+});
+
+describe("request binding", () => {
+  it("parses form-encoded bodies into handler input", async () => {
+    const app = new Hono();
+    registerRivetHonoRoutes<DirectoryContract>(app, directory, {
+      group: "directory",
+      handlers: directoryHandlers,
+    });
+
+    const response = await app.request("/api/directory/forms", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ name: "Jane", email: "jane@example.com" }).toString(),
+    });
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toEqual({ query: "Jane:jane@example.com" });
+  });
+
+  it("parses a multipart request into file and form-field body plus route params", async () => {
+    let received: RivetHandlerInput<DirectoryContract, "UploadDocument"> | undefined;
+    const app = new Hono();
+    registerRivetHonoRoutes<DirectoryContract>(app, directory, {
+      group: "directory",
+      handlers: {
+        ...directoryHandlers,
+        UploadDocument: async (input) => {
+          received = input;
+        },
+      },
+    });
+    const form = new FormData();
+    form.set("file", new File(["hello"], "report.txt", { type: "text/plain" }));
+    form.set("title", "Quarterly report");
+    form.set("description", "Draft");
+
+    const response = await app.request("/api/directory/documents/doc_123", {
+      method: "PUT",
+      body: form,
+    });
+
+    expect(response.status).toBe(204);
+    await expect(response.text()).resolves.toBe("");
+    // The route placeholder arrives under `params`, although the handler type
+    // (derived from `input`) declares it on `body` (recorded follow-up).
+    expect(received).toEqual({
+      body: { file: expect.any(File), title: "Quarterly report", description: "Draft" },
+      params: { documentId: "doc_123" },
+    });
+    await expect(received?.body.file.text()).resolves.toBe("hello");
+  });
+
+  it("answers 400 for a missing declared multipart file field without invoking the handler", async () => {
+    let handlerCalls = 0;
+    const app = new Hono();
+    registerRivetHonoRoutes<DirectoryContract>(app, directory, {
+      group: "directory",
+      handlers: {
+        ...directoryHandlers,
+        UploadDocument: async () => {
+          handlerCalls += 1;
+        },
+      },
+    });
+    const form = new FormData();
+    form.set("title", "Quarterly report");
+    form.set("description", "Draft");
+
+    const response = await app.request("/api/directory/documents/doc_123", {
+      method: "PUT",
+      body: form,
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      code: "MISSING_MULTIPART_FIELD",
+      message: expect.stringContaining("file") as string,
+    });
+    expect(handlerCalls).toBe(0);
+  });
+
+  it("answers 400 for a malformed JSON body without invoking the handler", async () => {
+    let handlerCalls = 0;
+    const app = new Hono();
+    registerRivetHonoRoutes<DirectoryContract>(app, directory, {
+      group: "directory",
+      handlers: {
+        ...directoryHandlers,
+        Search: async ({ body }) => {
+          handlerCalls += 1;
+          return { query: body.query };
+        },
+      },
+    });
+
+    const response = await postJson(app, "/api/directory/search", "{not json");
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      code: "INVALID_REQUEST_BODY",
+      message: expect.stringContaining("search") as string,
+    });
+    expect(handlerCalls).toBe(0);
+  });
+
+  // For a bodyless method the handler receives `input` as `query`, so values
+  // must arrive coerced to their contract types, not as raw strings.
+  const catalogApp = (): Hono => {
+    const app = new Hono();
+    registerRivetHonoRoutes<CatalogContract>(app, directory, {
+      group: "catalog",
+      handlers: {
+        GetItem: async ({ params }) => ({ id: params.id }),
+        ListItems: async ({ query }) => ({ ...query }),
+      },
+    });
+    return app;
+  };
+
+  it.each([
+    [
+      "typed query values",
+      "/api/catalog?page=2&includeArchived=true&tags=a&tags=b",
+      { page: 2, includeArchived: true, tags: ["a", "b"] },
+    ],
+    [
+      "a single value for an array query param as an array",
+      "/api/catalog?page=1&tags=solo",
+      { page: 1, tags: ["solo"] },
+    ],
+    ["a route param as its declared number type", "/api/catalog/42", { id: 42 }],
+  ])("delivers %s", async (_, route, expected) => {
+    const response = await catalogApp().request(route);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(expected);
+  });
+
+  it.each([
+    [
+      "a repeated non-array query param",
+      "/api/catalog?page=1&page=2",
+      "REPEATED_QUERY_PARAMETER",
+      "page",
+    ],
+    ["a missing required query param", "/api/catalog", "MISSING_REQUIRED_PARAMETER", "page"],
+    [
+      "a non-numeric number query param",
+      "/api/catalog?page=abc",
+      "INVALID_PARAMETER_VALUE",
+      "page",
+    ],
+    [
+      "a non-boolean boolean query param",
+      "/api/catalog?page=1&includeArchived=maybe",
+      "INVALID_PARAMETER_VALUE",
+      "includeArchived",
+    ],
+    [
+      "a non-numeric number route param",
+      "/api/catalog/not-a-number",
+      "INVALID_PARAMETER_VALUE",
+      "id",
+    ],
+  ])("answers 400 for %s", async (_, route, code, parameter) => {
+    const response = await catalogApp().request(route);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      code,
+      message: expect.stringContaining(parameter) as string,
+    });
+  });
+});
+
+interface ItemsContract extends Contract<"Items"> {
+  GetItem: Endpoint<{ method: "GET"; route: "/api/items"; response: { readonly id: string } }>;
+  CreateItem: Endpoint<{ method: "POST"; route: "/api/items"; response: { readonly id: string } }>;
+  RemoveItem: Endpoint<{ method: "DELETE"; route: "/api/items"; response: void }>;
 }
 
-test("omitting group mounts multiple contracts' endpoints at their own routes (H4)", async () => {
-  const multiGroupContract = {
-    endpoints: [
-      {
-        name: "listPets",
-        httpMethod: "GET",
-        routeTemplate: "/api/pets",
-        controllerName: "pets",
-        params: [],
-        responses: [{ statusCode: 200 }],
-      },
-      {
-        name: "listOwners",
-        httpMethod: "GET",
-        routeTemplate: "/api/owners",
-        controllerName: "owners",
-        params: [],
-        responses: [{ statusCode: 200 }],
-      },
-    ],
-  } as const;
+describe("responses", () => {
+  it("returns file responses as file bodies", async () => {
+    const app = new Hono();
+    registerRivetHonoRoutes<DirectoryContract>(app, directory, {
+      group: "directory",
+      handlers: directoryHandlers,
+    });
 
-  const app = new Hono();
-  registerRivetHonoRoutes<PetsAndOwnersContract>(app, multiGroupContract, {
-    handlers: {
-      ListPets: async () => ({ kind: "pets" as const }),
-      ListOwners: async () => ({ kind: "owners" as const }),
-    },
+    const response = await app.request("/api/directory/export");
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/csv");
+    await expect(response.text()).resolves.toBe("id,name\n1,Ada\n");
   });
 
-  const petsResponse = await app.request("/api/pets");
-  expect(petsResponse.status).toBe(200);
-  await expect(petsResponse.json()).resolves.toEqual({ kind: "pets" });
-
-  const ownersResponse = await app.request("/api/owners");
-  expect(ownersResponse.status).toBe(200);
-  await expect(ownersResponse.json()).resolves.toEqual({ kind: "owners" });
-});
-
-test("omitting group fails loudly when one handler key matches endpoints in several groups (H4)", () => {
-  const collidingNamesContract = {
-    endpoints: [
-      {
-        name: "get",
-        httpMethod: "GET",
-        routeTemplate: "/api/pets",
-        controllerName: "pets",
-        params: [],
-        responses: [{ statusCode: 200 }],
-      },
-      {
-        name: "get",
-        httpMethod: "GET",
-        routeTemplate: "/api/owners",
-        controllerName: "owners",
-        params: [],
-        responses: [{ statusCode: 200 }],
-      },
-    ],
-  } as const;
-
-  const app = new Hono();
-
-  expect(() =>
-    registerRivetHonoRoutes(app, collidingNamesContract, {
+  it("falls back to the method-default success status when the contract JSON has no 2xx response", async () => {
+    // The lowerer always emits a success response, so only hand-written
+    // contract JSON reaches this fallback: POST -> 201, DELETE void -> 204, else 200.
+    const endpoint = (name: string, httpMethod: string, statusCodes: readonly number[]) => ({
+      name,
+      httpMethod,
+      routeTemplate: "/api/items",
+      controllerName: "items",
+      params: [],
+      responses: statusCodes.map((statusCode) => ({ statusCode })),
+    });
+    const withoutSuccessResponses = {
+      endpoints: [
+        endpoint("getItem", "GET", [404]),
+        endpoint("createItem", "POST", [409]),
+        endpoint("removeItem", "DELETE", []),
+      ],
+    };
+    const app = new Hono();
+    registerRivetHonoRoutes<ItemsContract>(app, withoutSuccessResponses, {
+      group: "items",
       handlers: {
-        Get: async () => ({}),
-      } as never,
-    }),
-  ).toThrow(/matched multiple endpoints/);
+        GetItem: async () => ({ id: "item_1" }),
+        CreateItem: async () => ({ id: "item_1" }),
+        RemoveItem: async () => undefined,
+      },
+    });
+
+    const get = await app.request("/api/items");
+    expect(get.status).toBe(200);
+    await expect(get.json()).resolves.toEqual({ id: "item_1" });
+    const post = await app.request("/api/items", { method: "POST" });
+    expect(post.status).toBe(201);
+    await expect(post.json()).resolves.toEqual({ id: "item_1" });
+    const remove = await app.request("/api/items", { method: "DELETE" });
+    expect(remove.status).toBe(204);
+    await expect(remove.text()).resolves.toBe("");
+  });
 });
 
-test("duplicate route and method across contracts fails loudly at registration time (H4)", () => {
-  const duplicateRouteContract = {
-    endpoints: [
-      {
-        name: "listPets",
-        httpMethod: "GET",
-        routeTemplate: "/api/shared",
-        controllerName: "pets",
-        params: [],
-        responses: [{ statusCode: 200 }],
-      },
-      {
-        name: "listOwners",
-        httpMethod: "GET",
-        routeTemplate: "/api/shared",
-        controllerName: "owners",
-        params: [],
-        responses: [{ statusCode: 200 }],
-      },
-    ],
-  } as const;
+describe("RivetHttpError", () => {
+  it("serializes an explicit non-2xx status thrown by a handler", async () => {
+    class ConflictingSearchHandler implements RivetInvokable<DirectoryContract, "Search"> {
+      public async handle(): Promise<DirectorySearchResponse> {
+        throw rivetHttpError(409, { code: "conflict" } satisfies ConflictDto);
+      }
+    }
+    const app = new Hono();
+    registerRivetHonoRoutes<DirectoryContract>(app, directory, {
+      group: "directory",
+      handlers: { ...directoryHandlers, Search: ConflictingSearchHandler },
+    });
 
-  const app = new Hono();
+    const response = await search(app);
 
-  expect(() =>
-    registerRivetHonoRoutes(app, duplicateRouteContract, {
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ code: "conflict" });
+  });
+
+  it("refuses body-forbidding statuses (204/205/304)", () => {
+    for (const status of [204, 205, 304] as const) {
+      // @ts-expect-error — an HTTPException status always carries content.
+      expect(() => rivetHttpError(status, { detail: "must not exist" })).toThrow(TypeError);
+    }
+  });
+
+  it("answers from its route even when the app maps other errors to a structured 500", async () => {
+    const app = new Hono();
+    app.onError((_error, context) =>
+      context.json({ code: "internal_error", message: "Unexpected error." }, 500),
+    );
+    registerRivetHonoRoutes<DirectoryContract>(app, directory, {
+      group: "directory",
       handlers: {
-        ListPets: async () => ({}),
-        ListOwners: async () => ({}),
-      } as never,
-    }),
-  ).toThrow(/Duplicate route/);
-});
-
-// -- H5: missing-2xx fallback + bodyless error statuses --
-
-test("responses containing only error statuses fall back to the method-default success status (H5)", async () => {
-  const errorOnlyContract = {
-    endpoints: [
-      {
-        name: "getThing",
-        httpMethod: "GET",
-        routeTemplate: "/api/things",
-        controllerName: "things",
-        params: [],
-        responses: [{ statusCode: 404 }],
+        ...directoryHandlers,
+        Search: async () => {
+          throw rivetHttpError(409, { code: "conflict" } satisfies ConflictDto, {
+            headers: { "x-retry-after": "5", "set-cookie": ["a=1", "b=2"] },
+          });
+        },
+        Health: async () => {
+          throw new Error("boom");
+        },
       },
-      {
-        name: "createThing",
-        httpMethod: "POST",
-        routeTemplate: "/api/things",
-        controllerName: "things",
-        params: [],
-        responses: [{ statusCode: 409 }],
+    });
+
+    const conflict = await search(app);
+    expect(conflict.status).toBe(409);
+    expect(conflict.headers.get("x-retry-after")).toBe("5");
+    expect(conflict.headers.getSetCookie()).toEqual(["a=1", "b=2"]);
+    await expect(conflict.json()).resolves.toEqual({ code: "conflict" });
+
+    const failure = await app.request("/api/directory/health");
+    expect(failure.status).toBe(500);
+    await expect(failure.json()).resolves.toEqual({
+      code: "internal_error",
+      message: "Unexpected error.",
+    });
+  });
+
+  it("is recognised as an HTTPException by Hono error handling when route middleware throws it", async () => {
+    const app = new Hono();
+    app.onError((error, context) =>
+      error instanceof HTTPException
+        ? error.getResponse()
+        : context.json({ code: "internal_error", message: "Unexpected error." }, 500),
+    );
+    registerRivetHonoRoutes<DirectoryContract>(app, directory, {
+      group: "directory",
+      handlers: {
+        ...directoryHandlers,
+        Health: {
+          handler: healthHandler,
+          middleware: [
+            async () => {
+              throw rivetHttpError(401, { code: "unauthorized" });
+            },
+          ],
+        },
       },
-    ],
-  } as const;
+    });
 
-  interface ThingsContract extends Contract<"ThingsContract"> {
-    GetThing: Endpoint<{ method: "GET"; route: "/api/things"; response: { readonly ok: true } }>;
-    CreateThing: Endpoint<{
-      method: "POST";
-      route: "/api/things";
-      response: { readonly ok: true };
-    }>;
-  }
+    const response = await app.request("/api/directory/health");
 
-  const app = new Hono();
-  registerRivetHonoRoutes<ThingsContract>(app, errorOnlyContract, {
-    group: "things",
-    handlers: {
-      GetThing: async () => ({ ok: true as const }),
-      CreateThing: async () => ({ ok: true as const }),
-    },
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ code: "unauthorized" });
   });
-
-  const getResponse = await app.request("/api/things");
-  expect(getResponse.status).toBe(200);
-
-  const postResponse = await app.request("/api/things", { method: "POST" });
-  expect(postResponse.status).toBe(201);
-});
-
-test("rivetHttpError refuses body-forbidding statuses (204/205/304)", () => {
-  for (const status of [204, 205, 304] as const) {
-    // @ts-expect-error — an HTTPException status always carries content.
-    expect(() => rivetHttpError(status, { detail: "must not exist" })).toThrow(TypeError);
-  }
-});
-
-test("a thrown RivetHttpError answers from its route even when the app maps other errors to a structured 500", async () => {
-  const app = new Hono();
-  app.onError((_error, context) =>
-    context.json({ code: "internal_error", message: "Unexpected error." }, 500),
-  );
-  registerRivetHonoRoutes<DirectoryContract>(app, contract, {
-    group: "directory",
-    handlers: {
-      Search: async () => {
-        throw rivetHttpError(409, { code: "conflict" } satisfies ConflictDto, {
-          headers: { "x-retry-after": "5", "set-cookie": ["a=1", "b=2"] },
-        });
-      },
-      Health: async () => {
-        throw new Error("boom");
-      },
-      Export: exportHandler,
-      SubmitForm: submitFormHandler,
-      UploadDocument: uploadDocumentNoopHandler,
-    },
-  });
-
-  const conflict = await app.request("/api/directory/search", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ query: "Ada" }),
-  });
-  expect(conflict.status).toBe(409);
-  expect(conflict.headers.get("x-retry-after")).toBe("5");
-  expect(conflict.headers.getSetCookie()).toEqual(["a=1", "b=2"]);
-  await expect(conflict.json()).resolves.toEqual({ code: "conflict" });
-
-  const failure = await app.request("/api/directory/health");
-  expect(failure.status).toBe(500);
-  await expect(failure.json()).resolves.toEqual({
-    code: "internal_error",
-    message: "Unexpected error.",
-  });
-});
-
-test("Hono error handling recognises a RivetHttpError thrown by route middleware as an HTTPException", async () => {
-  const app = new Hono();
-  app.onError((error, context) =>
-    error instanceof HTTPException
-      ? error.getResponse()
-      : context.json({ code: "internal_error", message: "Unexpected error." }, 500),
-  );
-  registerRivetHonoRoutes<DirectoryContract>(app, contract, {
-    group: "directory",
-    handlers: {
-      Search: searchEchoHandler,
-      Health: {
-        handler: healthHandler,
-        middleware: [
-          async () => {
-            throw rivetHttpError(401, { code: "unauthorized" });
-          },
-        ],
-      },
-      Export: exportHandler,
-      SubmitForm: submitFormHandler,
-      UploadDocument: uploadDocumentNoopHandler,
-    },
-  });
-
-  const response = await app.request("/api/directory/health");
-
-  expect(response.status).toBe(401);
-  await expect(response.json()).resolves.toEqual({ code: "unauthorized" });
-});
-
-// -- H6: missing multipart field --
-
-test("missing declared multipart file field returns 400, not undefined-into-handler (H6)", async () => {
-  let handlerCalls = 0;
-
-  const app = new Hono();
-  registerRivetHonoRoutes<DirectoryContract>(app, contract, {
-    group: "directory",
-    handlers: {
-      Search: searchEchoHandler,
-      Health: healthHandler,
-      Export: exportHandler,
-      SubmitForm: submitFormHandler,
-      UploadDocument: async () => {
-        handlerCalls += 1;
-      },
-    },
-  });
-
-  const form = new FormData();
-  form.set("title", "Quarterly report");
-  form.set("description", "Draft");
-  // The declared "file" field is deliberately absent.
-
-  const response = await app.request("/api/directory/documents/doc_123", {
-    method: "PUT",
-    body: form,
-  });
-
-  expect(response.status).toBe(400);
-  await expect(response.json()).resolves.toEqual({
-    code: "MISSING_MULTIPART_FIELD",
-    message: expect.stringContaining("file") as string,
-  });
-  expect(handlerCalls).toBe(0);
 });

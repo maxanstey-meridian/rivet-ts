@@ -1,4 +1,6 @@
-# D1 test map (appendix to `slop-cleanup.md` §9)
+# Wave 2 test map (appendix to `slop-cleanup.md` §9)
+
+## D1
 
 Every test that D1 removed, renamed or merged, and the test that now covers its behaviour. 125 tests before, 90 after (244 → 209 overall). Tests in other suites did not change, except that one `generate` test lost its `(RV-020)` ticket suffix.
 
@@ -6,7 +8,7 @@ Every test that D1 removed, renamed or merged, and the test that now covers its 
 - **C** = `tests/integration/cli.lifecycle.test.ts`
 - "Unchanged" means the same test and name in the same file.
 
-## `contract-discovery.lifecycle.test.ts` (deleted, 42 tests)
+### `contract-discovery.lifecycle.test.ts` (deleted, 42 tests)
 
 | Before                                                                                                                                               | After                                                                                                                                                                                                                                   |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -46,7 +48,7 @@ Every test that D1 removed, renamed or merged, and the test that now covers its 
 | lowers the formEncoded flag from a form-encoded endpoint                                                                                             | L form and multipart endpoints › lowers a form-encoded endpoint with form-urlencoded request examples                                                                                                                                   |
 | defaults formEncoded to false when not declared                                                                                                      | L request examples › lowers plural and legacy singular request examples from the fixture as JSON examples (asserts no `isFormEncoded`)                                                                                                  |
 
-## `lower-contract-bundle.lifecycle.test.ts` (deleted, 30 tests)
+### `lower-contract-bundle.lifecycle.test.ts` (deleted, 30 tests)
 
 | Before                                                                                                     | After                                                                                                                                   |
 | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
@@ -76,7 +78,7 @@ Every test that D1 removed, renamed or merged, and the test that now covers its 
 | reports a diagnostic when a multipart endpoint has no file-typed property                                  | L form and multipart endpoints › reports an acceptsFile endpoint with no file-typed property at its location                            |
 | reports a diagnostic when a multipart endpoint has multiple file-typed properties                          | L form and multipart endpoints › reports an acceptsFile endpoint with several file-typed properties at its location                     |
 
-## `x-section.lifecycle.test.ts` (deleted, 17 tests)
+### `x-section.lifecycle.test.ts` (deleted, 17 tests)
 
 | Before                                                                                         | After                                                                                                          |
 | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
@@ -107,7 +109,7 @@ Every test that D1 removed, renamed or merged, and the test that now covers its 
 | invalid-tagged-union-contract › emits explicit diagnostics for unsupported discriminated union shapes | L type lowering › reports unsupported discriminated union shapes and keeps the valid one |
 | unsupported-contract › emits explicit diagnostics for unsupported TS constructs                       | L type lowering › reports unsupported type expressions at their location and drops them  |
 
-## `cli.lifecycle.test.ts` (32 tests → 18)
+### `cli.lifecycle.test.ts` (32 tests → 18)
 
 The CLI suite now proves only wiring: output file, exit codes, the stderr diagnostic format, flags, the passthrough and the packed package. The lowering facts its old tests re-asserted through the CLI are covered once in L.
 
@@ -130,3 +132,59 @@ The CLI suite now proves only wiring: output file, exit codes, the stderr diagno
 | writes Rivet contract JSON for a multipart endpoint through the real CLI path                       | L form and multipart endpoints › lowers a multipart endpoint with route, file and form-field params in order                                                                        |
 | CLI argument handling and diagnostics (8 other tests)                                               | Unchanged                                                                                                                                                                           |
 | rivet passthrough (7 tests)                                                                         | Unchanged                                                                                                                                                                           |
+
+## D2
+
+**H** = `tests/integration/hono.runtime.lifecycle.test.ts`, **S** = `tests/integration/scaffold-mock.lifecycle.test.ts`. Tests go from 45 to 43 (209 → 207 overall).
+
+### `hono.runtime.lifecycle.test.ts` (30 → 29)
+
+| Before                                                                                                 | After                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| registerRivetHonoRoutes uses plain function handlers directly                                          | H handler resolution › uses plain function handlers directly                                                                                                                              |
+| registerRivetHonoRoutes instantiates zero-arg class handlers once per request                          | H handler resolution › instantiates zero-arg class handlers once per request                                                                                                              |
+| registerRivetHonoRoutes resolves class handlers through resolveHandler at bootstrap                    | H handler resolution › resolves class handlers through resolveHandler                                                                                                                     |
+| registerRivetHonoRoutes supports rich endpoint entries with Hono middleware                            | H handler resolution › runs the Hono middleware of a rich endpoint entry before its handler                                                                                               |
+| registerRivetHonoRoutes throws when a class handler needs DI but no resolver is supplied               | H handler resolution › throws when a class handler needs constructor dependencies but no resolver is supplied                                                                             |
+| registerRivetHonoRoutes fails fast when a selected endpoint handler is missing                         | H handler resolution › fails fast when a selected endpoint has no handler                                                                                                                 |
+| registerRivetHonoRoutes fails fast on unused handlers                                                  | H handler resolution › fails fast on unused handlers                                                                                                                                      |
+| filters endpoints by group and returns empty responses correctly                                       | H groups › mounts only the selected group and answers a void success with an empty body                                                                                                   |
+| omitting group mounts multiple contracts' endpoints at their own routes (H4)                           | H groups › mounts every contract's endpoints at their own routes when group is omitted                                                                                                    |
+| omitting group fails loudly when one handler key matches endpoints in several groups (H4)              | H groups › fails loudly without a group when one handler key matches endpoints in several groups                                                                                          |
+| duplicate route and method across contracts fails loudly at registration time (H4)                     | H groups › fails loudly at registration when two contracts share a route and method                                                                                                       |
+| registerRivetHonoRoutes parses form-encoded bodies into handler input                                  | H request binding › parses form-encoded bodies into handler input (now 201: the lowered POST default; the old hand-written JSON said 200 although the TS contract has no `successStatus`) |
+| registerRivetHonoRoutes parses multipart inputs into body plus params                                  | H request binding › parses a multipart request into file and form-field body plus route params                                                                                            |
+| missing declared multipart file field returns 400, not undefined-into-handler (H6)                     | H request binding › answers 400 for a missing declared multipart file field without invoking the handler                                                                                  |
+| malformed JSON body returns 400 with a structured error and never invokes the handler (H3)             | H request binding › answers 400 for a malformed JSON body without invoking the handler                                                                                                    |
+| GET input round-trips as typed query values (H1 runtime + H2 coercion)                                 | H request binding › delivers typed query values                                                                                                                                           |
+| single value for an array-typed query param arrives as a one-element array (H2)                        | H request binding › delivers a single value for an array query param as an array                                                                                                          |
+| route params coerce to the contract-declared number type (H2)                                          | H request binding › delivers a route param as its declared number type                                                                                                                    |
+| repeated values for a non-array query param return 400 (H2, loud)                                      | H request binding › answers 400 for a repeated non-array query param                                                                                                                      |
+| missing required query param returns 400, not undefined-into-handler (H2)                              | H request binding › answers 400 for a missing required query param                                                                                                                        |
+| non-numeric value for a number query param returns 400 (H2)                                            | H request binding › answers 400 for a non-numeric number query param                                                                                                                      |
+| non-boolean value for a boolean query param returns 400 (H2)                                           | H request binding › answers 400 for a non-boolean boolean query param                                                                                                                     |
+| non-numeric value for a number route param returns 400 (H2)                                            | H request binding › answers 400 for a non-numeric number route param                                                                                                                      |
+| registerRivetHonoRoutes returns file responses as file bodies                                          | H responses › returns file responses as file bodies                                                                                                                                       |
+| registerRivetHonoRoutes falls back to the method default status when responses carry no 2xx entry      | H responses › falls back to the method-default success status when the contract JSON has no 2xx response                                                                                  |
+| responses containing only error statuses fall back to the method-default success status (H5)           | H responses › falls back to the method-default success status when the contract JSON has no 2xx response (merged: GET with only a 404, POST with only a 409, DELETE with none)            |
+| registerRivetHonoRoutes serializes explicit non-2xx Rivet HTTP errors                                  | H RivetHttpError › serializes an explicit non-2xx status thrown by a handler                                                                                                              |
+| rivetHttpError refuses body-forbidding statuses (204/205/304)                                          | H RivetHttpError › refuses body-forbidding statuses (204/205/304)                                                                                                                         |
+| a thrown RivetHttpError answers from its route even when the app maps other errors to a structured 500 | H RivetHttpError › answers from its route even when the app maps other errors to a structured 500                                                                                         |
+| Hono error handling recognises a RivetHttpError thrown by route middleware as an HTTPException         | H RivetHttpError › is recognised as an HTTPException by Hono error handling when route middleware throws it                                                                               |
+
+### `scaffold-mock.lifecycle.test.ts` (14 → 13)
+
+| Before                                                                                                         | After                                                                                                                                                                    |
+| -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| scaffolds a golden-shape workspace with mock modules from the contract                                         | S › scaffolds a golden-shape workspace whose app serves a mock for every endpoint (file-tree `toMatchFileSnapshot`, then every endpoint requested through `app.request`) |
+| scaffolds one module per contract when multiple contracts are authored together                                | S › scaffolds one module per contract when contracts share endpoint names                                                                                                |
+| emits valid identifiers for numeric string-literal endpoint names                                              | S › serves endpoints whose names are numeric, quoted or collide with rivet-ts types                                                                                      |
+| safely renders quoted and escaped endpoint names in handler types                                              | S › serves endpoints whose names are numeric, quoted or collide with rivet-ts types                                                                                      |
+| rejects {generated identifier, normalized filename, route-module binding} collisions before writing files (×3) | S › same names                                                                                                                                                           |
+| rejects normalized contract artifact collisions before writing files                                           | S › same name                                                                                                                                                            |
+| derives safe module paths and route identifiers from arbitrary contract brands                                 | S › derives safe module paths from arbitrary contract brands and serves them all                                                                                         |
+| does not select a file response as the generated UI demo                                                       | S › serves a file endpoint as a typed placeholder and keeps it out of the UI demo                                                                                        |
+| scaffolds from a bare contract file without tsconfig or node_modules                                           | S › same name                                                                                                                                                            |
+| enriches scaffolded validators with spec constraints when --spec is passed                                     | S › enforces spec constraints in the scaffolded validators when --spec is passed (upper bounds now exercised as well)                                                    |
+| refuses to overwrite a non-empty output directory unless --force is passed (S6)                                | S › refuses to overwrite a non-empty output directory unless --force is passed (the forced rerun must restore the first scaffold byte for byte)                          |
+| refuses a contract endpoint the lowered document does not carry, instead of dropping its handler               | S › same name                                                                                                                                                            |

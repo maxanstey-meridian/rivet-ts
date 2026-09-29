@@ -32,8 +32,8 @@ const lowerEntry = (entryPath: string): LoweredEntry => {
   return { entryPath, lowered, document: parseContractJson(lowered.toJson()) };
 };
 
-export const lowerFixture = (name: string): LoweredEntry =>
-  lowerEntry(fixturePath(name, "contracts.ts"));
+export const lowerFixture = (name: string, file = "contracts.ts"): LoweredEntry =>
+  lowerEntry(fixturePath(name, file));
 
 /** Lowers `contracts` as the entry of a throwaway project holding `siblings` beside it. */
 export const lowerSource = async (
