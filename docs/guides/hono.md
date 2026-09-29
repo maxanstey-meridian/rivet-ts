@@ -157,6 +157,8 @@ import { rivetHttpError } from "rivet-ts/hono";
 throw rivetHttpError(409, { code: "conflict" });
 ```
 
+`RivetHttpError` is Hono's `HTTPException`: the route that throws it answers with its JSON `data` (or no body when `data` is `undefined`) and any `options.headers`, without reaching `app.onError`. Thrown from route middleware instead, it reaches your error handling like any other `HTTPException` (`error.getResponse()`). Its status is one that carries content, so 204/205/304 are not accepted.
+
 For file responses, set `fileResponse: true` and `fileContentType` in the contract. The Hono integration accepts `Blob`, `string`, `ArrayBuffer`, `Uint8Array`, or `ReadableStream` from the handler and writes the configured content type.
 
 ## When to use it
