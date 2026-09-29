@@ -1,8 +1,6 @@
 # Sample App
 
-`samples/myapp` in this repository is a **legacy** sample: it was produced by an earlier `scaffold-mock` and keeps the pre-v2 workspace shape (root Vite app with `ui/`, `packages/api`, `packages/client`, `ui/rivet-local.ts`). It is kept for reference but no longer matches what the scaffold commands emit.
-
-The current scaffold output looks like this instead:
+There is no checked-in sample app: the scaffold commands are the living sample, and the test suite type-checks and runs their output. A scaffolded workspace looks like this:
 
 ```text
 myapp/
@@ -15,7 +13,7 @@ myapp/
     └── src/index.ts  ← hand-owned typed client facade
 ```
 
-To produce a current reference app, run either scaffold command yourself:
+To produce one, run either scaffold command:
 
 ```bash
 # Worked example module (quotes)

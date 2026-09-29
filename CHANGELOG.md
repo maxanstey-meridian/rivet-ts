@@ -19,6 +19,7 @@
 - `RivetHttpError` extends Hono's `HTTPException` (so `instanceof HTTPException` and Hono's error handling recognise it; its response is `getResponse()`). Its status and `rivetHttpError`'s are Hono's `ContentfulStatusCode`: 204/205/304 are refused (by the type, and by `Response` at runtime), where `rivetHttpError(304, undefined)` used to answer an empty 304. The `headers` property is gone; the headers are on the response.
 - `ContractJson` (the `rivet-ts/hono` contract parameter) is derived from the lowered contract document: every param needs `type` and `isOptional`, and every endpoint `controllerName`, as `rivet-ts --out` always writes them. Only hand-written contract objects are affected.
 - `registerRivetHonoRoutes` reports a handler map entry whose value is `undefined` as a missing handler at registration, rather than failing when the route is requested.
+- The repository no longer ships the legacy `samples/myapp` workspace (pinned to rivet-ts 0.9.1, untested, importing files that no longer exist). Run `rivet-ts scaffold` or `rivet-ts scaffold-mock` for a current reference app.
 
 ## Unreleased — fixes
 
