@@ -6,9 +6,8 @@ import type {
 import { createTypeWalkContext, enterTypeDefinition, type TypeWalkContext } from "./type-walk.js";
 
 /**
- * IR → Zod source, at SCAFFOLD time only (the schemas are owned by the user
- * afterwards — this is not a generate-pipeline artifact, and the v2
- * types-only client decision is untouched).
+ * IR → Zod source, at SCAFFOLD time only: the schemas are owned by the user
+ * afterwards, so this is not a generate-pipeline artifact.
  *
  * `exact` tracks whether the synthesized schema's output type provably equals
  * the contract type: only then does the caller append the

@@ -1,23 +1,9 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import type { RivetContractDocument } from "../../domain/rivet-contract.js";
-import {
-  buildBootstrapOpenApiDocument,
-  readPackageManifest,
-  resolveWorkspaceVersions,
-  toRivetTsDependency,
-} from "./mock-project-emitter.js";
-import {
-  checkOutDirSafety,
-  emitWorkspaceSkeleton,
-  toPackageScope,
-  type WorkspaceConfig,
-} from "./workspace-emitter.js";
+import { assertOutDirWritable, emitWorkspace, toPackageScope } from "./workspace-emitter.js";
 
 /**
  * Contract-less scaffold (`rivet-ts scaffold`): the golden-shape workspace
- * with two worked example modules mirroring `~/Sites/golden`'s idiom plus the
- * proper-scaffold capabilities (agreed 2026-06-11, plan doc retired):
+ * with two worked example modules mirroring `~/Sites/golden`'s idiom:
  *
  * - `quotes` — typed-inject class use cases, abstract-class ports, TWO
  *   adapters per port story: in-memory (server entry) and Dexie (browser
@@ -28,11 +14,12 @@ import {
  *   making the example multi-module (two contract groups registered).
  *
  * Composition is split per environment: `local.ts` (browser) wires Dexie,
- * `main.ts` (server) wires in-memory + logger + cors. Suffix-free file names
- * throughout (Meridian §9.1). This is what `plumb init --ts-backend` calls.
+ * `main.ts` (server) wires in-memory + logger + cors. This is what
+ * `plumb init --ts-backend` calls.
  */
 
-const CONTRACTS_SOURCE = [
+/** The example contract entry; the CLI lowers it to produce the bootstrap contract. */
+export const EXAMPLE_CONTRACTS_SOURCE = [
   'import type { Contract, Endpoint } from "rivet-ts";',
   "",
   "export type QuoteDto = {",
@@ -749,123 +736,64 @@ export type ExampleProjectConfig = {
 
 /**
  * Emits the workspace skeleton plus the worked example modules. The caller
- * (the scaffold use case) lowers the EMITTED contracts.ts and provides the
- * document — the same pipeline real projects run, so the bootstrap artifacts
- * can never drift from what the entry actually declares.
+ * lowers EXAMPLE_CONTRACTS_SOURCE and provides the document — the same
+ * pipeline real projects run, so the bootstrap artifacts can never drift from
+ * what the entry actually declares.
  */
 export const emitExampleProject = async (config: ExampleProjectConfig): Promise<void> => {
-  const safetyError = await checkOutDirSafety(config.outDir, config.force);
-  if (safetyError) {
-    throw new Error(safetyError);
-  }
+  await assertOutDirWritable(config.outDir, config.force);
 
-  const manifest = await readPackageManifest();
-  const packageScope = toPackageScope(config.projectName);
+  const api = (files: Readonly<Record<string, string>>) =>
+    Object.fromEntries(
+      Object.entries(files).map(([relativePath, source]) => [`apps/api/${relativePath}`, source]),
+    );
 
-  const workspaceConfig: WorkspaceConfig = {
-    outDir: config.outDir,
-    projectName: config.projectName,
-    packageScope,
-    rivetTsDependency: toRivetTsDependency(manifest),
-    versions: resolveWorkspaceVersions(manifest),
-    contractEntryRelativePath: "contracts.ts",
-    contractNames: ["QuotesContract", "UsersContract"],
-    bootstrapOpenApiDocument: buildBootstrapOpenApiDocument(config),
-    appVueSource: buildAppVueSource(packageScope),
-    extraApiDependencies: { dexie: "^4.0.0", "typed-inject": "^5.0.0" },
-  };
-
-  const { apiRoot, apiSourceRoot } = await emitWorkspaceSkeleton(
-    workspaceConfig,
-    `${JSON.stringify(config.document, null, 2)}\n`,
+  await emitWorkspace(
+    {
+      outDir: config.outDir,
+      projectName: config.projectName,
+      variant: "full",
+      document: config.document,
+      contractEntryRelativePath: "contracts.ts",
+      contractNames: ["QuotesContract", "UsersContract"],
+      extraApiDependencies: ["dexie", "typed-inject"],
+    },
+    {
+      "apps/ui/app/app.vue": buildAppVueSource(toPackageScope(config.projectName)),
+      ...api({
+        "src/contracts.ts": EXAMPLE_CONTRACTS_SOURCE,
+        "src/app.ts": APP_SOURCE,
+        "src/composition.ts": COMPOSITION_SOURCE,
+        "src/local.ts": LOCAL_SOURCE,
+        "src/main.ts": MAIN_SOURCE,
+        "src/validation.ts": VALIDATION_BARREL_SOURCE,
+        "src/modules/quotes/quotes-routes.ts": ROUTES_QUOTES_SOURCE,
+        "src/modules/quotes/quotes-validation.ts": VALIDATION_QUOTES_SOURCE,
+        "src/modules/quotes/quotes.module.ts": QUOTES_MODULE_SOURCE,
+        "src/modules/quotes/domain/quote.ts": DOMAIN_QUOTE_SOURCE,
+        "src/modules/quotes/domain/duplicate-quote-error.ts": DOMAIN_ERROR_SOURCE,
+        "src/modules/quotes/application/ports/quote-store.ts": PORT_QUOTE_STORE_SOURCE,
+        "src/modules/quotes/application/ports/clock.ts": PORT_CLOCK_SOURCE,
+        "src/modules/quotes/application/add-quote.ts": USE_CASE_ADD_QUOTE_SOURCE,
+        "src/modules/quotes/application/list-quotes.ts": USE_CASE_LIST_QUOTES_SOURCE,
+        "src/modules/quotes/infrastructure/seed-quotes.ts": SEED_QUOTE_SOURCE,
+        "src/modules/quotes/infrastructure/in-memory-quote-store.ts": INFRA_MEMORY_STORE_SOURCE,
+        "src/modules/quotes/infrastructure/dexie-quote-store.ts": INFRA_DEXIE_STORE_SOURCE,
+        "src/modules/quotes/infrastructure/system-clock.ts": INFRA_CLOCK_SOURCE,
+        "src/modules/users/users-routes.ts": ROUTES_USERS_SOURCE,
+        "src/modules/users/users.module.ts": USERS_MODULE_SOURCE,
+        "src/modules/users/domain/user.ts": DOMAIN_USER_SOURCE,
+        "src/modules/users/application/ports/current-user.ts": PORT_CURRENT_USER_SOURCE,
+        "src/modules/users/application/get-current-user.ts": USE_CASE_GET_CURRENT_USER_SOURCE,
+        "src/modules/users/infrastructure/stub-current-user.ts": INFRA_STUB_CURRENT_USER_SOURCE,
+        "test/support/fake-quote-store.ts": TEST_SUPPORT_FAKE_STORE_SOURCE,
+        "test/support/fixed-clock.ts": TEST_SUPPORT_FIXED_CLOCK_SOURCE,
+        "test/add-quote.test.ts": TEST_ADD_QUOTE_SOURCE,
+        "test/validation.test.ts": TEST_VALIDATION_SOURCE,
+      }),
+    },
   );
-
-  const quotesRoot = path.join(apiSourceRoot, "modules", "quotes");
-  const usersRoot = path.join(apiSourceRoot, "modules", "users");
-  await Promise.all([
-    fs.mkdir(path.join(quotesRoot, "domain"), { recursive: true }),
-    fs.mkdir(path.join(quotesRoot, "application", "ports"), { recursive: true }),
-    fs.mkdir(path.join(quotesRoot, "infrastructure"), { recursive: true }),
-    fs.mkdir(path.join(usersRoot, "domain"), { recursive: true }),
-    fs.mkdir(path.join(usersRoot, "application", "ports"), { recursive: true }),
-    fs.mkdir(path.join(usersRoot, "infrastructure"), { recursive: true }),
-    fs.mkdir(path.join(apiRoot, "test", "support"), { recursive: true }),
-  ]);
-
-  const writeApi = (relativePath: string, source: string) =>
-    fs.writeFile(path.join(apiSourceRoot, relativePath), source);
-
-  await Promise.all([
-    writeApi("contracts.ts", CONTRACTS_SOURCE),
-    writeApi("app.ts", APP_SOURCE),
-    writeApi("composition.ts", COMPOSITION_SOURCE),
-    writeApi("local.ts", LOCAL_SOURCE),
-    writeApi("main.ts", MAIN_SOURCE),
-    writeApi("validation.ts", VALIDATION_BARREL_SOURCE),
-    writeApi(path.join("modules", "quotes", "quotes-routes.ts"), ROUTES_QUOTES_SOURCE),
-    writeApi(path.join("modules", "quotes", "quotes-validation.ts"), VALIDATION_QUOTES_SOURCE),
-    writeApi(path.join("modules", "quotes", "quotes.module.ts"), QUOTES_MODULE_SOURCE),
-    writeApi(path.join("modules", "users", "users-routes.ts"), ROUTES_USERS_SOURCE),
-    writeApi(path.join("modules", "users", "users.module.ts"), USERS_MODULE_SOURCE),
-    writeApi(path.join("modules", "quotes", "domain", "quote.ts"), DOMAIN_QUOTE_SOURCE),
-    writeApi(
-      path.join("modules", "quotes", "domain", "duplicate-quote-error.ts"),
-      DOMAIN_ERROR_SOURCE,
-    ),
-    writeApi(
-      path.join("modules", "quotes", "application", "ports", "quote-store.ts"),
-      PORT_QUOTE_STORE_SOURCE,
-    ),
-    writeApi(path.join("modules", "quotes", "application", "ports", "clock.ts"), PORT_CLOCK_SOURCE),
-    writeApi(
-      path.join("modules", "quotes", "application", "add-quote.ts"),
-      USE_CASE_ADD_QUOTE_SOURCE,
-    ),
-    writeApi(
-      path.join("modules", "quotes", "application", "list-quotes.ts"),
-      USE_CASE_LIST_QUOTES_SOURCE,
-    ),
-    writeApi(path.join("modules", "quotes", "infrastructure", "seed-quotes.ts"), SEED_QUOTE_SOURCE),
-    writeApi(
-      path.join("modules", "quotes", "infrastructure", "in-memory-quote-store.ts"),
-      INFRA_MEMORY_STORE_SOURCE,
-    ),
-    writeApi(
-      path.join("modules", "quotes", "infrastructure", "dexie-quote-store.ts"),
-      INFRA_DEXIE_STORE_SOURCE,
-    ),
-    writeApi(
-      path.join("modules", "quotes", "infrastructure", "system-clock.ts"),
-      INFRA_CLOCK_SOURCE,
-    ),
-    writeApi(path.join("modules", "users", "domain", "user.ts"), DOMAIN_USER_SOURCE),
-    writeApi(
-      path.join("modules", "users", "application", "ports", "current-user.ts"),
-      PORT_CURRENT_USER_SOURCE,
-    ),
-    writeApi(
-      path.join("modules", "users", "application", "get-current-user.ts"),
-      USE_CASE_GET_CURRENT_USER_SOURCE,
-    ),
-    writeApi(
-      path.join("modules", "users", "infrastructure", "stub-current-user.ts"),
-      INFRA_STUB_CURRENT_USER_SOURCE,
-    ),
-    fs.writeFile(
-      path.join(apiRoot, "test", "support", "fake-quote-store.ts"),
-      TEST_SUPPORT_FAKE_STORE_SOURCE,
-    ),
-    fs.writeFile(
-      path.join(apiRoot, "test", "support", "fixed-clock.ts"),
-      TEST_SUPPORT_FIXED_CLOCK_SOURCE,
-    ),
-    fs.writeFile(path.join(apiRoot, "test", "add-quote.test.ts"), TEST_ADD_QUOTE_SOURCE),
-    fs.writeFile(path.join(apiRoot, "test", "validation.test.ts"), TEST_VALIDATION_SOURCE),
-  ]);
 };
-
-/** The example contract entry, exposed so the scaffold use case can lower it. */
-export const EXAMPLE_CONTRACTS_SOURCE = CONTRACTS_SOURCE;
 
 export type FrontendProjectConfig = {
   readonly outDir: string;
@@ -880,28 +808,9 @@ export type FrontendProjectConfig = {
  * generate`'s first command is a TODO pointing at the real API's emitter.
  */
 export const emitFrontendOnlyProject = async (config: FrontendProjectConfig): Promise<void> => {
-  const safetyError = await checkOutDirSafety(config.outDir, config.force);
-  if (safetyError) {
-    throw new Error(safetyError);
-  }
-
-  const manifest = await readPackageManifest();
-
-  const workspaceConfig: WorkspaceConfig = {
-    outDir: config.outDir,
-    projectName: config.projectName,
-    variant: "frontend-only",
-    packageScope: toPackageScope(config.projectName),
-    rivetTsDependency: toRivetTsDependency(manifest),
-    versions: resolveWorkspaceVersions(manifest),
-    contractEntryRelativePath: "",
-    contractNames: [],
-    bootstrapOpenApiDocument: {
-      openapi: "3.1.0",
-      info: { title: config.projectName, version: "0.0.0" },
-      paths: {},
-    },
-  };
-
-  await emitWorkspaceSkeleton(workspaceConfig, "");
+  await assertOutDirWritable(config.outDir, config.force);
+  await emitWorkspace(
+    { outDir: config.outDir, projectName: config.projectName, variant: "frontend-only" },
+    {},
+  );
 };

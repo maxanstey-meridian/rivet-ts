@@ -1,8 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { RivetContractDocument } from "../../src/domain/rivet-contract.js";
+import { emitMockProject } from "../../src/infrastructure/scaffold/mock-project-emitter.js";
+import { lowerContracts } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { runCliCaptured } from "../support/cli.js";
+import { writeContractProject } from "../support/contract-project.js";
 import { parseContractJson } from "../support/lower.js";
-import { PROJECT_ROOT } from "../support/paths.js";
+import { AUTHORING_TYPES, PROJECT_ROOT } from "../support/paths.js";
 import { typecheckScaffoldedWorkspace } from "../support/scaffold-oracles.js";
 import { tempDir } from "../support/temp.js";
 
@@ -990,4 +994,37 @@ describe("scaffold-mock lifecycle", () => {
     expect(regenerated).not.toBe(userEdit);
     expect(regenerated).toContain("registerMembersRoutes(app, contract);");
   }, 120000);
+
+  it("refuses a contract endpoint the lowered document does not carry, instead of dropping its handler", async () => {
+    const entryPath = await writeContractProject({
+      "contracts.ts": [
+        `import type { Contract, Endpoint } from "${AUTHORING_TYPES}";`,
+        'export interface ThingsContract extends Contract<"Things"> {',
+        '  ListThings: Endpoint<{ method: "GET"; route: "/api/things"; response: string[] }>;',
+        '  CountThings: Endpoint<{ method: "GET"; route: "/api/things/count"; response: number }>;',
+        "}",
+      ].join("\n"),
+    });
+    const lowered = lowerContracts(entryPath);
+    expect(lowered.hasErrors).toBe(false);
+    const outDir = path.join(path.dirname(entryPath), "mock-app");
+
+    await expect(
+      emitMockProject({
+        outDir,
+        projectName: "things",
+        entryPath,
+        force: false,
+        contracts: lowered.contracts,
+        document: new RivetContractDocument({
+          ...lowered.document,
+          endpoints: lowered.document.endpoints.filter(
+            (endpoint) => endpoint.name !== "countThings",
+          ),
+        }),
+      }),
+    ).rejects.toThrow(
+      'Endpoint "Things.CountThings" is missing from the lowered contract document.',
+    );
+  });
 });

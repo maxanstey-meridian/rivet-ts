@@ -422,9 +422,11 @@ export const lowerContracts = (
 const toDiscoveredContract = (contract: DiscoveredContractSpec): DiscoveredContract => ({
   name: contract.name,
   exportedName: contract.exportedName,
+  controllerName: deriveGroupName(contract.name),
   sourceFilePath: contract.sourceFilePath,
   endpoints: contract.endpoints.map((endpoint) => ({
     name: endpoint.name,
+    loweredName: toCamelCase(endpoint.name),
     method: endpoint.method,
     route: endpoint.route,
     hasInput: endpoint.hasInput,

@@ -5,6 +5,7 @@ import {
   type RivetHandler,
   type RivetHandlerOwner,
   type RivetHandlerOwnerWithInput,
+  toLoweredEndpointName,
 } from "./domain/handler-types.js";
 
 // Loose mirror of the lowered contract's RivetType shape — only the kinds the
@@ -78,14 +79,6 @@ type RegisterRivetHonoRoutesOptions<TContract> = {
 };
 
 const toHonoRoute = (routeTemplate: string): string => routeTemplate.replace(/\{([^}]+)\}/g, ":$1");
-
-const toRuntimeEndpointName = (value: string): string => {
-  if (value.length === 0) {
-    return value;
-  }
-
-  return `${value[0]?.toLowerCase() ?? ""}${value.slice(1)}`;
-};
 
 const isHandlerClassToken = (value: unknown): value is new (...args: any[]) => unknown => {
   if (typeof value !== "function") {
@@ -462,7 +455,7 @@ export const registerRivetHonoRoutes = <
 
   for (const endpoint of selectedEndpoints) {
     const matchingEntries = handlerEntries.filter(
-      ([key]) => key === endpoint.name || toRuntimeEndpointName(key) === endpoint.name,
+      ([key]) => key === endpoint.name || toLoweredEndpointName(key) === endpoint.name,
     );
 
     if (matchingEntries.length === 0) {
