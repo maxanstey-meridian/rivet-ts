@@ -7,9 +7,14 @@
 - Removed the `rivet-ts/local` entry point (`configureLocalRivet`, `createLocalRivetFetch`, `LocalRivetConfig`). The scaffolds no longer use it.
 - Removed the lowerer-internal exports `EndpointExampleSpec`, `ResponseExamplesSpec` and the unused `RivetEndpointExample` class.
 - `RivetContractLoweringResult` no longer has `toJSON()`: `JSON.stringify(result)` now serialises the whole result, not just its document. Use `result.toJson()` or `result.document`.
+- The Rivet binary auto-install refuses a release asset that publishes no sha256 digest instead of installing it unverified. Set `rivet.binaryPath` to use a binary you have verified yourself.
+- CLI usage errors now come from `node:util` `parseArgs`: `Unknown option '--x'` and `Option '--x <value>' argument missing` replace `Unknown argument: --x` and `Flag --x is missing a value.`; a stray positional argument is `Unexpected argument`.
+- `RIVET_VERSION` must be a release version (`0.44.1`, `v0.44.1`, `0.44.1-rc.1`); anything else fails instead of being used as a tag.
 - `registerRivetHonoRoutes({ group })` matches endpoints by `controllerName` only. The contract JSON never carried an endpoint `group`, so only hand-written contract objects that set one are affected.
 
 ## Unreleased — fixes
+
+- The Vite plugin honours `RIVET_VERSION` like the CLI (an explicit `rivet.version` still wins).
 
 - `rivet-ts --entry` accepts `--tsconfig <file>` (it previously rejected the flag, so a non-default tsconfig could not be used).
 - `rivet-ts rivet` no longer kills the Rivet binary after 1 MB of output, and reports a signal-killed binary as `128 + signal`.

@@ -3,38 +3,19 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { Plugin, ResolvedConfig } from "vite";
-import { resolveRivetBinaryConfig } from "./config/rivet-binary.js";
+import {
+  resolveRivetBinaryConfig,
+  type ResolvedRivetBinaryConfig,
+  type RivetBinaryConfig,
+} from "./config/rivet-binary.js";
 import { emitClientPackage } from "./infrastructure/codegen/client-package-emitter.js";
 import { toKebabCase } from "./infrastructure/codegen/kebab-case.js";
 import { collectLocalDependencies } from "./infrastructure/typescript/local-source-dependencies.js";
 import { lowerContracts } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
-import {
-  ensureRivetBinary,
-  type ResolvedRivetBinaryConfig,
-  type RivetBinaryConfig,
-} from "./infrastructure/vite/rivet-binary.js";
+import { ensureRivetBinary } from "./infrastructure/vite/rivet-binary.js";
+import { formatDiagnostic } from "./interfaces/diagnostics.js";
 
 const execFileAsync = promisify(execFile);
-
-const formatDiagnostics = (
-  diagnostics: readonly {
-    readonly severity: string;
-    readonly code: string;
-    readonly filePath?: string;
-    readonly line?: number;
-    readonly column?: number;
-    readonly message: string;
-  }[],
-): string =>
-  diagnostics
-    .map((diagnostic) => {
-      const location = diagnostic.filePath
-        ? `${diagnostic.filePath}${diagnostic.line ? `:${diagnostic.line}:${diagnostic.column}` : ""}`
-        : "(unknown)";
-
-      return `${diagnostic.severity}: [${diagnostic.code}] ${location} ${diagnostic.message}`;
-    })
-    .join("\n");
 
 const resolveConfigPath = (baseDir: string, value: string): string => path.resolve(baseDir, value);
 
@@ -115,7 +96,7 @@ const generateArtifacts = async (
   const diagnostics = lowered.diagnostics;
 
   if (diagnostics.length > 0) {
-    const formatted = formatDiagnostics(diagnostics);
+    const formatted = diagnostics.map(formatDiagnostic).join("\n");
     for (const diagnostic of diagnostics) {
       if (diagnostic.severity === "error") {
         config.logger.error(formatted);

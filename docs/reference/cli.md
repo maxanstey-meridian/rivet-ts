@@ -92,7 +92,7 @@ Resolve the cached Rivet binary — auto-installing on first use, exactly as the
 pnpm exec rivet-ts rivet -- --from ./contract.json --output ./packages/contracts/generated
 ```
 
-The `RIVET_VERSION` environment variable overrides the pinned default version. Scaffolded `task generate` pipelines call this instead of a bare `rivet` that is never on `PATH`.
+The `RIVET_VERSION` environment variable overrides the pinned default version (the Vite plugin honours it too, below an explicit `rivet.version`). A release asset without a published sha256 digest is refused. Scaffolded `task generate` pipelines call this instead of a bare `rivet` that is never on `PATH`.
 
 ## Diagnostics
 

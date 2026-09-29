@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { build, createServer } from "vite";
 import { PROJECT_ROOT } from "../support/paths.js";
+import { installFakeRivet } from "../support/rivet-cache.js";
 import { tempDir } from "../support/temp.js";
 
 describe("vite plugin lifecycle", () => {
@@ -537,5 +538,40 @@ describe("vite plugin lifecycle", () => {
         timeoutMs: 300,
       }),
     ).rejects.toThrow("rivet-ts/vite: the Rivet binary did not finish within 300ms.");
+  }, 20_000);
+
+  it("resolves the Rivet binary pinned by RIVET_VERSION, as the CLI does", async () => {
+    const fixture = await createSpecDropoutFixture("rivet-ts-vite-plugin-rivet-version-");
+    await installFakeRivet(
+      [
+        'const fs = require("node:fs");',
+        'const path = require("node:path");',
+        'const outputDir = process.argv[process.argv.indexOf("--output") + 1];',
+        'fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify({ openapi: "3.1.0", info: { title: "pinned", version: "1" }, paths: {} }));',
+      ].join("\n"),
+    );
+    const { rivetTs } = await import("../../src/vite.js");
+
+    try {
+      await build({
+        configFile: false,
+        root: fixture.uiRoot,
+        logLevel: "silent",
+        plugins: [
+          rivetTs({
+            entry: fixture.entryPath,
+            apiRoot: fixture.tempDirectory,
+            rivet: { autoInstall: false },
+          }),
+        ],
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    const spec = JSON.parse(await fs.readFile(fixture.openApiPath, "utf8")) as {
+      readonly info: { readonly title: string };
+    };
+    expect(spec.info.title).toBe("pinned");
   }, 20_000);
 });

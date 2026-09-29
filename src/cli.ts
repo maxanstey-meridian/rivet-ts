@@ -3,7 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getConfiguredRivetVersion, resolveRivetBinaryConfig } from "./config/rivet-binary.js";
+import { parseArgs } from "node:util";
+import { resolveRivetBinaryConfig } from "./config/rivet-binary.js";
 import { ExtractionDiagnostic } from "./domain/diagnostic.js";
 import { emitClientPackage } from "./infrastructure/codegen/client-package-emitter.js";
 import {
@@ -18,6 +19,7 @@ import {
 } from "./infrastructure/scaffold/openapi-constraint-reader.js";
 import { lowerContracts } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { ensureRivetBinary } from "./infrastructure/vite/rivet-binary.js";
+import { formatDiagnostic } from "./interfaces/diagnostics.js";
 
 export type CliIO = {
   stdout: (text: string) => void;
@@ -45,65 +47,15 @@ const readOwnVersion = async (): Promise<string> => {
   return manifest.version ?? "unknown";
 };
 
-type ParsedFlags = {
-  readonly values: ReadonlyMap<string, string>;
-  readonly switches: ReadonlySet<string>;
-  readonly errors: readonly string[];
-};
-
-/**
- * Strict flag parser: every argument must be a known flag. Valued flags take
- * the next argument; switches stand alone. Unknown flags and valued flags
- * missing their value are loud errors (C3), never silently ignored.
- */
-const parseFlags = (
-  args: readonly string[],
-  knownFlags: readonly string[],
-  knownSwitches: readonly string[] = [],
-): ParsedFlags => {
-  const values = new Map<string, string>();
-  const switches = new Set<string>();
-  const errors: string[] = [];
-
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index] ?? "";
-
-    if (knownSwitches.includes(arg)) {
-      switches.add(arg);
-      continue;
-    }
-
-    if (!knownFlags.includes(arg)) {
-      errors.push(`Unknown argument: ${arg}`);
-      continue;
-    }
-
-    const value = args[index + 1];
-    if (value === undefined || value.startsWith("--")) {
-      errors.push(`Flag ${arg} is missing a value.`);
-      continue;
-    }
-
-    values.set(arg, value);
-    index += 1;
-  }
-
-  return { values, switches, errors };
-};
-
-const reportUsageErrors = (errors: readonly string[], io: CliIO): void => {
-  for (const error of errors) {
-    io.stderr(`error: ${error}\n`);
-  }
-  io.stderr(USAGE);
-};
+const isUsageError = (error: unknown): error is Error =>
+  error instanceof TypeError &&
+  "code" in error &&
+  typeof error.code === "string" &&
+  error.code.startsWith("ERR_PARSE_ARGS_");
 
 const reportDiagnostics = (diagnostics: readonly ExtractionDiagnostic[], io: CliIO): void => {
   for (const diagnostic of diagnostics) {
-    const location = diagnostic.filePath
-      ? `${diagnostic.filePath}${diagnostic.line ? `:${diagnostic.line}:${diagnostic.column}` : ""}`
-      : "(unknown)";
-    io.stderr(`${diagnostic.severity}: [${diagnostic.code}] ${location} ${diagnostic.message}\n`);
+    io.stderr(`${formatDiagnostic(diagnostic)}\n`);
   }
 };
 
@@ -123,34 +75,45 @@ export const runCli = async (args: readonly string[], io: CliIO = DEFAULT_IO): P
     return 0;
   }
 
-  if (args[0] === "scaffold") {
-    return runScaffold(args.slice(1), io);
+  try {
+    switch (args[0]) {
+      case "scaffold":
+        return await runScaffold(args.slice(1), io);
+      case "scaffold-mock":
+        return await runScaffoldMock(args.slice(1), io);
+      case "generate":
+        return await runGenerate(args.slice(1), io);
+      default:
+        return await runLower(args, io);
+    }
+  } catch (error) {
+    if (isUsageError(error)) {
+      io.stderr(`error: ${error.message}\n${USAGE}`);
+      return 1;
+    }
+    throw error;
   }
+};
 
-  if (args[0] === "scaffold-mock") {
-    return runScaffoldMock(args.slice(1), io);
-  }
-
-  if (args[0] === "generate") {
-    return runGenerate(args.slice(1), io);
-  }
-
-  const parsed = parseFlags(args, ["--entry", "--out", "--tsconfig"]);
-
-  if (parsed.errors.length > 0) {
-    reportUsageErrors(parsed.errors, io);
-    return 1;
-  }
-
-  const entryPath = parsed.values.get("--entry");
-  const outputPath = parsed.values.get("--out");
+const runLower = async (args: readonly string[], io: CliIO): Promise<number> => {
+  const { values } = parseArgs({
+    args: [...args],
+    options: {
+      entry: { type: "string" },
+      out: { type: "string" },
+      tsconfig: { type: "string" },
+    },
+    strict: true,
+  });
+  const entryPath = values.entry;
+  const outputPath = values.out;
 
   if (!entryPath) {
     io.stderr(USAGE);
     return 1;
   }
 
-  const lowered = lowerContracts(entryPath, { tsconfigPath: parsed.values.get("--tsconfig") });
+  const lowered = lowerContracts(entryPath, { tsconfigPath: values.tsconfig });
 
   const diagnostics = [...lowered.diagnostics];
 
@@ -183,22 +146,25 @@ export const runCli = async (args: readonly string[], io: CliIO = DEFAULT_IO): P
 };
 
 const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<number> => {
-  const parsed = parseFlags(
-    args,
-    ["--entry", "--out", "--name", "--tsconfig", "--spec"],
-    ["--force"],
-  );
-
-  if (parsed.errors.length > 0) {
-    reportUsageErrors(parsed.errors, io);
-    return 1;
-  }
-
-  const entryPath = parsed.values.get("--entry");
-  const outDir = parsed.values.get("--out");
-  const projectName = parsed.values.get("--name");
-  const tsconfigPath = parsed.values.get("--tsconfig");
-  const specPath = parsed.values.get("--spec");
+  const { values } = parseArgs({
+    args: [...args],
+    options: {
+      entry: { type: "string" },
+      out: { type: "string" },
+      name: { type: "string" },
+      tsconfig: { type: "string" },
+      spec: { type: "string" },
+      force: { type: "boolean", default: false },
+    },
+    strict: true,
+  });
+  const {
+    entry: entryPath,
+    out: outDir,
+    name: projectName,
+    tsconfig: tsconfigPath,
+    spec: specPath,
+  } = values;
 
   if (!entryPath || !outDir) {
     io.stderr(USAGE);
@@ -227,7 +193,7 @@ const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<numb
       outDir,
       projectName: projectName ?? path.basename(outDir),
       entryPath,
-      force: parsed.switches.has("--force"),
+      force: values.force,
       contracts: lowered.contracts,
       // A spec carries JSON Schema constraints the TS contract cannot express.
       document:
@@ -289,28 +255,31 @@ const lowerExampleEntry = async () => {
 };
 
 const runScaffold = async (args: readonly string[], io: CliIO): Promise<number> => {
-  const parsed = parseFlags(args, ["--out", "--name"], ["--force", "--no-api"]);
-
-  if (parsed.errors.length > 0) {
-    reportUsageErrors(parsed.errors, io);
-    return 1;
-  }
-
-  const outDir = parsed.values.get("--out");
+  const { values } = parseArgs({
+    args: [...args],
+    options: {
+      out: { type: "string" },
+      name: { type: "string" },
+      force: { type: "boolean", default: false },
+      "no-api": { type: "boolean", default: false },
+    },
+    strict: true,
+  });
+  const outDir = values.out;
 
   if (!outDir) {
     io.stderr(USAGE);
     return 1;
   }
 
-  const projectName = parsed.values.get("--name") ?? path.basename(path.resolve(outDir));
+  const projectName = values.name ?? path.basename(path.resolve(outDir));
 
   try {
-    if (parsed.switches.has("--no-api")) {
+    if (values["no-api"]) {
       await emitFrontendOnlyProject({
         outDir,
         projectName,
-        force: parsed.switches.has("--force"),
+        force: values.force,
       });
 
       io.stdout(`Scaffolded ${projectName} (frontend-only) into ${outDir}.\n`);
@@ -329,7 +298,7 @@ const runScaffold = async (args: readonly string[], io: CliIO): Promise<number> 
     await emitExampleProject({
       outDir,
       projectName,
-      force: parsed.switches.has("--force"),
+      force: values.force,
       document: lowered.document,
     });
 
@@ -344,14 +313,12 @@ const runScaffold = async (args: readonly string[], io: CliIO): Promise<number> 
 };
 
 const runGenerate = async (args: readonly string[], io: CliIO): Promise<number> => {
-  const parsed = parseFlags(args, ["--generated-root"]);
-
-  if (parsed.errors.length > 0) {
-    reportUsageErrors(parsed.errors, io);
-    return 1;
-  }
-
-  const generatedRoot = parsed.values.get("--generated-root");
+  const { values } = parseArgs({
+    args: [...args],
+    options: { "generated-root": { type: "string" } },
+    strict: true,
+  });
+  const generatedRoot = values["generated-root"];
 
   if (!generatedRoot) {
     io.stderr(USAGE);
@@ -369,10 +336,7 @@ const runGenerate = async (args: readonly string[], io: CliIO): Promise<number> 
 };
 
 const runRivet = async (args: readonly string[], io: CliIO): Promise<number> => {
-  const version = getConfiguredRivetVersion();
-  const executablePath = await ensureRivetBinary(
-    resolveRivetBinaryConfig(version ? { version } : undefined),
-  );
+  const executablePath = await ensureRivetBinary(resolveRivetBinaryConfig());
 
   return new Promise<number>((resolve) => {
     const child = spawn(executablePath, args, { stdio: ["inherit", "pipe", "pipe"] });

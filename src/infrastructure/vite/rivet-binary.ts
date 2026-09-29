@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
+import { createWriteStream } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import * as tar from "tar";
+import type { ResolvedRivetBinaryConfig } from "../../config/rivet-binary.js";
 
 const DEFAULT_RIVET_REPOSITORY = {
   owner: "maxanstey-meridian",
@@ -44,27 +46,16 @@ const ensureOk = async (response: Response, message: string): Promise<void> => {
   }
 };
 
-const verifyDigest = async (filePath: string, expectedDigest: string): Promise<void> => {
-  const expected = expectedDigest.replace(/^sha256:/u, "");
-  const buffer = await fs.readFile(filePath);
-  const actual = createHash("sha256").update(buffer).digest("hex");
+const verifyDigest = async (filePath: string, expectedSha256: string): Promise<void> => {
+  const actual = createHash("sha256")
+    .update(await fs.readFile(filePath))
+    .digest("hex");
 
-  if (actual !== expected) {
+  if (actual !== expectedSha256) {
     throw new Error(
-      `Downloaded Rivet binary digest mismatch. Expected ${expectedDigest}, got sha256:${actual}.`,
+      `Downloaded Rivet binary digest mismatch. Expected sha256:${expectedSha256}, got sha256:${actual}.`,
     );
   }
-};
-
-export type RivetBinaryConfig = {
-  readonly version?: string;
-  readonly autoInstall?: boolean;
-  readonly binaryPath?: string;
-  readonly cacheDir?: string;
-};
-
-export type ResolvedRivetBinaryConfig = RivetBinaryConfig & {
-  readonly cacheDir: string;
 };
 
 type GitHubReleaseAsset = {
@@ -77,10 +68,12 @@ type GitHubRelease = {
   readonly assets: readonly GitHubReleaseAsset[];
 };
 
-const downloadReleaseAsset = async (
+const SHA256_DIGEST = /^sha256:([0-9a-f]{64})$/u;
+
+const resolveReleaseAsset = async (
   tagName: string,
   assetName: string,
-): Promise<GitHubReleaseAsset> => {
+): Promise<{ readonly downloadUrl: string; readonly sha256: string }> => {
   const releaseUrl = `https://api.github.com/repos/${DEFAULT_RIVET_REPOSITORY.owner}/${DEFAULT_RIVET_REPOSITORY.repo}/releases/tags/${tagName}`;
   const releaseResponse = await fetch(releaseUrl, {
     headers: {
@@ -97,7 +90,15 @@ const downloadReleaseAsset = async (
     throw new Error(`Release ${tagName} does not contain asset ${assetName}.`);
   }
 
-  return asset;
+  const sha256 = SHA256_DIGEST.exec(asset.digest ?? "")?.[1];
+  if (!sha256) {
+    throw new Error(
+      `Release ${tagName} asset ${assetName} publishes no sha256 digest, so the download cannot be verified. ` +
+        "Install Rivet yourself and set rivet.binaryPath.",
+    );
+  }
+
+  return { downloadUrl: asset.browser_download_url, sha256 };
 };
 
 export const ensureRivetBinary = async (config: ResolvedRivetBinaryConfig): Promise<string> => {
@@ -107,9 +108,7 @@ export const ensureRivetBinary = async (config: ResolvedRivetBinaryConfig): Prom
     return path.resolve(config.binaryPath);
   }
 
-  const autoInstall = config.autoInstall ?? true;
-  const version = config.version ?? "0.40.0";
-  const tagName = normalizeTagName(version);
+  const tagName = normalizeTagName(config.version);
   const rid = resolveRid();
   const executableName = process.platform === "win32" ? `rivet-${rid}.exe` : `rivet-${rid}`;
   const cacheRoot = path.resolve(config.cacheDir);
@@ -120,7 +119,7 @@ export const ensureRivetBinary = async (config: ResolvedRivetBinaryConfig): Prom
     await fs.access(executablePath);
     return executablePath;
   } catch {
-    if (!autoInstall) {
+    if (!config.autoInstall) {
       throw new Error(
         `Rivet binary not found at ${executablePath}. Set rivet.binaryPath or enable auto-install.`,
       );
@@ -137,9 +136,9 @@ export const ensureRivetBinary = async (config: ResolvedRivetBinaryConfig): Prom
 
   try {
     const assetName = `rivet-${rid}.tar.gz`;
-    const asset = await downloadReleaseAsset(tagName, assetName);
-    const archivePath = path.join(stagingDirectory, asset.name);
-    const downloadResponse = await fetch(asset.browser_download_url, {
+    const asset = await resolveReleaseAsset(tagName, assetName);
+    const archivePath = path.join(stagingDirectory, assetName);
+    const downloadResponse = await fetch(asset.downloadUrl, {
       headers: {
         Accept: "application/octet-stream",
         "User-Agent": "rivet-ts/vite",
@@ -153,12 +152,9 @@ export const ensureRivetBinary = async (config: ResolvedRivetBinaryConfig): Prom
 
     await pipeline(
       Readable.fromWeb(downloadResponse.body as globalThis.ReadableStream),
-      await fs.open(archivePath, "w").then((handle) => handle.createWriteStream()),
+      createWriteStream(archivePath),
     );
-
-    if (asset.digest) {
-      await verifyDigest(archivePath, asset.digest);
-    }
+    await verifyDigest(archivePath, asset.sha256);
 
     await tar.x({
       file: archivePath,
