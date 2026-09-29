@@ -75,13 +75,19 @@ type PropertyDescriptor = {
   readOnly: boolean;
 };
 
-type TaggedUnionMemberDescriptor = {
-  properties: readonly PropertyDescriptor[];
-};
-
 const EMPTY_DOCUMENT = new RivetContractDocument({});
 
-const HTTP_METHODS = new Set<HttpMethod>(["GET", "POST", "PUT", "PATCH", "DELETE"]);
+const HTTP_METHODS: ReadonlySet<string> = new Set<HttpMethod>([
+  "GET",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+]);
+
+const isHttpMethod = (value: string): value is HttpMethod => HTTP_METHODS.has(value);
+
+const isPresent = <T>(value: T | null): value is T => value !== null;
 const BODY_HTTP_METHODS = new Set(["PATCH", "POST", "PUT"]);
 const ROUTE_PARAM_PATTERN = /\{([^}]+)\}/g;
 const AUTHORING_HELPER_TYPE_NAMES = new Set([
@@ -100,32 +106,13 @@ const getResponseExampleMediaType = (status: number, fileContentType: string | u
 const isBodyForbiddenStatus = (status: number): boolean =>
   (status >= 100 && status < 200) || status === 204 || status === 205 || status === 304;
 
-const parseRouteParamNames = (route: string): string[] => {
-  const matches = route.matchAll(ROUTE_PARAM_PATTERN);
-  return [...matches].map((match) => match[1] ?? "").filter((name) => name.length > 0);
-};
+const parseRouteParamNames = (route: string): string[] =>
+  [...route.matchAll(ROUTE_PARAM_PATTERN)].map((match) => match[1]);
 
-const deriveGroupName = (contractName: string): string => {
-  const baseName = contractName.endsWith("Contract")
-    ? contractName.slice(0, -1 * "Contract".length)
-    : contractName;
+const toCamelCase = (value: string): string => value.charAt(0).toLowerCase() + value.slice(1);
 
-  if (baseName.length === 0) {
-    return baseName;
-  }
-
-  return `${baseName[0]?.toLowerCase() ?? ""}${baseName.slice(1)}`;
-};
-
-const toCamelCase = (value: string): string => {
-  if (value.length === 0) {
-    return value;
-  }
-
-  return `${value[0]?.toLowerCase() ?? ""}${value.slice(1)}`;
-};
-
-const getNodeSourceFile = (node: ts.Node): ts.SourceFile => node.getSourceFile();
+const deriveGroupName = (contractName: string): string =>
+  toCamelCase(contractName.replace(/Contract$/u, ""));
 
 const getPropertyName = (name: ts.PropertyName): string | null => {
   if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) {
@@ -191,7 +178,7 @@ const createNodeDiagnostic = (
   code: string,
   message: string,
 ): ExtractionDiagnostic => {
-  const sourceFile = getNodeSourceFile(node);
+  const sourceFile = node.getSourceFile();
   const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
 
   return new ExtractionDiagnostic({
@@ -401,13 +388,13 @@ export const lowerContracts = (
       continue;
     }
 
-    if (lowered.kind === "enum") {
-      enums.set(name, lowered.value);
-    } else {
-      typeDefinitions.set(name, lowered.value);
+    if (!(lowered instanceof RivetTypeDefinition)) {
+      enums.set(name, lowered);
+      continue;
     }
 
-    for (const reference of lowered.references) {
+    typeDefinitions.set(name, lowered);
+    for (const reference of getDefinitionReferences(lowered)) {
       if (typeDefinitions.has(reference) || enums.has(reference) || queued.has(reference)) {
         continue;
       }
@@ -453,6 +440,18 @@ const toContractSourceFiles = (filePaths: readonly string[]): ContractSourceFile
     absolutePath,
     relativePath: path.relative(root, absolutePath).split(path.sep).join("/"),
   }));
+};
+
+const getDefinitionReferences = (definition: RivetTypeDefinition): string[] => {
+  const references = new Set<string>();
+  if (definition.type) {
+    collectTypeReferences(definition.type, references);
+  }
+  for (const property of definition.properties) {
+    collectTypeReferences(property.type, references);
+  }
+  references.delete(definition.name);
+  return [...references].sort();
 };
 
 const toDiscoveredContract = (contract: DiscoveredContractSpec): DiscoveredContract => ({
@@ -521,13 +520,13 @@ class TypeEmissionContext {
           continue;
         }
 
-        const endpointName = this.getEndpointMemberName(member.name);
+        const endpointName = getPropertyName(member.name);
         if (!endpointName) {
           this.diagnostics.push(
             createNodeDiagnostic(
               member,
               "UNSUPPORTED_ENDPOINT_NAME",
-              "Only identifier endpoint names are supported.",
+              "Computed endpoint names are not supported; use an identifier or a string literal.",
             ),
           );
           continue;
@@ -548,14 +547,6 @@ class TypeEmissionContext {
     }
 
     return contracts;
-  }
-
-  private getEndpointMemberName(name: ts.PropertyName): string | null {
-    if (ts.isIdentifier(name) || ts.isStringLiteral(name)) {
-      return name.text;
-    }
-
-    return null;
   }
 
   private discoverEndpoint(
@@ -669,14 +660,14 @@ class TypeEmissionContext {
 
   private parseHttpMethod(node: ts.TypeNode | undefined, endpointName: string): HttpMethod | null {
     const method = this.readStringLiteral(node);
-    if (!method) {
+    if (!node || !method) {
       return null;
     }
 
-    if (!HTTP_METHODS.has(method as HttpMethod)) {
+    if (!isHttpMethod(method)) {
       this.diagnostics.push(
         createNodeDiagnostic(
-          node!,
+          node,
           "UNSUPPORTED_HTTP_METHOD",
           `Endpoint "${endpointName}" uses unsupported HTTP method "${method}".`,
         ),
@@ -684,7 +675,7 @@ class TypeEmissionContext {
       return null;
     }
 
-    return method as HttpMethod;
+    return method;
   }
 
   private parseRequestExamples(
@@ -1355,18 +1346,7 @@ class TypeEmissionContext {
     });
   }
 
-  public lowerNamedDeclaration(name: string):
-    | {
-        kind: "enum";
-        value: RivetContractEnum;
-        references: readonly string[];
-      }
-    | {
-        kind: "type";
-        value: RivetTypeDefinition;
-        references: readonly string[];
-      }
-    | null {
+  public lowerNamedDeclaration(name: string): RivetContractEnum | RivetTypeDefinition | null {
     const declaration = this.declarations.get(name);
     if (!declaration) {
       this.diagnostics.push(
@@ -1386,41 +1366,15 @@ class TypeEmissionContext {
     if (ts.isTypeAliasDeclaration(declaration)) {
       const enumLikeAlias = this.lowerEnumLikeTypeAlias(declaration);
       if (enumLikeAlias) {
-        return {
-          kind: "enum",
-          value: enumLikeAlias,
-          references: [],
-        };
+        return enumLikeAlias;
       }
     }
 
-    const typeDefinition = this.lowerTypeDefinition(declaration);
-    if (!typeDefinition) {
-      return null;
-    }
-
-    const references = new Set<string>();
-    if (typeDefinition.type) {
-      collectTypeReferences(typeDefinition.type, references);
-    } else {
-      for (const property of typeDefinition.properties) {
-        collectTypeReferences(property.type, references);
-      }
-    }
-    references.delete(typeDefinition.name);
-
-    return {
-      kind: "type",
-      value: typeDefinition,
-      references: [...references].sort(),
-    };
+    return this.lowerTypeDefinition(declaration);
   }
 
-  private lowerEnumDeclaration(declaration: ts.EnumDeclaration): {
-    kind: "enum";
-    value: RivetContractEnum;
-    references: readonly string[];
-  } | null {
+  private lowerEnumDeclaration(declaration: ts.EnumDeclaration): RivetContractEnum | null {
+    const name = declaration.name.text;
     const stringValues: string[] = [];
     const intValues: number[] = [];
     for (const member of declaration.members) {
@@ -1430,7 +1384,7 @@ class TypeEmissionContext {
           createNodeDiagnostic(
             member,
             "UNSUPPORTED_ENUM_MEMBER",
-            `Enum "${declaration.name.text}" must use members with constant string or numeric values.`,
+            `Enum "${name}" must use members with constant string or numeric values.`,
           ),
         );
         return null;
@@ -1448,31 +1402,13 @@ class TypeEmissionContext {
         createNodeDiagnostic(
           declaration.name,
           "MIXED_ENUM_TYPES",
-          `Enum "${declaration.name.text}" cannot mix string and numeric members.`,
+          `Enum "${name}" cannot mix string and numeric members.`,
         ),
       );
       return null;
     }
 
-    if (stringValues.length > 0) {
-      return {
-        kind: "enum",
-        value: {
-          name: declaration.name.text,
-          values: stringValues,
-        },
-        references: [],
-      };
-    }
-
-    return {
-      kind: "enum",
-      value: {
-        name: declaration.name.text,
-        intValues,
-      },
-      references: [],
-    };
+    return stringValues.length > 0 ? { name, values: stringValues } : { name, intValues };
   }
 
   private lowerEnumLikeTypeAlias(declaration: ts.TypeAliasDeclaration): RivetContractEnum | null {
@@ -1885,19 +1821,11 @@ class TypeEmissionContext {
   }
 
   private mergeResponseExamples(
-    responses: RivetResponseType[],
+    responses: readonly RivetResponseType[],
     endpoint: DiscoveredEndpointSpec,
   ): RivetResponseType[] {
-    if (endpoint.responseExamples.length === 0) {
-      return responses;
-    }
-
-    const responsesByStatus = new Map<number, number>();
-    for (let i = 0; i < responses.length; i++) {
-      responsesByStatus.set(responses[i]!.statusCode, i);
-    }
-
-    const merged = [...responses];
+    const statuses = new Set(responses.map((response) => response.statusCode));
+    const examplesByStatus = new Map<number, readonly RivetExample[]>();
     for (const group of endpoint.responseExamples) {
       if (group.examples.length > 0 && isBodyForbiddenStatus(group.status)) {
         this.diagnostics.push(
@@ -1907,11 +1835,7 @@ class TypeEmissionContext {
             `Endpoint "${endpoint.contractName}.${endpoint.name}" authors response content on body-forbidden status ${group.status} — HTTP forbids a message body on 1xx/204/205/304, so the authored example/content could never reach the wire; move it to a status that allows a body or remove it.`,
           ),
         );
-        continue;
-      }
-
-      const index = responsesByStatus.get(group.status);
-      if (index === undefined) {
+      } else if (!statuses.has(group.status)) {
         this.diagnostics.push(
           new ExtractionDiagnostic({
             severity: "error",
@@ -1919,22 +1843,22 @@ class TypeEmissionContext {
             message: `Endpoint "${endpoint.contractName}.${endpoint.name}" declares response examples for status ${group.status}, but no matching response exists.`,
           }),
         );
-        continue;
-      }
-
-      const existing = merged[index]!;
-      const { examples } = group;
-      if (examples.length > 0) {
-        merged[index] = new RivetResponseType({
-          statusCode: existing.statusCode,
-          dataType: existing.dataType,
-          description: existing.description,
-          examples,
-        });
+      } else if (group.examples.length > 0) {
+        examplesByStatus.set(group.status, group.examples);
       }
     }
 
-    return merged;
+    return responses.map((response) => {
+      const examples = examplesByStatus.get(response.statusCode);
+      return examples
+        ? new RivetResponseType({
+            statusCode: response.statusCode,
+            dataType: response.dataType,
+            description: response.description,
+            examples,
+          })
+        : response;
+    });
   }
 
   private readErrorResponses(
@@ -2004,7 +1928,7 @@ class TypeEmissionContext {
       return null;
     }
 
-    const sourceFile = getNodeSourceFile(typeNode);
+    const sourceFile = typeNode.getSourceFile();
     const propertyMap = new Map<string, ts.TypeNode>();
     for (const propertySymbol of this.checker.getApparentType(specType).getProperties()) {
       const propertyTypeNode = this.selectPropertyTypeNode(propertySymbol, sourceFile);
@@ -2129,7 +2053,7 @@ class TypeEmissionContext {
             createNodeDiagnostic(
               type,
               "UNSUPPORTED_HERITAGE_CLAUSE",
-              `${contextLabel} extends "${type.getText(getNodeSourceFile(type))}", which is not a supported base type. Only exported, non-generic local interfaces can be inherited.`,
+              `${contextLabel} extends "${type.getText()}", which is not a supported base type. Only exported, non-generic local interfaces can be inherited.`,
             ),
           );
           return null;
@@ -2209,7 +2133,7 @@ class TypeEmissionContext {
         if (definedMembers.length < typeNode.types.length) {
           optional = true;
           if (definedMembers.length === 1) {
-            typeNode = definedMembers[0]!;
+            [typeNode] = definedMembers;
           }
         }
       }
@@ -2339,22 +2263,24 @@ class TypeEmissionContext {
           kind: "primitive",
           type: "unknown",
         };
-      case ts.SyntaxKind.NullKeyword:
-        this.diagnostics.push(
-          createNodeDiagnostic(
-            node,
-            "UNSUPPORTED_NULL_TYPE",
-            "Standalone null types are not supported. Use a nullable union such as T | null.",
-          ),
-        );
-        return null;
+    }
+
+    if (isNullTypeNode(node)) {
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          node,
+          "UNSUPPORTED_NULL_TYPE",
+          "Standalone null types are not supported. Use a nullable union such as T | null.",
+        ),
+      );
+      return null;
     }
 
     this.diagnostics.push(
       createNodeDiagnostic(
         node,
         "UNSUPPORTED_TYPE_EXPRESSION",
-        `Unsupported type expression "${node.getText(getNodeSourceFile(node))}".`,
+        `Unsupported type expression "${node.getText()}".`,
       ),
     );
     return null;
@@ -2530,15 +2456,16 @@ class TypeEmissionContext {
         createNodeDiagnostic(
           node,
           "UNSUPPORTED_UNION",
-          `Union "${node.getText(getNodeSourceFile(node))}" is not supported.`,
+          `Union "${node.getText()}" is not supported.`,
         ),
       );
       return null;
     }
 
+    const [onlyMember] = nonNullMembers;
     const loweredMembers =
       nonNullMembers.length === 1
-        ? this.lowerTypeNode(nonNullMembers[0]!, typeParameters)
+        ? this.lowerTypeNode(onlyMember, typeParameters)
         : this.lowerUnionMembers(node, nonNullMembers, typeParameters);
     if (!loweredMembers) {
       return null;
@@ -2576,17 +2503,14 @@ class TypeEmissionContext {
         createNodeDiagnostic(
           node,
           "UNSUPPORTED_UNION",
-          `Union "${node.getText(getNodeSourceFile(node))}" is not supported.`,
+          `Union "${node.getText()}" is not supported.`,
         ),
       );
       return null;
     }
 
     const variants = members.map((member) => this.lowerUnionVariant(member, typeParameters));
-    if (variants.some((variant) => variant === null)) {
-      return null;
-    }
-    return { kind: "union", variants: variants as RivetType[] };
+    return variants.every(isPresent) ? { kind: "union", variants } : null;
   }
 
   private isScalarUnionMember(member: ts.TypeNode): boolean {
@@ -2610,14 +2534,12 @@ class TypeEmissionContext {
     memberNodes: readonly ts.TypeNode[],
     typeParameters: Set<string>,
   ): RivetType | null {
-    const members = memberNodes.map((member) => this.readTaggedUnionMember(member));
-    if (members.some((member) => member === null)) {
+    const members = memberNodes.map((member) => this.getObjectProperties(member));
+    if (!members.every(isPresent)) {
       return null;
     }
 
-    const discriminator = this.resolveTaggedUnionDiscriminator(
-      members as readonly TaggedUnionMemberDescriptor[],
-    );
+    const discriminator = this.resolveTaggedUnionDiscriminator(members);
     if (!discriminator) {
       return null;
     }
@@ -2625,10 +2547,8 @@ class TypeEmissionContext {
     const variants = [];
     const seenTags = new Set<string>();
 
-    for (const member of members as readonly TaggedUnionMemberDescriptor[]) {
-      const discriminatorProperty = member.properties.find(
-        (property) => property.name === discriminator,
-      );
+    for (const properties of members) {
+      const discriminatorProperty = properties.find((property) => property.name === discriminator);
       const tag = discriminatorProperty && this.readLiteralTypeNode(discriminatorProperty.typeNode);
       if (!discriminatorProperty || typeof tag !== "string") {
         return null;
@@ -2639,14 +2559,14 @@ class TypeEmissionContext {
           createNodeDiagnostic(
             discriminatorProperty.typeNode,
             "UNSUPPORTED_UNION",
-            `Union "${node.getText(getNodeSourceFile(node))}" repeats discriminator value "${tag}".`,
+            `Union "${node.getText()}" repeats discriminator value "${tag}".`,
           ),
         );
         return null;
       }
       seenTags.add(tag);
 
-      const type = this.lowerInlineObject(member.properties, typeParameters);
+      const type = this.lowerInlineObject(properties, typeParameters);
       if (!type) {
         return null;
       }
@@ -2661,38 +2581,19 @@ class TypeEmissionContext {
     };
   }
 
-  private readTaggedUnionMember(member: ts.TypeNode): TaggedUnionMemberDescriptor | null {
-    const properties = this.getObjectProperties(member);
-    return properties ? { properties } : null;
-  }
-
+  /** The one required string-literal property every member declares. */
   private resolveTaggedUnionDiscriminator(
-    members: readonly TaggedUnionMemberDescriptor[],
+    members: readonly (readonly PropertyDescriptor[])[],
   ): string | null {
-    if (members.length === 0) {
-      return null;
-    }
-
-    let candidates = new Set(
-      members[0].properties
+    const candidateNames = (properties: readonly PropertyDescriptor[]): string[] =>
+      properties
         .filter((property) => this.isTaggedUnionDiscriminatorCandidate(property))
-        .map((property) => property.name),
+        .map((property) => property.name);
+    const [first, ...rest] = members;
+    const candidates = (first ? candidateNames(first) : []).filter((name) =>
+      rest.every((properties) => candidateNames(properties).includes(name)),
     );
-
-    for (const member of members.slice(1)) {
-      const memberCandidates = new Set(
-        member.properties
-          .filter((property) => this.isTaggedUnionDiscriminatorCandidate(property))
-          .map((property) => property.name),
-      );
-      candidates = new Set([...candidates].filter((candidate) => memberCandidates.has(candidate)));
-    }
-
-    if (candidates.size !== 1) {
-      return null;
-    }
-
-    return [...candidates][0] ?? null;
+    return candidates.length === 1 ? candidates[0] : null;
   }
 
   private isTaggedUnionDiscriminatorCandidate(property: PropertyDescriptor): boolean {
@@ -2788,7 +2689,7 @@ class TypeEmissionContext {
   }
 
   private resolveTypeName(node: ts.EntityName): string {
-    return resolveSymbol(this.checker, node)?.getName() ?? node.getText(getNodeSourceFile(node));
+    return resolveSymbol(this.checker, node)?.getName() ?? node.getText();
   }
 
   /**

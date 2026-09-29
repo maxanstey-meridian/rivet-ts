@@ -1114,6 +1114,29 @@ describe("Contract discovery lifecycle", () => {
     });
   });
 
+  it("reports a computed endpoint member name", async () => {
+    const { entryPath } = await writeTempEntry("rivet-ts-computed-endpoint-name-", [
+      'import type { Contract, Endpoint } from "__IMPORT_PATH__";',
+      "",
+      'const ping = "Ping";',
+      "",
+      'export interface UsersContract extends Contract<"Users"> {',
+      '  [ping]: Endpoint<{ method: "GET"; route: "/api/ping"; response: void }>;',
+      "}",
+      "",
+    ]);
+
+    const lowered = lowerContracts(entryPath);
+
+    expect(lowered.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "UNSUPPORTED_ENDPOINT_NAME",
+        message:
+          "Computed endpoint names are not supported; use an identifier or a string literal.",
+      }),
+    ]);
+  });
+
   it("does not treat a local type named Contract as the rivet-ts Contract", async () => {
     const { entryPath } = await writeTempEntry("rivet-ts-local-contract-", [
       'import type { Endpoint } from "__IMPORT_PATH__";',

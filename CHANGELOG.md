@@ -12,6 +12,7 @@
 
 ## Unreleased — fixes
 
+- A standalone `null` property type reports `UNSUPPORTED_NULL_TYPE` with the `T | null` hint (it fell through to a generic "Unsupported type expression"), and a computed endpoint member name says so instead of "Only identifier endpoint names are supported".
 - The Vite plugin watches every module the contract program compiles, including modules imported through tsconfig `paths` aliases, and `scaffold-mock` copies the same set (both previously followed relative import specifiers only).
 - `Contract`, `Endpoint`, `Brand` and `Format` are recognised by symbol, so renamed imports (`import type { Endpoint as E }`) work and a contract's own type that happens to be called `Contract`, `Brand` or `Format` is no longer mistaken for the rivet-ts one. `Array`/`ReadonlyArray`/`Record`/`Date`/`Blob`/`File` are recognised only as the library types.
 - Endpoint-spec literals resolve through aliases (`type Get = "GET"; method: Get`, `Contract<Name>`), negative literal types (`-1 | 1`) lower, and enums lower any constant member value (`Write = 1 << 1`).

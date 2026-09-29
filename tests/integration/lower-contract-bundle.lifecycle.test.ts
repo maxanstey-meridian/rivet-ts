@@ -726,6 +726,82 @@ describe("lowerContracts lifecycle", () => {
     ]);
   });
 
+  // C# Rivet reads the explicit optional flag (nullable no longer implies
+  // optional there), so the three spellings must stay distinct on the wire.
+  it("keeps x?: T, x: T | null and x?: T | null distinct in contract JSON", async () => {
+    const entryPath = await writeContractProject(
+      {
+        "contracts.ts": [
+          `import type { Contract, Endpoint } from "${AUTHORING_TYPES}";`,
+          "",
+          "export interface ProfileDto {",
+          "  optional?: string;",
+          "  nullable: string | null;",
+          "  optionalNullable?: string | null;",
+          "  inline: { optional?: string; nullable: string | null; optionalNullable?: string | null };",
+          "}",
+          "",
+          'export interface ProfilesContract extends Contract<"Profiles"> {',
+          '  Get: Endpoint<{ method: "GET"; route: "/api/profile"; response: ProfileDto }>;',
+          "}",
+          "",
+        ].join("\n"),
+      },
+      "rivet-ts-optional-nullable-",
+    );
+
+    const lowered = lowerContracts(entryPath);
+
+    expect(lowered.diagnostics).toEqual([]);
+    const string = { kind: "primitive", type: "string" };
+    const nullableString = { kind: "nullable", inner: string };
+    const [profile] = parseContractJson(lowered.toJson()).types;
+    expect(profile?.properties).toEqual([
+      { name: "optional", type: string, optional: true },
+      { name: "nullable", type: nullableString, optional: false },
+      { name: "optionalNullable", type: nullableString, optional: true },
+      {
+        name: "inline",
+        optional: false,
+        type: {
+          kind: "inlineObject",
+          properties: [
+            { name: "optional", type: string, optional: true },
+            { name: "nullable", type: nullableString, optional: false },
+            { name: "optionalNullable", type: nullableString, optional: true },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("reports a standalone null type with the nullable-union hint", async () => {
+    const entryPath = await writeContractProject(
+      {
+        "contracts.ts": [
+          `import type { Contract, Endpoint } from "${AUTHORING_TYPES}";`,
+          "",
+          "export interface GoneDto { value: null; }",
+          "",
+          'export interface GoneContract extends Contract<"Gone"> {',
+          '  Get: Endpoint<{ method: "GET"; route: "/api/gone"; response: GoneDto }>;',
+          "}",
+          "",
+        ].join("\n"),
+      },
+      "rivet-ts-standalone-null-",
+    );
+
+    const lowered = lowerContracts(entryPath);
+
+    expect(lowered.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "UNSUPPORTED_NULL_TYPE",
+        message: "Standalone null types are not supported. Use a nullable union such as T | null.",
+      }),
+    ]);
+  });
+
   it("lowers computed enum members and negative literal types", async () => {
     const entryPath = await writeContractProject(
       {
