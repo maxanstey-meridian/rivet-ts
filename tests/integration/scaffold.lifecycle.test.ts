@@ -7,8 +7,11 @@ import { PROJECT_ROOT } from "../support/paths.js";
 import {
   PLUMB_EXECUTABLE,
   PLUMB_NOT_FOUND,
+  TASK_EXECUTABLE,
+  TASK_NOT_FOUND,
   linkScaffoldDependencies,
   plumbFindings,
+  runTask,
   typecheckScaffoldedWorkspace,
 } from "../support/scaffold-oracles.js";
 import { makeTempDir, removeDir } from "../support/temp.js";
@@ -255,6 +258,34 @@ describe("scaffold lifecycle", () => {
         location: "apps/api/test/support/fake-quote-store.ts:5",
       },
     ]);
+  });
+
+  type PlumbLookup = {
+    readonly via: string;
+    readonly env: (fake: string) => Record<string, string>;
+  };
+  it.for<PlumbLookup>([
+    { via: "PLUMB", env: (fake) => ({ PLUMB: fake }) },
+    {
+      via: "PATH",
+      env: (fake) => ({
+        PLUMB: "",
+        PATH: `${path.dirname(fake)}${path.delimiter}${process.env["PATH"] ?? ""}`,
+      }),
+    },
+  ])("runs plumb from $via through the Taskfile's plumb task", async ({ env }, context) => {
+    const task = TASK_EXECUTABLE ?? context.skip(TASK_NOT_FOUND);
+    const fakeDirectory = await makeTempDir("rivet-ts-fake-plumb-");
+    context.onTestFinished(() => removeDir(fakeDirectory));
+    const fake = path.join(fakeDirectory, "plumb");
+    const argsFile = path.join(fakeDirectory, "args");
+    await fs.writeFile(fake, `#!/bin/sh\nprintf '%s' "$1" > ${JSON.stringify(argsFile)}\n`, {
+      mode: 0o755,
+    });
+
+    await runTask(task, outputDirectory, "plumb", env(fake));
+
+    await expect(fs.readFile(argsFile, "utf8")).resolves.toBe(".");
   });
 
   it("keeps the embedded golden configs in sync with plumb's configs/", async (context) => {

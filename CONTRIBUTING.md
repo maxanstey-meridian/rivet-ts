@@ -15,6 +15,7 @@ pnpm build && pnpm check && pnpm lint && pnpm fmt:check && pnpm test
 
 - **Rivet.** `tests/integration/rivet-tool-from.lifecycle.test.ts` runs every lowerable fixture through the pinned Rivet release (`DEFAULT_RIVET_VERSION` in `src/config/rivet-binary.ts`, or `RIVET_VERSION`). The first run downloads the release into the rivet-ts cache, exactly as `rivet-ts rivet` does. It also checks that `tests/rivet-contract-schema.json` equals the schema at that release's tag, so it needs network access. When you move the pin, re-vendor the schema from the new tag.
 - **Plumb.** The scaffold suite runs Plumb on fresh scaffolds when `PLUMB` points at the executable or `plumb` is on `PATH` (a shell alias is not). Without it, those tests are reported as skipped, with the reason. A `PLUMB` that does not exist fails the run.
+- **Task.** The scaffolded `Taskfile.yml`'s `plumb` task is run (against a stand-in plumb) when [go-task](https://taskfile.dev) is on `PATH`, and skipped otherwise.
 
 ## Why some runtime-looking packages are devDependencies
 

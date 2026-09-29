@@ -6,6 +6,10 @@
 - `RivetHandlerInput` (and so `RivetHandler`) now matches what `rivet-ts/hono` delivers, following the params the endpoint lowers to. Every route `{placeholder}` is under `params` (typed from the `params`/`input` key naming it, else `string`): a multipart endpoint's `body` no longer lists its route keys, a `GET`/`DELETE` input's route keys moved from `query` to `params` (and `query` is absent when nothing is left), a body method gains `params` for its placeholders, and a route with placeholders but no `input` now takes `{ params }` instead of no argument. With explicit `params`/`query`, `input` is `body` on every method, as the lowerer emits it. Handlers that read a route value from `body` or `query` got `undefined` at runtime; read it from `params`.
 - `DiscoveredEndpoint` drops `hasInput`, `hasParams` and `hasQuery`; `scaffold-mock` now derives the handler input from the lowered params, so a scaffolded route with only placeholders (`DELETE /members/{id}`) forwards `{ params }` to its use case instead of `{}`.
 
+## Unreleased — fixes
+
+- The scaffolded `Taskfile.yml`'s `plumb` task runs `${PLUMB:-plumb} .` (the `PLUMB` executable, else `plumb` on `PATH`) instead of the nonexistent `~/.meridian/plumb/plumb`.
+
 ## 0.14.0 — breaking
 
 - The lowering entry point is now the synchronous function `lowerContracts(entryPath, { tsconfigPath? })`. The `TypeScriptRivetContractLowerer` class, the `RivetContractLowerer` port, the `LowerTsContractsToRivetContract` use case and its deprecated `LowerContractBundleToRivetContract` alias are removed from the `rivet-ts` export. Replace `await new LowerTsContractsToRivetContract(new TypeScriptRivetContractLowerer(tsconfig)).execute({ entryPath })` with `lowerContracts(entryPath, { tsconfigPath: tsconfig })`.

@@ -56,20 +56,11 @@ export const typecheckScaffoldedWorkspace = async (outputDirectory: string): Pro
   await runTsc(path.join(outputDirectory, "packages", "contracts", "tsconfig.json"));
 };
 
-/**
- * Plumb, from `PLUMB` (which must then exist) or else `plumb` on `PATH`;
- * `undefined` when neither provides it. A shell alias is not on `PATH`.
- */
-const resolvePlumb = (): string | undefined => {
-  const { PLUMB, PATH = "" } = process.env;
-  if (PLUMB) {
-    if (!existsSync(PLUMB)) {
-      throw new Error(`PLUMB is set to ${PLUMB}, which does not exist.`);
-    }
-    return realpathSync(PLUMB);
-  }
+/** `name` on `PATH`, resolved through symlinks; a shell alias is not on `PATH`. */
+const findOnPath = (name: string): string | undefined => {
+  const { PATH = "" } = process.env;
   const onPath = PATH.split(path.delimiter)
-    .map((directory) => path.join(directory, "plumb"))
+    .map((directory) => path.join(directory, name))
     .find((candidate) => {
       try {
         accessSync(candidate, constants.X_OK);
@@ -81,9 +72,35 @@ const resolvePlumb = (): string | undefined => {
   return onPath === undefined ? undefined : realpathSync(onPath);
 };
 
+/** Plumb, from `PLUMB` (which must then exist) or else `plumb` on `PATH`. */
+const resolvePlumb = (): string | undefined => {
+  const { PLUMB } = process.env;
+  if (PLUMB) {
+    if (!existsSync(PLUMB)) {
+      throw new Error(`PLUMB is set to ${PLUMB}, which does not exist.`);
+    }
+    return realpathSync(PLUMB);
+  }
+  return findOnPath("plumb");
+};
+
 export const PLUMB_EXECUTABLE = resolvePlumb();
 
 export const PLUMB_NOT_FOUND = "plumb not found: set PLUMB=<path to plumb> or put plumb on PATH";
+
+/** go-task, which runs the scaffolded `Taskfile.yml`. */
+export const TASK_EXECUTABLE = findOnPath("task");
+
+export const TASK_NOT_FOUND = "task (go-task) not found on PATH";
+
+/** Runs a scaffolded Taskfile task with `env` added to the environment. */
+export const runTask = (
+  task: string,
+  outputDirectory: string,
+  name: string,
+  env: Readonly<Record<string, string>>,
+): Promise<{ readonly stdout: string; readonly stderr: string }> =>
+  execFileAsync(task, [name], { cwd: outputDirectory, env: { ...process.env, ...env } });
 
 export type PlumbFinding = {
   readonly rule: string;

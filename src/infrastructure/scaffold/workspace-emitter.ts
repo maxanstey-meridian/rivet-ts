@@ -25,7 +25,7 @@ import { toKebabCase } from "../codegen/kebab-case.js";
  * ```
  *
  * Mirrors `~/Sites/golden` (the Meridian exemplar). The lint/format configs are
- * embedded copies of plumb's golden base configs (`~/.meridian/plumb/configs/`);
+ * embedded copies of plumb's golden base configs (plumb's `configs/`);
  * a freshly scaffolded repo passes `plumb .` with zero findings by construction.
  */
 
@@ -164,7 +164,7 @@ export const toPackageScope = (projectName: string): string =>
 
 const trimTsExtension = (value: string): string => value.replace(/\.ts$/u, "");
 
-/* ─── embedded golden base configs (source: ~/.meridian/plumb/configs/) ────── */
+/* ─── embedded golden base configs (source: plumb's configs/) ───────────────── */
 
 const OXLINTRC_SOURCE = jsonFile({
   ignorePatterns: ["**/generated/**"],
@@ -241,6 +241,14 @@ const emitPnpmWorkspace = (): string =>
     "",
   ].join("\n");
 
+const PLUMB_TASK = [
+  "  plumb:",
+  "    desc: Check the repo against Meridian doctrine (plumb from $PLUMB, else on PATH)",
+  "    cmds:",
+  "      - ${PLUMB:-plumb} .",
+  "",
+];
+
 const emitTaskfile = (workspace: Workspace): string => {
   const scope = workspace.packageScope;
 
@@ -266,11 +274,7 @@ const emitTaskfile = (workspace: Workspace): string => {
       "      # e.g. dotnet run --project <api.csproj path via Rivet.Tool> --output ./packages/contracts/generated",
       `      - pnpm --filter ${scope}/contracts exec openapi-typescript ./generated/openapi.json -o ./generated/schema.d.ts`,
       "",
-      "  plumb:",
-      "    desc: Check the repo against Meridian doctrine",
-      "    cmds:",
-      "      - ~/.meridian/plumb/plumb .",
-      "",
+      ...PLUMB_TASK,
     ].join("\n");
   }
 
@@ -310,11 +314,7 @@ const emitTaskfile = (workspace: Workspace): string => {
     "    cmds:",
     "      - task: api:test",
     "",
-    "  plumb:",
-    "    desc: Check the repo against Meridian doctrine",
-    "    cmds:",
-    "      - ~/.meridian/plumb/plumb .",
-    "",
+    ...PLUMB_TASK,
   ].join("\n");
 };
 

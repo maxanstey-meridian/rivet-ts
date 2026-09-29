@@ -122,7 +122,7 @@ unless you pass `--force`.
 - `task api:run` — promote the API to a real server; point the UI at it by
   swapping the plugin's fetch dispatch for `{ baseUrl }`.
 - `task api:test` — typecheck + vitest.
-- `task plumb` — Meridian doctrine check (zero findings on a fresh scaffold).
+- `task plumb` — Meridian doctrine check, running `$PLUMB` or else `plumb` on `PATH`.
 
 ## 4. Consuming the client
 
