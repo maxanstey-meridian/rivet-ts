@@ -64,6 +64,96 @@ describe("zod-schema-emitter generics", () => {
       exact: true,
     });
   });
+
+  // The lowerer refuses `T | false` today; hand-built documents can still carry one.
+  it("resolves the outer type parameter inside a union type argument", () => {
+    const typeParam: RivetType = { kind: "typeParam", name: "T" };
+    const document = new RivetContractDocument({
+      types: [
+        new RivetTypeDefinition({
+          name: "Wrapper",
+          typeParameters: ["T"],
+          properties: [{ name: "value", type: typeParam, optional: false }],
+        }),
+        new RivetTypeDefinition({
+          name: "Page",
+          typeParameters: ["T"],
+          properties: [
+            {
+              name: "data",
+              type: {
+                kind: "generic",
+                name: "Wrapper",
+                typeArgs: [
+                  { kind: "union", variants: [typeParam, { kind: "literal", value: false }] },
+                ],
+              },
+              optional: false,
+            },
+          ],
+        }),
+      ],
+    });
+
+    const result = zodSourceForType(
+      { kind: "generic", name: "Page", typeArgs: [numberType] },
+      document,
+    );
+
+    expect(evaluate(result.source).safeParse({ data: { value: 1 } }).success).toBe(true);
+    expect(evaluate(result.source).safeParse({ data: { value: false } }).success).toBe(true);
+    expect(evaluate(result.source).safeParse({ data: { value: "x" } }).success).toBe(false);
+  });
+});
+
+describe("zod-schema-emitter recursion", () => {
+  const typeParam: RivetType = { kind: "typeParam", name: "T" };
+  const generic = (name: string, typeArg: RivetType): RivetType => ({
+    kind: "generic",
+    name,
+    typeArgs: [typeArg],
+  });
+  const genericType = (name: string, properties: readonly RivetPropertyDefinition[]) =>
+    new RivetTypeDefinition({ name, typeParameters: ["T"], properties });
+  const box = genericType("Box", [{ name: "value", type: typeParam, optional: false }]);
+
+  it("walks a generic instantiated inside itself with other arguments", () => {
+    const document = new RivetContractDocument({
+      types: [
+        box,
+        genericType("Nested", [
+          { name: "outer", type: generic("Box", generic("Box", typeParam)), optional: false },
+        ]),
+      ],
+    });
+
+    const result = zodSourceForType(generic("Nested", stringType), document);
+
+    expect(result).toEqual({
+      source: 'z.object({ "outer": z.object({ "value": z.object({ "value": z.string() }) }) })',
+      exact: true,
+    });
+  });
+
+  it.each([
+    ["the same instantiation", generic("Tree", typeParam)],
+    ["ever-deeper instantiations", generic("Tree", generic("Box", typeParam))],
+  ])("stops at a generic that recurses into %s", (_, childType) => {
+    const document = new RivetContractDocument({
+      types: [
+        box,
+        genericType("Tree", [
+          { name: "value", type: typeParam, optional: false },
+          { name: "child", type: childType, optional: true },
+        ]),
+      ],
+    });
+
+    const result = zodSourceForType(generic("Tree", stringType), document);
+
+    expect(result.exact).toBe(false);
+    expect(evaluate(result.source).safeParse({ value: "root" }).success).toBe(true);
+  });
 });
 
 describe("zod-schema-emitter constraints", () => {

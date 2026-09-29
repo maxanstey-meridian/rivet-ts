@@ -273,14 +273,14 @@ const synthesize = (type: RivetType, context: TypeWalkContext): ZodSourceResult 
       if (!typeDef) {
         return inexact(`unknown type "${type.name}"`);
       }
-      if (context.visiting.has(type.name)) {
+      const nested = enterTypeDefinition(context, typeDef);
+      if (!nested) {
         return inexact(`recursive type "${type.name}"`);
       }
       if (typeDef.typeParameters.length > 0) {
         return inexact(`generic type "${type.name}" without arguments`);
       }
 
-      const nested = enterTypeDefinition(context, typeDef);
       return typeDef.type
         ? synthesize(typeDef.type, nested)
         : synthesizeObject(typeDef.properties, nested);
@@ -291,11 +291,10 @@ const synthesize = (type: RivetType, context: TypeWalkContext): ZodSourceResult 
       if (!typeDef) {
         return inexact(`unknown generic type "${type.name}"`);
       }
-      if (context.visiting.has(type.name)) {
+      const nested = enterTypeDefinition(context, typeDef, type.typeArgs);
+      if (!nested) {
         return inexact(`recursive generic type "${type.name}"`);
       }
-
-      const nested = enterTypeDefinition(context, typeDef, type.typeArgs);
       return typeDef.type
         ? synthesize(typeDef.type, nested)
         : synthesizeObject(typeDef.properties, nested);

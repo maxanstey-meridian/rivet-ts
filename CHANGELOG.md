@@ -10,6 +10,7 @@
 ## Unreleased — fixes
 
 - The scaffolded `Taskfile.yml`'s `plumb` task runs `${PLUMB:-plumb} .` (the `PLUMB` executable, else `plumb` on `PATH`) instead of the nonexistent `~/.meridian/plumb/plumb`.
+- `scaffold-mock` no longer reports a generic nested in itself with other arguments (`Nested<T> = { outer: Box<Box<T>> }`) as recursive: the mock is synthesized instead of a TODO stub, and the body schema is exact instead of `z.unknown()`. Recursion is detected per instantiation, and a generic whose instantiations keep nesting (`Tree<T> = { child: Tree<Box<T>> }`) is still treated as recursive.
 
 ## 0.14.0 — breaking
 

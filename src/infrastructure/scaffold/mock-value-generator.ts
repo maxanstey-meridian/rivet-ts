@@ -247,7 +247,8 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): TypeSynthes
         };
       }
 
-      if (context.visiting.has(type.name)) {
+      const nestedContext = enterTypeDefinition(context, typeDef);
+      if (!nestedContext) {
         return {
           kind: "todo",
           message: `Endpoint "${context.endpointName}" references recursive type "${type.name}", which scaffold-mock does not synthesize in v1.`,
@@ -260,8 +261,6 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): TypeSynthes
           message: `Endpoint "${context.endpointName}" references generic type "${type.name}" without type arguments.`,
         };
       }
-
-      const nestedContext = enterTypeDefinition(context, typeDef);
 
       if (typeDef.type) {
         return synthesizeType(typeDef.type, nestedContext);
@@ -279,14 +278,13 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): TypeSynthes
         };
       }
 
-      if (context.visiting.has(type.name)) {
+      const nestedContext = enterTypeDefinition(context, typeDef, type.typeArgs);
+      if (!nestedContext) {
         return {
           kind: "todo",
           message: `Endpoint "${context.endpointName}" references recursive generic type "${type.name}", which scaffold-mock does not synthesize in v1.`,
         };
       }
-
-      const nestedContext = enterTypeDefinition(context, typeDef, type.typeArgs);
 
       if (typeDef.type) {
         return synthesizeType(typeDef.type, nestedContext);
