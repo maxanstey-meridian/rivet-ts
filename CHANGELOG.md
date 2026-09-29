@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — breaking
+## 0.14.0 — breaking
 
 - The lowering entry point is now the synchronous function `lowerContracts(entryPath, { tsconfigPath? })`. The `TypeScriptRivetContractLowerer` class, the `RivetContractLowerer` port, the `LowerTsContractsToRivetContract` use case and its deprecated `LowerContractBundleToRivetContract` alias are removed from the `rivet-ts` export. Replace `await new LowerTsContractsToRivetContract(new TypeScriptRivetContractLowerer(tsconfig)).execute({ entryPath })` with `lowerContracts(entryPath, { tsconfigPath: tsconfig })`.
 - `rivet-ts rivet --help` / `rivet-ts rivet -- --version` now reach the Rivet binary instead of printing rivet-ts's own usage/version.
@@ -22,7 +22,7 @@
 - The repository no longer ships the legacy `samples/myapp` workspace (pinned to rivet-ts 0.9.1, untested, importing files that no longer exist). Run `rivet-ts scaffold` or `rivet-ts scaffold-mock` for a current reference app.
 - The default Rivet pin moves from `v0.40.0` to `v0.44.1` (the latest published release). Its `--from` refuses a `.Secure(name)` endpoint unless the scheme is defined with `--security name=<spec>` (RIV2002). Set `RIVET_VERSION` or `rivet.version` to stay on an older release.
 
-## Unreleased — fixes
+## 0.14.0 — fixes
 
 - A standalone `null` property type reports `UNSUPPORTED_NULL_TYPE` with the `T | null` hint (it fell through to a generic "Unsupported type expression"), and a computed or numeric endpoint member name is reported as such instead of "Only identifier endpoint names are supported".
 - The Vite plugin watches every module the contract program compiles, including modules imported through tsconfig `paths` aliases, and `scaffold-mock` copies the same set (both previously followed relative import specifiers only).
