@@ -17,6 +17,7 @@ import {
   enrichDocumentWithConstraints,
   readOpenApiConstraints,
 } from "./infrastructure/scaffold/openapi-constraint-reader.js";
+import { readPackageManifest } from "./infrastructure/scaffold/workspace-emitter.js";
 import { lowerContracts } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { ensureRivetBinary } from "./infrastructure/vite/rivet-binary.js";
 import { formatDiagnostic } from "./interfaces/diagnostics.js";
@@ -40,12 +41,6 @@ const USAGE = [
   "  rivet-ts rivet [--] <args passed to the Rivet binary>",
   "",
 ].join("\n");
-
-const readOwnVersion = async (): Promise<string> => {
-  const manifestPath = new URL("../package.json", import.meta.url);
-  const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8")) as { version?: string };
-  return manifest.version ?? "unknown";
-};
 
 const isUsageError = (error: unknown): error is Error =>
   error instanceof TypeError &&
@@ -71,7 +66,7 @@ export const runCli = async (args: readonly string[], io: CliIO = DEFAULT_IO): P
   }
 
   if (args.includes("--version")) {
-    io.stdout(`${await readOwnVersion()}\n`);
+    io.stdout(`${(await readPackageManifest()).version ?? "unknown"}\n`);
     return 0;
   }
 

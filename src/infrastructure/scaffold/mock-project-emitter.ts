@@ -494,9 +494,9 @@ const API_SOURCE_FILES = [
 ];
 
 export const emitMockProject = async (config: MockProjectConfig): Promise<void> => {
-  const sourceDependencies = config.sourceFiles;
-  const entryDependency = sourceDependencies.find(
-    (dependency) => path.resolve(dependency.absolutePath) === path.resolve(config.entryPath),
+  const entryAbsolutePath = path.resolve(config.entryPath);
+  const entryDependency = config.sourceFiles.find(
+    (dependency) => dependency.absolutePath === entryAbsolutePath,
   );
 
   if (!entryDependency) {
@@ -510,9 +510,7 @@ export const emitMockProject = async (config: MockProjectConfig): Promise<void> 
 
   // The entry and its local imports are copied into src/ preserving their
   // relative layout, so every reference to the entry derives from where it lands.
-  const toApiSourcePath = (relativePath: string): string => relativePath.split(path.sep).join("/");
-  for (const dependency of sourceDependencies) {
-    const landed = toApiSourcePath(dependency.relativePath);
+  for (const { relativePath: landed } of config.sourceFiles) {
     if (API_SOURCE_FILES.includes(landed)) {
       throw new Error(
         `Entry dependency "${landed}" collides with a scaffold-emitted file in apps/api/src/. ` +
@@ -522,10 +520,10 @@ export const emitMockProject = async (config: MockProjectConfig): Promise<void> 
   }
 
   const copiedSources = await Promise.all(
-    sourceDependencies.map(
+    config.sourceFiles.map(
       async (dependency) =>
         [
-          `apps/api/src/${toApiSourcePath(dependency.relativePath)}`,
+          `apps/api/src/${dependency.relativePath}`,
           await fs.readFile(dependency.absolutePath, "utf8"),
         ] as const,
     ),
@@ -536,7 +534,7 @@ export const emitMockProject = async (config: MockProjectConfig): Promise<void> 
     projectName: config.projectName,
     variant: "full",
     document: config.document,
-    contractEntryRelativePath: toApiSourcePath(entryDependency.relativePath),
+    contractEntryRelativePath: entryDependency.relativePath,
     // The facade re-exports TYPE identifiers, so it needs the exported
     // interface names — the brand strings do not resolve.
     contractNames: groups.map((group) => group.contractExportName),

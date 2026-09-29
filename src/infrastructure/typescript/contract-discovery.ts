@@ -2,6 +2,7 @@
 import ts from "typescript";
 import type { HttpMethod } from "../../domain/contract.js";
 import type { ExtractionDiagnostic } from "../../domain/diagnostic.js";
+import { toLoweredEndpointName } from "../../domain/handler-types.js";
 import type { DiscoveredContract } from "../../domain/rivet-contract-lowering-result.js";
 import type { RivetExample } from "../../domain/rivet-contract.js";
 import {
@@ -135,12 +136,9 @@ export const indexDeclarations = (
   return declarations;
 };
 
-export const toCamelCase = (value: string): string =>
-  value.charAt(0).toLowerCase() + value.slice(1);
-
 /** The lowered endpoints' `controllerName` for an authored contract name. */
 export const deriveGroupName = (contractName: string): string =>
-  toCamelCase(contractName.replace(/Contract$/u, ""));
+  toLoweredEndpointName(contractName.replace(/Contract$/u, ""));
 
 export const toDiscoveredContract = (contract: DiscoveredContractSpec): DiscoveredContract => ({
   name: contract.name,
@@ -149,7 +147,7 @@ export const toDiscoveredContract = (contract: DiscoveredContractSpec): Discover
   sourceFilePath: contract.sourceFilePath,
   endpoints: contract.endpoints.map((endpoint) => ({
     name: endpoint.name,
-    loweredName: toCamelCase(endpoint.name),
+    loweredName: toLoweredEndpointName(endpoint.name),
     method: endpoint.method,
     route: endpoint.route,
     hasInput: endpoint.hasInput,

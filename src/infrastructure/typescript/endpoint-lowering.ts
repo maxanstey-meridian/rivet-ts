@@ -1,6 +1,7 @@
 // A discovered endpoint to its contract-JSON definition: params, responses, security.
 import ts from "typescript";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
+import { toLoweredEndpointName } from "../../domain/handler-types.js";
 import {
   RivetEndpointDefinition,
   RivetEndpointParam,
@@ -21,7 +22,7 @@ import {
   type LoweringContext,
   type PropertyDescriptor,
 } from "./authoring-syntax.js";
-import { deriveGroupName, toCamelCase, type DiscoveredEndpointSpec } from "./contract-discovery.js";
+import { deriveGroupName, type DiscoveredEndpointSpec } from "./contract-discovery.js";
 import { getDefaultSuccessStatus, isBodyForbiddenStatus } from "./http-status.js";
 import {
   getObjectProperties,
@@ -109,7 +110,7 @@ export const lowerEndpoint = (
       : undefined;
 
   return new RivetEndpointDefinition({
-    name: toCamelCase(endpoint.name),
+    name: toLoweredEndpointName(endpoint.name),
     httpMethod: endpoint.method,
     routeTemplate: endpoint.route,
     params,

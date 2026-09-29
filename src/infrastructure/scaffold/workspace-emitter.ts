@@ -101,7 +101,8 @@ export type PinnedPackage = keyof typeof PINNED_PACKAGE_SECTIONS;
 
 const RIVET_TS_DEPENDENCY_REPOSITORY = "github:maxanstey-meridian/rivet-ts";
 
-const readPackageManifest = async (): Promise<PackageManifest> => {
+/** rivet-ts's own `package.json`. */
+export const readPackageManifest = async (): Promise<PackageManifest> => {
   const manifestText = await fs.readFile(new URL("../../../package.json", import.meta.url), "utf8");
   return JSON.parse(manifestText) as PackageManifest;
 };
