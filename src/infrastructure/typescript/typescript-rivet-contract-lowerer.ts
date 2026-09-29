@@ -1,7 +1,9 @@
+import path from "node:path";
 import ts from "typescript";
 import type { HttpMethod } from "../../domain/contract.js";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import {
+  type ContractSourceFile,
   type DiscoveredContract,
   RivetContractLoweringResult,
 } from "../../domain/rivet-contract-lowering-result.js";
@@ -425,7 +427,32 @@ export const lowerContracts = (
     document,
     diagnostics,
     contracts: contracts.map(toDiscoveredContract),
+    sourceFiles: toContractSourceFiles(
+      program
+        .getSourceFiles()
+        .filter((file) => !file.isDeclarationFile && !program.isSourceFileFromExternalLibrary(file))
+        .map((file) => path.resolve(file.fileName)),
+    ),
   });
+};
+
+const isWithin = (directory: string, candidate: string): boolean => {
+  const relative = path.relative(directory, candidate);
+  return !(relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative));
+};
+
+const toContractSourceFiles = (filePaths: readonly string[]): ContractSourceFile[] => {
+  let root = filePaths.length > 0 ? path.dirname(filePaths[0]) : "";
+  for (const filePath of filePaths) {
+    while (!isWithin(root, filePath) && path.dirname(root) !== root) {
+      root = path.dirname(root);
+    }
+  }
+
+  return [...filePaths].sort().map((absolutePath) => ({
+    absolutePath,
+    relativePath: path.relative(root, absolutePath).split(path.sep).join("/"),
+  }));
 };
 
 const toDiscoveredContract = (contract: DiscoveredContractSpec): DiscoveredContract => ({

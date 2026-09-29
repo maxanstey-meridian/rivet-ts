@@ -1,9 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { DiscoveredContract } from "../../domain/rivet-contract-lowering-result.js";
+import type {
+  ContractSourceFile,
+  DiscoveredContract,
+} from "../../domain/rivet-contract-lowering-result.js";
 import type { RivetContractDocument, RivetType } from "../../domain/rivet-contract.js";
 import { toKebabCase } from "../codegen/kebab-case.js";
-import { collectLocalDependencies } from "../typescript/local-source-dependencies.js";
 import { generateEndpointMock } from "./mock-value-generator.js";
 import {
   checkOutDirSafety,
@@ -29,6 +31,7 @@ export type MockProjectConfig = {
   readonly entryPath: string;
   readonly force: boolean;
   readonly contracts: readonly DiscoveredContract[];
+  readonly sourceFiles: readonly ContractSourceFile[];
   readonly document: RivetContractDocument;
 };
 
@@ -721,7 +724,7 @@ export const buildBootstrapOpenApiDocument = (config: {
 };
 
 export const emitMockProject = async (config: MockProjectConfig): Promise<void> => {
-  const sourceDependencies = await collectLocalDependencies(config.entryPath);
+  const sourceDependencies = config.sourceFiles;
   const entryDependency = sourceDependencies.find(
     (dependency) => path.resolve(dependency.absolutePath) === path.resolve(config.entryPath),
   );
