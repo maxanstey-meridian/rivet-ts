@@ -3,6 +3,8 @@
 ## Unreleased — breaking
 
 - The default Rivet pin moves from `v0.44.1` to `v0.45.0`. Its `--from` is stricter about the contract JSON, a nullable property is no longer implicitly optional (rivet-ts already writes explicit optionality, so its output is unaffected), the `FileRouteDefinition.ContentType` alias is gone, and duplicate response header names per status are refused (RIV1109). The contract JSON schema is unchanged. Set `RIVET_VERSION` or `rivet.version` to stay on an older release.
+- `RivetHandlerInput` (and so `RivetHandler`) now matches what `rivet-ts/hono` delivers, following the params the endpoint lowers to. Every route `{placeholder}` is under `params` (typed from the `params`/`input` key naming it, else `string`): a multipart endpoint's `body` no longer lists its route keys, a `GET`/`DELETE` input's route keys moved from `query` to `params` (and `query` is absent when nothing is left), a body method gains `params` for its placeholders, and a route with placeholders but no `input` now takes `{ params }` instead of no argument. With explicit `params`/`query`, `input` is `body` on every method, as the lowerer emits it. Handlers that read a route value from `body` or `query` got `undefined` at runtime; read it from `params`.
+- `DiscoveredEndpoint` drops `hasInput`, `hasParams` and `hasQuery`; `scaffold-mock` now derives the handler input from the lowered params, so a scaffolded route with only placeholders (`DELETE /members/{id}`) forwards `{ params }` to its use case instead of `{}`.
 
 ## 0.14.0 — breaking
 

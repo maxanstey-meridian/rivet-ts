@@ -2,10 +2,8 @@ import { ExtractionDiagnostic } from "./diagnostic.js";
 import { RivetContractDocument } from "./rivet-contract.js";
 
 /**
- * Authored-spec facts surfaced by the contract-discovery stage of the single
- * lowering pass (X13 collapse). Consumers that need the authored shape —
- * e.g. the scaffold-mock handler generator, which mirrors the type-level
- * RivetHandlerInput bag — read these instead of the lowered document.
+ * An authored endpoint as contract discovery found it, joined to its lowered
+ * document endpoint through `loweredName`.
  */
 export type DiscoveredEndpoint = Readonly<{
   /** Authored (PascalCase) endpoint member name. */
@@ -14,9 +12,6 @@ export type DiscoveredEndpoint = Readonly<{
   loweredName: string;
   method: string;
   route: string;
-  hasInput: boolean;
-  hasParams: boolean;
-  hasQuery: boolean;
 }>;
 
 export type DiscoveredContract = Readonly<{

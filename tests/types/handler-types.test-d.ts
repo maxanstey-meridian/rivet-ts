@@ -4,6 +4,7 @@ import {
   type ContractEndpointKey,
   type EndpointSpecOf,
   type RivetHandler,
+  type RivetHandlerInput,
   type RivetHandlerOwner,
   type RivetHandlerResult,
 } from "../../src/domain/handler-types.js";
@@ -191,4 +192,106 @@ test("RivetHandler keeps body-method input mapped to { body }", () => {
 
   expectTypeOf<SearchInput>().toEqualTypeOf<{ readonly body: DirectorySearchRequest }>();
   expectTypeOf<SearchInput>().not.toHaveProperty("query");
+});
+
+// Route placeholders: the lowerer gives every `{placeholder}` a `route` param,
+// and the Hono adapter delivers route params under `params`, whichever spec key
+// declared them.
+
+interface RoutePlaceholderContract extends Contract<"RoutePlaceholderContract"> {
+  Upload: Endpoint<{
+    method: "PUT";
+    route: "/api/documents/{documentId}";
+    input: { readonly documentId: string; readonly file: File; readonly title?: string };
+    response: void;
+    acceptsFile: true;
+  }>;
+
+  Search: Endpoint<{
+    method: "GET";
+    route: "/api/teams/{teamId}/members";
+    input: { readonly teamId: number; readonly q?: string };
+    response: void;
+  }>;
+
+  Get: Endpoint<{
+    method: "GET";
+    route: "/api/teams/{teamId}";
+    input: { readonly teamId: number };
+    response: void;
+  }>;
+
+  Remove: Endpoint<{ method: "DELETE"; route: "/api/members/{id}"; response: void }>;
+
+  Update: Endpoint<{
+    method: "PATCH";
+    route: "/api/members/{id}";
+    input: { readonly id: number; readonly name: string };
+    response: void;
+  }>;
+
+  Rename: Endpoint<{
+    method: "POST";
+    route: "/api/teams/{teamId}/members/{memberId}";
+    input: { readonly name: string };
+    response: void;
+  }>;
+
+  Move: Endpoint<{
+    method: "PUT";
+    route: "/api/teams/{teamId}/members/{memberId}";
+    params: { readonly teamId: number };
+    query: { readonly force?: boolean };
+    input: { readonly position: number };
+    response: void;
+  }>;
+}
+
+type InputOf<TKey extends ContractEndpointKey<RoutePlaceholderContract>> = RivetHandlerInput<
+  RoutePlaceholderContract,
+  TKey
+>;
+
+test("a multipart input's route placeholder is a param, not a body field", () => {
+  expectTypeOf<InputOf<"Upload">>().toEqualTypeOf<{
+    readonly params: { readonly documentId: string };
+    readonly body: { readonly file: File; readonly title?: string };
+  }>();
+});
+
+test("a GET input's route placeholder is a param and the rest is the query", () => {
+  expectTypeOf<InputOf<"Search">>().toEqualTypeOf<{
+    readonly params: { readonly teamId: number };
+    readonly query: { readonly q?: string };
+  }>();
+});
+
+test("a GET input made only of route placeholders has no query", () => {
+  expectTypeOf<InputOf<"Get">>().toEqualTypeOf<{ readonly params: { readonly teamId: number } }>();
+});
+
+test("an undeclared route placeholder is a string param", () => {
+  expectTypeOf<InputOf<"Remove">>().toEqualTypeOf<{ readonly params: { readonly id: string } }>();
+  expectTypeOf<RivetHandler<RoutePlaceholderContract, "Remove">>().parameters.toEqualTypeOf<
+    [{ readonly params: { readonly id: string } }]
+  >();
+});
+
+test("a body method's input stays the body and its route placeholders are params too", () => {
+  expectTypeOf<InputOf<"Update">>().toEqualTypeOf<{
+    readonly params: { readonly id: number };
+    readonly body: { readonly id: number; readonly name: string };
+  }>();
+  expectTypeOf<InputOf<"Rename">>().toEqualTypeOf<{
+    readonly params: { readonly teamId: string; readonly memberId: string };
+    readonly body: { readonly name: string };
+  }>();
+});
+
+test("explicit params gain the undeclared placeholders, and input is the body", () => {
+  expectTypeOf<InputOf<"Move">>().toEqualTypeOf<{
+    readonly params: { readonly teamId: number; readonly memberId: string };
+    readonly query: { readonly force?: boolean };
+    readonly body: { readonly position: number };
+  }>();
 });

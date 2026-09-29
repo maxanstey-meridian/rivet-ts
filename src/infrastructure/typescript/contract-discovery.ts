@@ -34,9 +34,6 @@ export type DiscoveredEndpointSpec = {
   successStatus: number | null;
   formEncoded: boolean;
   acceptsFile: boolean;
-  hasInput: boolean;
-  hasParams: boolean;
-  hasQuery: boolean;
   fileContentType: string | undefined;
   requestExamples: readonly RivetExample[];
   responseExamples: readonly ResponseExampleGroup[];
@@ -149,9 +146,6 @@ export const toDiscoveredContract = (contract: DiscoveredContractSpec): Discover
     loweredName: toLoweredEndpointName(endpoint.name),
     method: endpoint.method,
     route: endpoint.route,
-    hasInput: endpoint.hasInput,
-    hasParams: endpoint.hasParams,
-    hasQuery: endpoint.hasQuery,
   })),
 });
 
@@ -316,9 +310,6 @@ const discoverEndpoint = (
     successStatus,
     formEncoded,
     acceptsFile,
-    hasInput: propertyMap.has("input"),
-    hasParams: propertyMap.has("params"),
-    hasQuery: propertyMap.has("query"),
     fileContentType,
     requestExamples: parseRequestExamples(ctx, propertyMap, endpointName, requestMediaType),
     responseExamples: parseResponseExamples(

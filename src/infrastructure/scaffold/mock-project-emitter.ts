@@ -137,14 +137,9 @@ const buildHandlerDescriptor = (
   endpoint: RivetEndpointDefinition,
   document: RivetContractDocument,
 ): HandlerDescriptor => {
-  // The handler signature mirrors the type-level RivetHandlerInput bag, which
-  // derives from the authored spec's input/params/query keys, not from the
-  // lowered params: route-template params lower to source "route" but are
-  // absent from the handler's input type. `input` is a body only on
-  // body-carrying methods; on GET/DELETE the adapter delivers it as `query`.
-  const isBodyMethod = /^(PATCH|POST|PUT)$/iu.test(spec.method);
-  const takesBody = spec.hasInput && isBodyMethod;
-  const takesInput = spec.hasInput || spec.hasParams || spec.hasQuery;
+  // RivetHandlerInput has a slot per lowered param source, so an endpoint
+  // with no lowered params is the one whose handler takes no input.
+  const takesInput = endpoint.params.length > 0;
 
   const mock = generateEndpointMock(endpoint, document);
   const unsupportedParams = endpoint.params.filter(
@@ -191,7 +186,7 @@ const buildHandlerDescriptor = (
     supportsDemoCall:
       !endpoint.params.some((param) => isSupportedParamSource(param.source)) &&
       mock.result.kind === "value",
-    bodySchema: takesBody && bodyParam ? zodSourceForType(bodyParam.type, document) : undefined,
+    bodySchema: bodyParam ? zodSourceForType(bodyParam.type, document) : undefined,
   };
 };
 

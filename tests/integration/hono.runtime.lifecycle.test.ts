@@ -280,8 +280,6 @@ describe("request binding", () => {
 
     expect(response.status).toBe(204);
     await expect(response.text()).resolves.toBe("");
-    // The route placeholder arrives under `params`, although the handler type
-    // (derived from `input`) declares it on `body` (recorded follow-up).
     expect(received).toEqual({
       body: { file: expect.any(File), title: "Quarterly report", description: "Draft" },
       params: { documentId: "doc_123" },
@@ -351,6 +349,7 @@ describe("request binding", () => {
       handlers: {
         GetItem: async ({ params }) => ({ id: params.id }),
         ListItems: async ({ query }) => ({ ...query }),
+        ListTeamItems: async ({ params, query }) => ({ teamId: params.teamId, ...query }),
       },
     });
     return app;
@@ -368,6 +367,11 @@ describe("request binding", () => {
       { page: 1, tags: ["solo"] },
     ],
     ["a route param as its declared number type", "/api/catalog/42", { id: 42 }],
+    [
+      "an input's route placeholder as a route param",
+      "/api/catalog/teams/7?page=2",
+      { teamId: 7, page: 2 },
+    ],
   ])("delivers %s", async (_, route, expected) => {
     const response = await catalogApp().request(route);
 

@@ -59,12 +59,17 @@ export const listMembers: RivetHandler<MembersContract, "List"> = async () => {
 };
 ```
 
-Handler input is derived from the endpoint spec:
+Handler input follows the params the endpoint lowers to, so the type and what
+the adapter delivers agree:
 
-- `input` becomes `body`
-- `params` becomes `params`
-- `query` becomes `query`
-- inputless endpoints receive no argument
+- every `{placeholder}` in `route` is under `params`: typed from the `params`
+  or `input` key naming it (matched case-insensitively), else `string`
+- on `POST`/`PUT`/`PATCH`, `input` is `body`; on a multipart (`acceptsFile`)
+  endpoint, `body` is `input` without its route keys
+- on `GET`/`DELETE`, `input`'s other keys are `query`
+- explicit `params` and `query` are `params` and `query`, and `input` beside
+  them is `body`
+- a slot with no keys is absent, and an endpoint with no params receives no argument
 - `fileResponse: true` handlers are typed as returning a `Blob`
 
 At runtime, JSON bodies use Hono request JSON parsing. `formEncoded` endpoints and multipart endpoints use Hono body parsing. Multipart endpoints pass the selected `File`/`Blob` and form fields under `body`, with route params under `params`.

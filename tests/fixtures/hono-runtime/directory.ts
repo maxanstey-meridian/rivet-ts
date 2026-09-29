@@ -80,6 +80,11 @@ export interface CatalogQuery {
   readonly tags?: string[];
 }
 
+export interface CatalogTeamQuery {
+  readonly teamId: number;
+  readonly page?: number;
+}
+
 export interface CatalogContract extends Contract<"CatalogContract"> {
   GetItem: Endpoint<{
     method: "GET";
@@ -94,6 +99,14 @@ export interface CatalogContract extends Contract<"CatalogContract"> {
     route: "/api/catalog";
     input: CatalogQuery;
     response: CatalogQuery;
+  }>;
+
+  // An input key naming a route placeholder is a route param, not a query param.
+  ListTeamItems: Endpoint<{
+    method: "GET";
+    route: "/api/catalog/teams/{teamId}";
+    input: CatalogTeamQuery;
+    response: CatalogTeamQuery;
   }>;
 }
 

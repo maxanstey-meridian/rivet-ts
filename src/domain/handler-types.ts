@@ -17,25 +17,98 @@ type RivetHandlerSuccessResponse<TSpec> = TSpec extends { readonly fileResponse:
     ? TResponse
     : void;
 
-// Mirrors the lowerer's BODY_HTTP_METHODS gate: only these methods carry a
-// request body. For every other method (GET/DELETE), `input` properties are
-// lowered to query/route params and the Hono adapter delivers them under
-// `query`, so the handler types must present them the same way.
+// The handler input mirrors the params the lowerer writes (endpoint-lowering.ts)
+// and the Hono adapter delivers: `route` params under `params`, `query` params
+// under `query`, and the body (JSON, form or multipart fields) under `body`.
+// The lowerer matches input keys to `{placeholder}`s case-insensitively.
+
+// Mirrors the lowerer's BODY_HTTP_METHODS gate.
 type BodyAuthoringHttpMethod = "PATCH" | "POST" | "PUT";
 
-type HandlerInputBag<TSpec> = (TSpec extends { readonly input: infer T }
-  ? TSpec extends { readonly method: BodyAuthoringHttpMethod }
-    ? { readonly body: T }
-    : { readonly query: T }
-  : unknown) &
-  (TSpec extends { readonly params: infer T } ? { readonly params: T } : unknown) &
-  (TSpec extends { readonly query: infer T } ? { readonly query: T } : unknown);
+type RoutePlaceholders<TRoute> = TRoute extends `${string}{${infer TName}}${infer TRest}`
+  ? TName | RoutePlaceholders<TRest>
+  : never;
+
+type RouteKeysOf<T, TPlaceholder extends string> = {
+  [TKey in keyof T]-?: TKey extends string
+    ? Lowercase<TKey> extends Lowercase<TPlaceholder>
+      ? TKey
+      : never
+    : never;
+}[keyof T];
+
+type UncoveredPlaceholders<TPlaceholder extends string, TKeys> = TPlaceholder extends unknown
+  ? Lowercase<TPlaceholder> extends Lowercase<TKeys & string>
+    ? never
+    : TPlaceholder
+  : never;
+
+type Flatten<T> = { [TKey in keyof T]: T[TKey] };
+
+/** A string param per placeholder that no key of `TDeclared` names. */
+type StringParams<TPlaceholder extends string, TDeclared> = {
+  readonly [TName in UncoveredPlaceholders<TPlaceholder, keyof TDeclared>]: string;
+};
+
+/** `{ [name]: T }`, or nothing when `T` has no keys (the adapter then omits the slot). */
+type Slot<TName extends string, T> = [keyof T] extends [never]
+  ? unknown
+  : { readonly [TKey in TName]: Flatten<T> };
+
+/** A spec key's type, or `{}` when the spec does not declare it. */
+type SpecValue<TSpec, TKey extends "input" | "params" | "query"> = TSpec extends {
+  readonly [TName in TKey]: infer T;
+}
+  ? T
+  : {};
+
+// Any declared input is a body param, even `{}`, so this slot keys off the declaration.
+type BodySlot<TSpec> = TSpec extends { readonly input: infer T } ? { readonly body: T } : unknown;
+
+/** A body method appends every placeholder, typed from the input key naming it. */
+type PlaceholderParams<TInput, TPlaceholder extends string> = {
+  readonly [TName in TPlaceholder]: [RouteKeysOf<TInput, TName>] extends [never]
+    ? string
+    : Exclude<TInput[RouteKeysOf<TInput, TName>], undefined>;
+};
+
+type ExplicitInputBag<TSpec, TPlaceholder extends string> = Slot<
+  "params",
+  SpecValue<TSpec, "params"> & StringParams<TPlaceholder, SpecValue<TSpec, "params">>
+> &
+  Slot<"query", SpecValue<TSpec, "query">> &
+  BodySlot<TSpec>;
+
+type MultipartInputBag<TInput, TRouteKey extends keyof TInput> = Slot<
+  "params",
+  Pick<TInput, TRouteKey>
+> & { readonly body: Flatten<Omit<TInput, TRouteKey>> };
+
+type BodylessInputBag<TInput, TPlaceholder extends string, TRouteKey extends keyof TInput> = Slot<
+  "params",
+  Pick<TInput, TRouteKey> & StringParams<TPlaceholder, Pick<TInput, TRouteKey>>
+> &
+  Slot<"query", Omit<TInput, TRouteKey>>;
+
+type HandlerInputBag<
+  TSpec,
+  TPlaceholder extends string = RoutePlaceholders<
+    TSpec extends { readonly route: infer TRoute } ? TRoute : never
+  >,
+  TInput = SpecValue<TSpec, "input">,
+> = TSpec extends { readonly params: unknown } | { readonly query: unknown }
+  ? ExplicitInputBag<TSpec, TPlaceholder>
+  : TSpec extends { readonly method: BodyAuthoringHttpMethod }
+    ? TSpec extends { readonly acceptsFile: true; readonly input: unknown }
+      ? MultipartInputBag<TInput, RouteKeysOf<TInput, TPlaceholder>>
+      : Slot<"params", PlaceholderParams<TInput, TPlaceholder>> & BodySlot<TSpec>
+    : BodylessInputBag<TInput, TPlaceholder, RouteKeysOf<TInput, TPlaceholder>>;
 
 export type RivetHandlerInput<TContract, TKey extends ContractEndpointKey<TContract>> = [
   keyof HandlerInputBag<EndpointSpecOf<TContract, TKey>>,
 ] extends [never]
   ? {}
-  : HandlerInputBag<EndpointSpecOf<TContract, TKey>>;
+  : Flatten<HandlerInputBag<EndpointSpecOf<TContract, TKey>>>;
 
 export type RivetHandlerResult<
   TContract,
