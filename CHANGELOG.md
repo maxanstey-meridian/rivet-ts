@@ -7,6 +7,7 @@
 - Removed the `rivet-ts/local` entry point (`configureLocalRivet`, `createLocalRivetFetch`, `LocalRivetConfig`). The scaffolds no longer use it.
 - Removed the lowerer-internal exports `EndpointExampleSpec`, `ResponseExamplesSpec` and the unused `RivetEndpointExample` class.
 - `RivetContractLoweringResult` no longer has `toJSON()`: `JSON.stringify(result)` now serialises the whole result, not just its document. Use `result.toJson()` or `result.document`.
+- The Vite plugin's `contract` option (an alias of `entry`) is removed; `entry` is required. Rename `contract:` to `entry:` in `vite.config.ts`.
 - The Rivet binary auto-install refuses a release asset that publishes no sha256 digest instead of installing it unverified. Set `rivet.binaryPath` to use a binary you have verified yourself.
 - CLI usage errors now come from `node:util` `parseArgs`: `Unknown option '--x'` and `Option '--x <value>' argument missing` replace `Unknown argument: --x` and `Flag --x is missing a value.`; a stray positional argument is `Unexpected argument`.
 - `RIVET_VERSION` must be a release version (`0.44.1`, `v0.44.1`, `0.44.1-rc.1`); anything else fails instead of being used as a tag.

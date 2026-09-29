@@ -117,7 +117,7 @@ const runLower = async (args: readonly string[], io: CliIO): Promise<number> => 
 
   const diagnostics = [...lowered.diagnostics];
 
-  // C4: an entry with zero contracts almost always means a wrong --entry;
+  // An entry with zero contracts almost always means a wrong --entry;
   // produce a loud warning instead of silently emitting an empty document.
   if (!lowered.hasErrors && lowered.contracts.length === 0) {
     diagnostics.push(
@@ -135,7 +135,6 @@ const runLower = async (args: readonly string[], io: CliIO): Promise<number> => 
   const json = `${lowered.toJson()}\n`;
 
   if (outputPath) {
-    // C1: create missing parent directories instead of dying on ENOENT.
     await fs.mkdir(path.dirname(path.resolve(outputPath)), { recursive: true });
     await fs.writeFile(outputPath, json, "utf8");
   } else {
@@ -356,7 +355,7 @@ const runRivet = async (args: readonly string[], io: CliIO): Promise<number> => 
  * Resolves the cached Rivet binary (auto-installing on first use, exactly as
  * the vite plugin does) and passes the remaining arguments through verbatim.
  * Scaffolded `task generate` pipelines call this instead of a bare `rivet`
- * that is never on PATH (GAPS 5.1 exit-127).
+ * that is never on PATH.
  */
 const runRivetPassthrough = async (args: readonly string[], io: CliIO): Promise<number> => {
   const passthroughArgs = args[0] === "--" ? args.slice(1) : [...args];

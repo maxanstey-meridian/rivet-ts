@@ -17,11 +17,8 @@ import { formatDiagnostic } from "./interfaces/diagnostics.js";
 
 const execFileAsync = promisify(execFile);
 
-const resolveConfigPath = (baseDir: string, value: string): string => path.resolve(baseDir, value);
-
 export type RivetTsVitePluginOptions = {
-  readonly entry?: string;
-  readonly contract?: string;
+  readonly entry: string;
   readonly apiRoot: string;
   readonly runtimeContractOut?: string;
   readonly clientOutDir?: string;
@@ -43,43 +40,31 @@ type NormalizedPluginOptions = {
   readonly rivetTimeoutMs: number;
 };
 
-const resolveEntryPath = (options: RivetTsVitePluginOptions, baseDir: string): string => {
-  if (options.entry) {
-    return resolveConfigPath(baseDir, options.entry);
-  }
-
-  if (options.contract) {
-    return resolveConfigPath(baseDir, options.contract);
-  }
-
-  throw new Error('rivet-ts/vite requires either an "entry" or "contract" option.');
-};
-
 /**
  * Configured paths are resolved against the directory the Vite config file
  * lives in (falling back to the resolved root), never `process.cwd()` —
  * `vite -c myapp/vite.config.ts` from a parent directory must not resolve
- * entry/apiRoot/clientOutDir relative to the parent (V1).
+ * entry/apiRoot/clientOutDir relative to the parent.
  */
 const normalizeOptions = (
   options: RivetTsVitePluginOptions,
   baseDir: string,
 ): NormalizedPluginOptions => {
-  const apiRoot = resolveConfigPath(baseDir, options.apiRoot);
-  const entryPath = resolveEntryPath(options, baseDir);
+  const apiRoot = path.resolve(baseDir, options.apiRoot);
+  const entryPath = path.resolve(baseDir, options.entry);
   const projectName = path.basename(apiRoot);
   const defaultContractJsonFileName = `${toKebabCase(projectName) || "contract"}.contract.json`;
   const runtimeContractPath = options.runtimeContractOut
-    ? resolveConfigPath(baseDir, options.runtimeContractOut)
+    ? path.resolve(baseDir, options.runtimeContractOut)
     : path.join(apiRoot, "generated", defaultContractJsonFileName);
   const clientOutDir = options.clientOutDir
-    ? resolveConfigPath(baseDir, options.clientOutDir)
+    ? path.resolve(baseDir, options.clientOutDir)
     : path.join(apiRoot, "generated");
 
   return {
     entryPath,
     apiRoot,
-    tsconfigPath: options.tsconfig ? resolveConfigPath(baseDir, options.tsconfig) : undefined,
+    tsconfigPath: options.tsconfig ? path.resolve(baseDir, options.tsconfig) : undefined,
     runtimeContractPath,
     clientOutDir,
     openApiPath: path.join(clientOutDir, "openapi.json"),
@@ -93,21 +78,12 @@ const generateArtifacts = async (
   config: ResolvedConfig,
 ): Promise<readonly string[]> => {
   const lowered = lowerContracts(options.entryPath, { tsconfigPath: options.tsconfigPath });
-  const diagnostics = lowered.diagnostics;
-
-  if (diagnostics.length > 0) {
-    const formatted = diagnostics.map(formatDiagnostic).join("\n");
-    for (const diagnostic of diagnostics) {
-      if (diagnostic.severity === "error") {
-        config.logger.error(formatted);
-        break;
-      }
-    }
-
+  if (lowered.diagnostics.length > 0) {
+    const formatted = lowered.diagnostics.map(formatDiagnostic).join("\n");
     if (lowered.hasErrors) {
+      config.logger.error(formatted);
       throw new Error("rivet-ts/vite failed to reflect the contract.");
     }
-
     config.logger.warn(formatted);
   }
 
@@ -118,11 +94,9 @@ const generateArtifacts = async (
     "utf8",
   );
 
-  // The binary is the sole OpenAPI emitter (Option B): contract JSON in,
-  // `--output <dir>` writes <dir>/openapi.json and nothing else (post-Phase-3
-  // it emits no TS clients, types, or validators). The TypeScript client is
-  // then generated locally from the spec: openapi-typescript types + an
-  // openapi-fetch facade.
+  // The binary is the sole OpenAPI emitter: contract JSON in, `--output <dir>`
+  // writes <dir>/openapi.json. The TypeScript types are generated locally
+  // from that spec.
   const executablePath = await ensureRivetBinary(options.binaryConfig);
 
   // Freshness guard: the spec on disk may be the scaffold-time bootstrap
@@ -178,17 +152,13 @@ const generateArtifacts = async (
     throw new Error(`rivet-ts/vite: the Rivet binary did not write ${options.openApiPath}.`);
   }
 
-  await emitClientPackage(options.clientOutDir, options.openApiPath);
+  await emitClientPackage(options.clientOutDir);
 
   const dependencies = await collectLocalDependencies(options.entryPath);
   return dependencies.map((dependency) => dependency.absolutePath);
 };
 
 export const rivetTs = (options: RivetTsVitePluginOptions): Plugin => {
-  if (!options.entry && !options.contract) {
-    throw new Error('rivet-ts/vite requires either an "entry" or "contract" option.');
-  }
-
   const watchedFiles = new Set<string>();
   let normalized: NormalizedPluginOptions | undefined;
   let resolvedConfig: ResolvedConfig | undefined;
@@ -198,7 +168,7 @@ export const rivetTs = (options: RivetTsVitePluginOptions): Plugin => {
   let resolveDebounced: (() => void) | undefined;
 
   // Editors commonly fire two change events per save; collapse a burst into
-  // one regeneration (GAPS 5.1).
+  // one regeneration.
   const regenerateDebounced = (reason: string): Promise<void> => {
     if (!debounced) {
       debounced = new Promise((resolve) => {
@@ -231,7 +201,7 @@ export const rivetTs = (options: RivetTsVitePluginOptions): Plugin => {
         currentConfig.logger.info(`[rivet-ts] Generating API artifacts (${reason})...`);
         const dependencies = await generateArtifacts(currentOptions, currentConfig);
         // Swap, never clear-then-refill: a change event landing mid-regen must
-        // still match the previous watch set (GAPS 5.1 race).
+        // still match the previous watch set.
         const next = new Set(dependencies.map((dependency) => path.resolve(dependency)));
         // The entry stays watched even if a later regeneration narrows the
         // dependency set.
@@ -252,7 +222,7 @@ export const rivetTs = (options: RivetTsVitePluginOptions): Plugin => {
       resolvedConfig = config;
       const baseDir = config.configFile ? path.dirname(config.configFile) : config.root;
       normalized = normalizeOptions(options, baseDir);
-      // V2: watch the entry regardless of extraction success so a dev server
+      // Watch the entry regardless of extraction success so a dev server
       // started against a broken contract can recover once the file is fixed.
       watchedFiles.add(normalized.entryPath);
     },

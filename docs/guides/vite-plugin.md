@@ -39,7 +39,7 @@ export default defineConfig({
 
 | Option               | Description                                                                                   |
 | -------------------- | --------------------------------------------------------------------------------------------- |
-| `entry`              | Contract entrypoint path (`contract` is a legacy alias; one of the two is required)           |
+| `entry`              | Contract entrypoint path (required)                                                           |
 | `apiRoot`            | Root of the API package (required)                                                            |
 | `runtimeContractOut` | Contract JSON output path. Default: `<apiRoot>/generated/<kebab-cased-api-dir>.contract.json` |
 | `clientOutDir`       | Artifact directory for `openapi.json` + `schema.d.ts`. Default: `<apiRoot>/generated`         |

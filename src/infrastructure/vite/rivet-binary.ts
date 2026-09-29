@@ -127,7 +127,7 @@ export const ensureRivetBinary = async (config: ResolvedRivetBinaryConfig): Prom
   }
 
   // Download + extract into a temp sibling, verify, then atomically rename
-  // into place (B2): a process dying mid-extraction must not leave a
+  // into place: a process dying mid-extraction must not leave a
   // truncated-but-present executable that passes the access() check forever,
   // and concurrent vite processes must not race each other's extraction.
   const stagingDirectory = `${installDirectory}.tmp-${process.pid}`;
