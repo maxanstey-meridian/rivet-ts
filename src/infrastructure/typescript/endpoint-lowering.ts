@@ -21,7 +21,7 @@ import {
   type LoweringContext,
   type PropertyDescriptor,
 } from "./authoring-syntax.js";
-import type { DiscoveredEndpointSpec } from "./contract-discovery.js";
+import { deriveGroupName, toCamelCase, type DiscoveredEndpointSpec } from "./contract-discovery.js";
 import { getDefaultSuccessStatus, isBodyForbiddenStatus } from "./http-status.js";
 import {
   getObjectProperties,
@@ -36,11 +36,6 @@ const ROUTE_PARAM_PATTERN = /\{([^}]+)\}/g;
 
 const parseRouteParamNames = (route: string): string[] =>
   [...route.matchAll(ROUTE_PARAM_PATTERN)].map((match) => match[1]);
-
-const toCamelCase = (value: string): string => value.charAt(0).toLowerCase() + value.slice(1);
-
-const deriveGroupName = (contractName: string): string =>
-  toCamelCase(contractName.replace(/Contract$/u, ""));
 
 export const lowerEndpoint = (
   ctx: LoweringContext,

@@ -135,12 +135,21 @@ export const indexDeclarations = (
   return declarations;
 };
 
+export const toCamelCase = (value: string): string =>
+  value.charAt(0).toLowerCase() + value.slice(1);
+
+/** The lowered endpoints' `controllerName` for an authored contract name. */
+export const deriveGroupName = (contractName: string): string =>
+  toCamelCase(contractName.replace(/Contract$/u, ""));
+
 export const toDiscoveredContract = (contract: DiscoveredContractSpec): DiscoveredContract => ({
   name: contract.name,
   exportedName: contract.exportedName,
+  controllerName: deriveGroupName(contract.name),
   sourceFilePath: contract.sourceFilePath,
   endpoints: contract.endpoints.map((endpoint) => ({
     name: endpoint.name,
+    loweredName: toCamelCase(endpoint.name),
     method: endpoint.method,
     route: endpoint.route,
     hasInput: endpoint.hasInput,

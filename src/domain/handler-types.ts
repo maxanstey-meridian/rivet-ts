@@ -4,6 +4,10 @@ export type ContractEndpointKey<TContract> = {
   [TKey in keyof TContract]-?: TContract[TKey] extends Endpoint<any> ? TKey : never;
 }[keyof TContract];
 
+/** The lowered contract endpoint `name` for an authored endpoint key. */
+export const toLoweredEndpointName = (key: string): string =>
+  `${key.charAt(0).toLowerCase()}${key.slice(1)}`;
+
 export type EndpointSpecOf<TContract, TKey extends ContractEndpointKey<TContract>> =
   TContract[TKey] extends Endpoint<infer TSpec> ? TSpec : never;
 
@@ -16,7 +20,7 @@ type RivetHandlerSuccessResponse<TSpec> = TSpec extends { readonly fileResponse:
 // Mirrors the lowerer's BODY_HTTP_METHODS gate: only these methods carry a
 // request body. For every other method (GET/DELETE), `input` properties are
 // lowered to query/route params and the Hono adapter delivers them under
-// `query`, so the handler types must present them the same way (H1).
+// `query`, so the handler types must present them the same way.
 type BodyAuthoringHttpMethod = "PATCH" | "POST" | "PUT";
 
 type HandlerInputBag<TSpec> = (TSpec extends { readonly input: infer T }

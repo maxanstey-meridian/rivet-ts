@@ -10,6 +10,8 @@ import { RivetContractDocument } from "./rivet-contract.js";
 export type DiscoveredEndpoint = Readonly<{
   /** Authored (PascalCase) endpoint member name. */
   name: string;
+  /** The lowered document endpoint's `name`. */
+  loweredName: string;
   method: string;
   route: string;
   hasInput: boolean;
@@ -26,6 +28,8 @@ export type DiscoveredContract = Readonly<{
    * `import type { ... }` positions.
    */
   exportedName: string;
+  /** The lowered document endpoints' `controllerName`. */
+  controllerName: string;
   sourceFilePath: string;
   endpoints: readonly DiscoveredEndpoint[];
 }>;

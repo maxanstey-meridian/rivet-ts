@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { expect, test } from "vitest";
 import type { Contract, Endpoint } from "../../src/domain/authoring-types.js";
 import { registerRivetHonoRoutes, rivetHttpError, type RivetInvokable } from "../../src/hono.js";
@@ -102,6 +103,8 @@ const contract = {
         {
           name: "body",
           source: "body",
+          type: { kind: "ref", name: "DirectorySearchRequest" },
+          isOptional: false,
         },
       ],
       responses: [
@@ -147,6 +150,8 @@ const contract = {
         {
           name: "body",
           source: "body",
+          type: { kind: "ref", name: "SubmitFormRequest" },
+          isOptional: false,
         },
       ],
       responses: [
@@ -165,18 +170,26 @@ const contract = {
         {
           name: "documentId",
           source: "route",
+          type: { kind: "primitive", type: "string" },
+          isOptional: false,
         },
         {
           name: "file",
           source: "file",
+          type: { kind: "primitive", type: "File" },
+          isOptional: false,
         },
         {
           name: "title",
           source: "formField",
+          type: { kind: "primitive", type: "string" },
+          isOptional: false,
         },
         {
           name: "description",
           source: "formField",
+          type: { kind: "primitive", type: "string" },
+          isOptional: false,
         },
       ],
       responses: [
@@ -557,7 +570,14 @@ test("registerRivetHonoRoutes falls back to the method default status when respo
         httpMethod: "POST",
         routeTemplate: "/api/items",
         controllerName: "items",
-        params: [{ name: "body", source: "body" }],
+        params: [
+          {
+            name: "body",
+            source: "body",
+            type: { kind: "ref", name: "Thing" },
+            isOptional: false,
+          },
+        ],
         responses: [],
       },
       {
@@ -1062,36 +1082,82 @@ test("responses containing only error statuses fall back to the method-default s
   expect(postResponse.status).toBe(201);
 });
 
-test("rivetHttpError rejects body-forbidding statuses (204/205/304) carrying data at the call site (H5)", async () => {
-  for (const status of [204, 205, 304]) {
-    expect(() => rivetHttpError(status, { detail: "must not exist" })).toThrow(
-      new RegExp(`${status}.*must not carry a body`),
-    );
+test("rivetHttpError refuses body-forbidding statuses (204/205/304)", () => {
+  for (const status of [204, 205, 304] as const) {
+    // @ts-expect-error — an HTTPException status always carries content.
+    expect(() => rivetHttpError(status, { detail: "must not exist" })).toThrow(TypeError);
   }
+});
 
-  // Bodyless statuses without data stay constructible and serializable.
+test("a thrown RivetHttpError answers from its route even when the app maps other errors to a structured 500", async () => {
   const app = new Hono();
+  app.onError((_error, context) =>
+    context.json({ code: "internal_error", message: "Unexpected error." }, 500),
+  );
   registerRivetHonoRoutes<DirectoryContract>(app, contract, {
     group: "directory",
     handlers: {
       Search: async () => {
-        throw rivetHttpError(304, undefined);
+        throw rivetHttpError(409, { code: "conflict" } satisfies ConflictDto, {
+          headers: { "x-retry-after": "5", "set-cookie": ["a=1", "b=2"] },
+        });
       },
-      Health: healthHandler,
+      Health: async () => {
+        throw new Error("boom");
+      },
       Export: exportHandler,
       SubmitForm: submitFormHandler,
       UploadDocument: uploadDocumentNoopHandler,
     },
   });
 
-  const response = await app.request("/api/directory/search", {
+  const conflict = await app.request("/api/directory/search", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ query: "Ada" }),
   });
+  expect(conflict.status).toBe(409);
+  expect(conflict.headers.get("x-retry-after")).toBe("5");
+  expect(conflict.headers.getSetCookie()).toEqual(["a=1", "b=2"]);
+  await expect(conflict.json()).resolves.toEqual({ code: "conflict" });
 
-  expect(response.status).toBe(304);
-  await expect(response.text()).resolves.toBe("");
+  const failure = await app.request("/api/directory/health");
+  expect(failure.status).toBe(500);
+  await expect(failure.json()).resolves.toEqual({
+    code: "internal_error",
+    message: "Unexpected error.",
+  });
+});
+
+test("Hono error handling recognises a RivetHttpError thrown by route middleware as an HTTPException", async () => {
+  const app = new Hono();
+  app.onError((error, context) =>
+    error instanceof HTTPException
+      ? error.getResponse()
+      : context.json({ code: "internal_error", message: "Unexpected error." }, 500),
+  );
+  registerRivetHonoRoutes<DirectoryContract>(app, contract, {
+    group: "directory",
+    handlers: {
+      Search: searchEchoHandler,
+      Health: {
+        handler: healthHandler,
+        middleware: [
+          async () => {
+            throw rivetHttpError(401, { code: "unauthorized" });
+          },
+        ],
+      },
+      Export: exportHandler,
+      SubmitForm: submitFormHandler,
+      UploadDocument: uploadDocumentNoopHandler,
+    },
+  });
+
+  const response = await app.request("/api/directory/health");
+
+  expect(response.status).toBe(401);
+  await expect(response.json()).resolves.toEqual({ code: "unauthorized" });
 });
 
 // -- H6: missing multipart field --

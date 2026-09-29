@@ -1,5 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import type { RivetContractDocument } from "../../domain/rivet-contract.js";
 import {
   emitClientFacadeSource,
   emitClientSchemaSource,
@@ -15,11 +17,10 @@ import { toKebabCase } from "../codegen/kebab-case.js";
  * ├── Taskfile.yml / package.json / pnpm-workspace.yaml / README.md
  * ├── apps/
  * │   ├── api/   ← Hono backend (modules/<m>/{domain,application,infrastructure},
- * │   │            <m>-routes.ts + <m>-validation.ts + <m>.module.ts module-local
- * │   │            — suffix-free names, Meridian §9.1/§9.10)
+ * │   │            <m>-routes.ts + <m>-validation.ts + <m>.module.ts module-local)
  * │   └── ui/    ← Nuxt SPA (ssr: false), local-now transport via app.request
  * └── packages/contracts/
- *     ├── generated/{openapi.json, schema.d.ts}   ← read-only artifacts (RV-020)
+ *     ├── generated/{openapi.json, schema.d.ts}   ← read-only artifacts
  *     └── src/index.ts                            ← hand-owned client facade
  * ```
  *
@@ -28,41 +29,133 @@ import { toKebabCase } from "../codegen/kebab-case.js";
  * a freshly scaffolded repo passes `plumb .` with zero findings by construction.
  */
 
+/** File contents keyed by POSIX path relative to a root directory. */
+export type FileTree = Readonly<Record<string, string>>;
+
+export const jsonFile = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
+
+export const writeTree = async (root: string, files: FileTree): Promise<void> => {
+  await Promise.all(
+    Object.entries(files).map(async ([relativePath, content]) => {
+      const target = path.join(root, relativePath);
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, content);
+    }),
+  );
+};
+
+type ManifestSection = "dependencies" | "devDependencies" | "peerDependencies";
+
+type PackageManifest = { readonly version?: string } & {
+  readonly [Section in ManifestSection]?: Readonly<Partial<Record<string, string>>>;
+};
+
+/** `templates/` ships beside `dist/` (package `files`); `../../../` is the package root from `src/` and `dist/`. */
+export const templatePath = (...segments: readonly string[]): string =>
+  path.join(fileURLToPath(new URL("../../../templates/", import.meta.url)), ...segments);
+
+/**
+ * A `templates/<name>` tree keyed relative to it, with every occurrence of
+ * each token replaced. Tokens appear only inside string literals, so the
+ * templates stay compilable (`tsc -p templates`).
+ */
+export const readTemplateTree = async (
+  name: "example" | "shared",
+  tokens: Readonly<Record<string, string>> = {},
+): Promise<FileTree> => {
+  const root = templatePath(name);
+  const entries = await fs.readdir(root, { recursive: true, withFileTypes: true });
+  const files = await Promise.all(
+    entries
+      .filter((entry) => entry.isFile())
+      .map(async (entry) => {
+        const absolutePath = path.join(entry.parentPath, entry.name);
+        const content = Object.entries(tokens).reduce(
+          (text, [token, value]) => text.replaceAll(token, value),
+          await fs.readFile(absolutePath, "utf8"),
+        );
+        return [path.relative(root, absolutePath).split(path.sep).join("/"), content] as const;
+      }),
+  );
+  return Object.fromEntries(files);
+};
+
+/**
+ * Where each scaffold dependency's version comes from in rivet-ts's own
+ * manifest, so scaffolds pin what rivet-ts itself builds and tests against.
+ */
+const PINNED_PACKAGE_SECTIONS = {
+  hono: "peerDependencies",
+  "openapi-fetch": "dependencies",
+  "openapi-typescript": "dependencies",
+  typescript: "dependencies",
+  "@types/node": "devDependencies",
+  "@hono/node-server": "devDependencies",
+  vitest: "devDependencies",
+  zod: "devDependencies",
+  dexie: "devDependencies",
+  "typed-inject": "devDependencies",
+} as const satisfies Record<string, ManifestSection>;
+
+export type PinnedPackage = keyof typeof PINNED_PACKAGE_SECTIONS;
+
+const RIVET_TS_DEPENDENCY_REPOSITORY = "github:maxanstey-meridian/rivet-ts";
+
+const readPackageManifest = async (): Promise<PackageManifest> => {
+  const manifestText = await fs.readFile(new URL("../../../package.json", import.meta.url), "utf8");
+  return JSON.parse(manifestText) as PackageManifest;
+};
+
+const pinnedVersions =
+  (manifest: PackageManifest) =>
+  (name: PinnedPackage): string => {
+    const section = PINNED_PACKAGE_SECTIONS[name];
+    const version = manifest[section]?.[name];
+    if (version === undefined) {
+      throw new Error(
+        `rivet-ts package.json ${section} has no "${name}"; cannot pin the scaffold.`,
+      );
+    }
+    return version;
+  };
+
+const toRivetTsDependency = (manifest: PackageManifest): string => {
+  if (!manifest.version) {
+    throw new Error("rivet-ts package.json is missing a version; cannot pin scaffold dependency.");
+  }
+
+  return `${RIVET_TS_DEPENDENCY_REPOSITORY}#v${manifest.version}`;
+};
+
 export type WorkspaceConfig = {
   readonly outDir: string;
   readonly projectName: string;
-  /**
-   * "full" = Hono api + Nuxt ui + contracts (the default);
-   * "frontend-only" = Nuxt ui + contracts, for repos whose API lives
-   * elsewhere (e.g. a .NET backend — `plumb init --dotnet-backend`
-   * composes one on top of this variant).
-   */
-  readonly variant?: "full" | "frontend-only";
-  /** e.g. `@myapp` */
+} & (
+  | {
+      /** Nuxt ui + contracts, for repos whose API lives elsewhere (e.g. a .NET backend). */
+      readonly variant: "frontend-only";
+    }
+  | {
+      /** Hono api + Nuxt ui + contracts. */
+      readonly variant: "full";
+      readonly document: RivetContractDocument;
+      /** entry path relative to `apps/api/src`, POSIX separators (e.g. `contracts.ts`) */
+      readonly contractEntryRelativePath: string;
+      /** contract interface names re-exported by `src/contract.ts` */
+      readonly contractNames: readonly string[];
+      /** demo client call rendered in the UI, when one is callable without input */
+      readonly demoCall?: { readonly httpMethod: string; readonly routeTemplate: string };
+      /** extra runtime dependencies for the api package */
+      readonly extraApiDependencies?: readonly PinnedPackage[];
+    }
+);
+
+type FullWorkspaceConfig = Extract<WorkspaceConfig, { readonly variant: "full" }>;
+
+type Workspace<TConfig extends WorkspaceConfig = WorkspaceConfig> = TConfig & {
   readonly packageScope: string;
-  /** pinned `github:...#vX.Y.Z` dependency for the scaffolded project */
   readonly rivetTsDependency: string;
-  /** versions lifted from rivet-ts's own manifest where possible */
-  readonly versions: {
-    readonly hono: string;
-    readonly openApiFetch: string;
-    readonly openApiTypescript: string;
-    readonly typescript: string;
-    readonly nodeTypes: string;
-    readonly vitest: string;
-  };
-  /** entry path relative to `apps/api/src`, POSIX separators (e.g. `contracts.ts`) */
-  readonly contractEntryRelativePath: string;
-  /** contract interface names re-exported by `src/contract.ts` */
-  readonly contractNames: readonly string[];
-  /** bootstrap OpenAPI document written to packages/contracts/generated */
-  readonly bootstrapOpenApiDocument: object;
-  /** demo client call rendered in the UI, when one is callable without input */
-  readonly demoCall?: { readonly httpMethod: string; readonly routeTemplate: string };
-  /** extra runtime dependencies for the api package (e.g. typed-inject) */
-  readonly extraApiDependencies?: Record<string, string>;
-  /** full replacement for the generic app.vue (the example ships a UForm page) */
-  readonly appVueSource?: string;
+  readonly pin: (name: PinnedPackage) => string;
 };
 
 export const toPackageScope = (projectName: string): string =>
@@ -72,38 +165,30 @@ const trimTsExtension = (value: string): string => value.replace(/\.ts$/u, "");
 
 /* ─── embedded golden base configs (source: ~/.meridian/plumb/configs/) ────── */
 
-const OXLINTRC_SOURCE = `${JSON.stringify(
-  {
-    categories: { correctness: "warn" },
-    rules: { "no-unused-vars": "warn", curly: ["error", "all"] },
-  },
-  null,
-  2,
-)}\n`;
+const OXLINTRC_SOURCE = jsonFile({
+  categories: { correctness: "warn" },
+  rules: { "no-unused-vars": "warn", curly: ["error", "all"] },
+});
 
-const OXFMTRC_SOURCE = `${JSON.stringify(
-  {
-    printWidth: 100,
-    tabWidth: 2,
-    useTabs: false,
-    semi: true,
-    singleQuote: false,
-    trailingComma: "all",
-    sortImports: {
-      enabled: true,
-      groups: [
-        ["builtin", "external"],
-        ["internal", "subpath"],
-        ["parent", "sibling", "index"],
-      ],
-      newlinesBetween: false,
-      order: "asc",
-      ignoreCase: true,
-    },
+const OXFMTRC_SOURCE = jsonFile({
+  printWidth: 100,
+  tabWidth: 2,
+  useTabs: false,
+  semi: true,
+  singleQuote: false,
+  trailingComma: "all",
+  sortImports: {
+    enabled: true,
+    groups: [
+      ["builtin", "external"],
+      ["internal", "subpath"],
+      ["parent", "sibling", "index"],
+    ],
+    newlinesBetween: false,
+    order: "asc",
+    ignoreCase: true,
   },
-  null,
-  2,
-)}\n`;
+});
 
 const EDITORCONFIG_SOURCE = [
   "root = true",
@@ -131,17 +216,13 @@ export const emitGoldenConfigSources = (): Record<string, string> => ({
 
 /* ─── root files ───────────────────────────────────────────────────────────── */
 
-const emitRootPackageJson = (config: WorkspaceConfig): string =>
-  `${JSON.stringify(
-    {
-      name: toKebabCase(config.projectName) || "rivet-app",
-      private: true,
-      type: "module",
-      packageManager: "pnpm@10.24.0",
-    },
-    null,
-    2,
-  )}\n`;
+const emitRootPackageJson = (workspace: Workspace): string =>
+  jsonFile({
+    name: toKebabCase(workspace.projectName) || "rivet-app",
+    private: true,
+    type: "module",
+    packageManager: "pnpm@10.24.0",
+  });
 
 const emitPnpmWorkspace = (): string =>
   [
@@ -158,11 +239,10 @@ const emitPnpmWorkspace = (): string =>
     "",
   ].join("\n");
 
-const emitTaskfile = (config: WorkspaceConfig): string => {
-  const scope = config.packageScope;
-  const entry = config.contractEntryRelativePath;
+const emitTaskfile = (workspace: Workspace): string => {
+  const scope = workspace.packageScope;
 
-  if (config.variant === "frontend-only") {
+  if (workspace.variant === "frontend-only") {
     return [
       'version: "3"',
       "",
@@ -219,7 +299,7 @@ const emitTaskfile = (config: WorkspaceConfig): string => {
     "  generate:",
     "    desc: Regenerate the contracts package from the API contract entry",
     "    cmds:",
-    `      - pnpm --filter ${scope}/api exec rivet-ts --entry src/${entry} --out generated/api.contract.json`,
+    `      - pnpm --filter ${scope}/api exec rivet-ts --entry src/${workspace.contractEntryRelativePath} --out generated/api.contract.json`,
     `      - pnpm --filter ${scope}/api exec rivet-ts rivet -- --from generated/api.contract.json --output ../../packages/contracts/generated`,
     `      - pnpm --filter ${scope}/api exec rivet-ts generate --generated-root ../../packages/contracts/generated`,
     "",
@@ -236,10 +316,10 @@ const emitTaskfile = (config: WorkspaceConfig): string => {
   ].join("\n");
 };
 
-const emitReadme = (config: WorkspaceConfig): string => {
-  if (config.variant === "frontend-only") {
+const emitReadme = (workspace: Workspace): string => {
+  if (workspace.variant === "frontend-only") {
     return [
-      `# ${config.projectName}`,
+      `# ${workspace.projectName}`,
       "",
       "Rivet-scaffolded frontend workspace. The API lives elsewhere;",
       "`packages/contracts/generated/` holds its OpenAPI artifacts (read-only —",
@@ -259,10 +339,10 @@ const emitReadme = (config: WorkspaceConfig): string => {
   }
 
   return [
-    `# ${config.projectName}`,
+    `# ${workspace.projectName}`,
     "",
     "Rivet-scaffolded workspace. The API contract entry",
-    `(\`apps/api/src/${config.contractEntryRelativePath}\`) is the source of truth;`,
+    `(\`apps/api/src/${workspace.contractEntryRelativePath}\`) is the source of truth;`,
     "`task generate` regenerates `packages/contracts/generated/` (read-only).",
     "",
     "| Command | What it does |",
@@ -282,179 +362,180 @@ const emitReadme = (config: WorkspaceConfig): string => {
 
 /* ─── contracts package ────────────────────────────────────────────────────── */
 
-const emitContractsPackageJson = (config: WorkspaceConfig): string =>
-  `${JSON.stringify(
-    {
-      name: `${config.packageScope}/contracts`,
-      private: true,
-      type: "module",
-      exports: { ".": "./src/index.ts" },
-      dependencies: { "openapi-fetch": config.versions.openApiFetch },
-      devDependencies: {
-        "openapi-typescript": config.versions.openApiTypescript,
-        typescript: config.versions.typescript,
-      },
+const emitContractsPackageJson = (workspace: Workspace): string =>
+  jsonFile({
+    name: `${workspace.packageScope}/contracts`,
+    private: true,
+    type: "module",
+    exports: { ".": "./src/index.ts" },
+    dependencies: { "openapi-fetch": workspace.pin("openapi-fetch") },
+    devDependencies: {
+      "openapi-typescript": workspace.pin("openapi-typescript"),
+      typescript: workspace.pin("typescript"),
     },
-    null,
-    2,
-  )}\n`;
+  });
 
-const emitContractsTsconfig = (): string =>
-  `${JSON.stringify(
-    {
-      compilerOptions: {
-        target: "ES2022",
-        module: "ESNext",
-        moduleResolution: "bundler",
-        strict: true,
-        noEmit: true,
-        skipLibCheck: true,
-      },
-      include: ["src", "generated"],
-    },
-    null,
-    2,
-  )}\n`;
+const CONTRACTS_TSCONFIG = jsonFile({
+  compilerOptions: {
+    target: "ES2022",
+    module: "ESNext",
+    moduleResolution: "bundler",
+    strict: true,
+    noEmit: true,
+    skipLibCheck: true,
+  },
+  include: ["src", "generated"],
+});
+
+/**
+ * Bootstrap OpenAPI document: routes and statuses only, no schemas. It exists
+ * so a fresh scaffold has a coherent generated client chain (openapi.json →
+ * schema.d.ts) before the first real `task generate`, which overwrites both
+ * with artifacts derived from the Rivet binary's full spec — the binary stays
+ * the sole real OpenAPI emitter.
+ */
+const buildBootstrapOpenApiDocument = (workspace: Workspace): object => {
+  const paths: Record<string, Record<string, object>> = {};
+
+  for (const endpoint of workspace.variant === "full" ? workspace.document.endpoints : []) {
+    const responses: Record<string, object> = {};
+
+    for (const response of endpoint.responses) {
+      responses[String(response.statusCode)] = response.dataType
+        ? {
+            description: response.description ?? "Success",
+            content: { "application/json": {} },
+          }
+        : { description: response.description ?? "Success" };
+    }
+
+    if (Object.keys(responses).length === 0) {
+      responses["200"] = { description: "Success" };
+    }
+
+    const route = (paths[endpoint.routeTemplate] ??= {});
+    route[endpoint.httpMethod.toLowerCase()] = { responses };
+  }
+
+  return {
+    openapi: "3.1.0",
+    info: { title: workspace.projectName, version: "0.0.0" },
+    paths,
+  };
+};
 
 /* ─── api app shell ────────────────────────────────────────────────────────── */
 
-const emitApiPackageJson = (config: WorkspaceConfig): string =>
-  `${JSON.stringify(
-    {
-      name: `${config.packageScope}/api`,
-      private: true,
-      type: "module",
-      imports: { "#contract": "./src/contract.ts" },
-      exports: {
-        "./local": "./src/local.ts",
-        // The same schemas that guard the server's front door validate UForm
-        // state in the ui — one source of rules, two enforcement points.
-        "./validation": "./src/validation.ts",
-      },
-      scripts: {
-        start: "tsx src/main.ts",
-        test: "tsc --noEmit && vitest run --passWithNoTests",
-      },
-      dependencies: {
-        hono: config.versions.hono,
-        "rivet-ts": config.rivetTsDependency,
-        zod: "^4.3.6",
-        ...config.extraApiDependencies,
-      },
-      devDependencies: {
-        "@hono/node-server": "^1.14.0",
-        "@types/node": config.versions.nodeTypes,
-        tsx: "^4.19.0",
-        typescript: config.versions.typescript,
-        vitest: config.versions.vitest,
-      },
+const emitApiPackageJson = (workspace: Workspace<FullWorkspaceConfig>): string =>
+  jsonFile({
+    name: `${workspace.packageScope}/api`,
+    private: true,
+    type: "module",
+    imports: { "#contract": "./src/contract.ts" },
+    exports: {
+      "./local": "./src/local.ts",
+      // The same schemas that guard the server's front door validate UForm
+      // state in the ui — one source of rules, two enforcement points.
+      "./validation": "./src/validation.ts",
     },
-    null,
-    2,
-  )}\n`;
-
-const emitApiTsconfig = (): string =>
-  `${JSON.stringify(
-    {
-      compilerOptions: {
-        target: "ES2022",
-        module: "ESNext",
-        moduleResolution: "bundler",
-        strict: true,
-        noEmit: true,
-        skipLibCheck: true,
-        resolveJsonModule: true,
-        forceConsistentCasingInFileNames: true,
-        types: ["node"],
-      },
-      include: ["src", "test"],
+    scripts: {
+      start: "tsx src/main.ts",
+      test: "tsc --noEmit && vitest run --passWithNoTests",
     },
-    null,
-    2,
-  )}\n`;
+    dependencies: {
+      hono: workspace.pin("hono"),
+      "rivet-ts": workspace.rivetTsDependency,
+      zod: workspace.pin("zod"),
+      ...Object.fromEntries(
+        (workspace.extraApiDependencies ?? []).map((name) => [name, workspace.pin(name)]),
+      ),
+    },
+    devDependencies: {
+      "@hono/node-server": workspace.pin("@hono/node-server"),
+      "@types/node": workspace.pin("@types/node"),
+      tsx: "^4.19.0",
+      typescript: workspace.pin("typescript"),
+      vitest: workspace.pin("vitest"),
+    },
+  });
 
-const emitContractReExport = (config: WorkspaceConfig): string => {
-  const exports = [...config.contractNames].sort().join(", ");
-  const fromPath = `./${trimTsExtension(config.contractEntryRelativePath)}.js`;
+const API_TSCONFIG = jsonFile({
+  compilerOptions: {
+    target: "ES2022",
+    module: "ESNext",
+    moduleResolution: "bundler",
+    strict: true,
+    noEmit: true,
+    skipLibCheck: true,
+    resolveJsonModule: true,
+    forceConsistentCasingInFileNames: true,
+    types: ["node"],
+  },
+  include: ["src", "test"],
+});
+
+const emitContractReExport = (workspace: Workspace<FullWorkspaceConfig>): string => {
+  const exports = [...workspace.contractNames].sort().join(", ");
+  const fromPath = `./${trimTsExtension(workspace.contractEntryRelativePath)}.js`;
   return `export type { ${exports} } from ${JSON.stringify(fromPath)};\n`;
 };
 
-const emitLocalSource = (): string => 'export { app } from "./app.js";\n';
-
-const emitMainSource = (): string =>
-  [
-    'import { serve } from "@hono/node-server";',
-    'import { app } from "./app.js";',
-    "",
-    "serve({ fetch: app.fetch, port: 5180 }, (info) => {",
-    "  console.log(`api listening on http://localhost:${info.port}`);",
-    "});",
-    "",
-  ].join("\n");
-
 /* ─── ui app ───────────────────────────────────────────────────────────────── */
 
-const emitUiPackageJson = (config: WorkspaceConfig): string =>
-  `${JSON.stringify(
-    {
-      name: `${config.packageScope}/ui`,
-      private: true,
-      type: "module",
-      scripts: {
-        dev: "nuxt dev",
-        build: "nuxt build",
-        postinstall: "nuxt prepare",
-      },
-      dependencies: {
-        ...(config.variant === "frontend-only"
-          ? {}
-          : { [`${config.packageScope}/api`]: "workspace:*" }),
-        [`${config.packageScope}/contracts`]: "workspace:*",
-        "@nuxt/ui": "^4.5.1",
-        nuxt: "^4.3.1",
-        vue: "^3.5.0",
-      },
-      devDependencies: {
-        "@nuxt/eslint": "^1.0.0",
-        eslint: "^9.0.0",
-      },
+const emitUiPackageJson = (workspace: Workspace): string =>
+  jsonFile({
+    name: `${workspace.packageScope}/ui`,
+    private: true,
+    type: "module",
+    scripts: {
+      dev: "nuxt dev",
+      build: "nuxt build",
+      postinstall: "nuxt prepare",
     },
-    null,
-    2,
-  )}\n`;
+    dependencies: {
+      ...(workspace.variant === "frontend-only"
+        ? {}
+        : { [`${workspace.packageScope}/api`]: "workspace:*" }),
+      [`${workspace.packageScope}/contracts`]: "workspace:*",
+      "@nuxt/ui": "^4.5.1",
+      nuxt: "^4.3.1",
+      vue: "^3.5.0",
+    },
+    devDependencies: {
+      "@nuxt/eslint": "^1.0.0",
+      eslint: "^9.0.0",
+    },
+  });
 
-const emitNuxtConfig = (): string =>
-  [
-    "export default defineNuxtConfig({",
-    "  ssr: false,",
-    '  modules: ["@nuxt/eslint", "@nuxt/ui"],',
-    '  css: ["~/assets/css/app.css"],',
-    "  devtools: { enabled: true },",
-    "  typescript: {",
-    "    strict: true,",
-    "  },",
-    '  compatibilityDate: "2026-06-11",',
-    "});",
-    "",
-  ].join("\n");
+const NUXT_CONFIG_SOURCE = [
+  "export default defineNuxtConfig({",
+  "  ssr: false,",
+  '  modules: ["@nuxt/eslint", "@nuxt/ui"],',
+  '  css: ["~/assets/css/app.css"],',
+  "  devtools: { enabled: true },",
+  "  typescript: {",
+  "    strict: true,",
+  "  },",
+  '  compatibilityDate: "2026-06-11",',
+  "});",
+  "",
+].join("\n");
 
-const emitUiEslintConfig = (): string =>
-  [
-    "// eslint is the Vue layer only — oxlint owns non-Vue linting (Meridian).",
-    "// @nuxt/eslint writes ./.nuxt/eslint.config.mjs during nuxt prepare.",
-    'import withNuxt from "./.nuxt/eslint.config.mjs";',
-    "",
-    "export default withNuxt();",
-    "",
-  ].join("\n");
+const UI_ESLINT_CONFIG_SOURCE = [
+  "// eslint is the Vue layer only — oxlint owns non-Vue linting (Meridian).",
+  "// @nuxt/eslint writes ./.nuxt/eslint.config.mjs during nuxt prepare.",
+  'import withNuxt from "./.nuxt/eslint.config.mjs";',
+  "",
+  "export default withNuxt();",
+  "",
+].join("\n");
 
-const emitUiTsconfig = (): string =>
-  `${JSON.stringify({ extends: "./.nuxt/tsconfig.json" }, null, 2)}\n`;
+const UI_TSCONFIG = jsonFile({ extends: "./.nuxt/tsconfig.json" });
 
-const emitRivetClientPlugin = (config: WorkspaceConfig): string => {
-  if (config.variant === "frontend-only") {
+const emitRivetClientPlugin = (workspace: Workspace): string => {
+  if (workspace.variant === "frontend-only") {
     return [
-      `import { configureRivet } from "${config.packageScope}/contracts";`,
+      `import { configureRivet } from "${workspace.packageScope}/contracts";`,
       "",
       "// Point the typed client at the API serving the contract in",
       "// packages/contracts/generated/.",
@@ -466,8 +547,8 @@ const emitRivetClientPlugin = (config: WorkspaceConfig): string => {
   }
 
   return [
-    `import { app } from "${config.packageScope}/api/local";`,
-    `import { configureRivet } from "${config.packageScope}/contracts";`,
+    `import { app } from "${workspace.packageScope}/api/local";`,
+    `import { configureRivet } from "${workspace.packageScope}/contracts";`,
     "",
     "// Local-now: the whole API runs in the browser, dispatched through",
     "// app.request. When you promote it to a real server (task api:run), swap",
@@ -479,16 +560,14 @@ const emitRivetClientPlugin = (config: WorkspaceConfig): string => {
   ].join("\n");
 };
 
-const emitUiAppCss = (): string => ['@import "tailwindcss";', '@import "@nuxt/ui";', ""].join("\n");
+const UI_APP_CSS_SOURCE = ['@import "tailwindcss";', '@import "@nuxt/ui";', ""].join("\n");
 
-const emitAppVue = (config: WorkspaceConfig): string => {
-  if (config.appVueSource) {
-    return config.appVueSource;
-  }
-  if (!config.demoCall) {
+const emitAppVue = (workspace: Workspace): string => {
+  const demoCall = workspace.variant === "full" ? workspace.demoCall : undefined;
+  if (!demoCall) {
     return [
       '<script setup lang="ts">',
-      `import { client } from "${config.packageScope}/contracts";`,
+      `import { client } from "${workspace.packageScope}/contracts";`,
       "",
       "// The typed client is configured in app/plugins/rivet.client.ts.",
       "// Start consuming it here, e.g.:",
@@ -498,7 +577,7 @@ const emitAppVue = (config: WorkspaceConfig): string => {
       "",
       "<template>",
       "  <main>",
-      `    <h1>${config.projectName}</h1>`,
+      `    <h1>${workspace.projectName}</h1>`,
       "    <p>Typed client configured — open <code>app/app.vue</code> and start consuming it.</p>",
       "  </main>",
       "</template>",
@@ -506,11 +585,11 @@ const emitAppVue = (config: WorkspaceConfig): string => {
     ].join("\n");
   }
 
-  const method = config.demoCall.httpMethod.toUpperCase();
-  const route = config.demoCall.routeTemplate;
+  const method = demoCall.httpMethod.toUpperCase();
+  const route = demoCall.routeTemplate;
   return [
     '<script setup lang="ts">',
-    `import { client } from "${config.packageScope}/contracts";`,
+    `import { client } from "${workspace.packageScope}/contracts";`,
     "",
     "// openapi-fetch never throws on HTTP errors — always handle { data, error }.",
     `const { data, error } = await client.${method}(${JSON.stringify(route)});`,
@@ -518,7 +597,7 @@ const emitAppVue = (config: WorkspaceConfig): string => {
     "",
     "<template>",
     "  <main>",
-    `    <h1>${config.projectName}</h1>`,
+    `    <h1>${workspace.projectName}</h1>`,
     `    <p><code>client.${method}(${JSON.stringify(route)})</code></p>`,
     '    <pre v-if="error">{{ JSON.stringify(error, null, 2) }}</pre>',
     "    <pre v-else>{{ JSON.stringify(data, null, 2) }}</pre>",
@@ -530,108 +609,76 @@ const emitAppVue = (config: WorkspaceConfig): string => {
 
 /* ─── orchestration ────────────────────────────────────────────────────────── */
 
-export type WorkspacePaths = {
-  readonly apiRoot: string;
-  readonly apiSourceRoot: string;
-  readonly contractsGeneratedRoot: string;
+const skeletonFiles = (workspace: Workspace): FileTree => ({
+  ...emitGoldenConfigSources(),
+  "package.json": emitRootPackageJson(workspace),
+  "pnpm-workspace.yaml": emitPnpmWorkspace(),
+  "Taskfile.yml": emitTaskfile(workspace),
+  "README.md": emitReadme(workspace),
+  "packages/contracts/package.json": emitContractsPackageJson(workspace),
+  "packages/contracts/tsconfig.json": CONTRACTS_TSCONFIG,
+  "packages/contracts/src/index.ts": emitClientFacadeSource(),
+  "packages/contracts/generated/openapi.json": jsonFile(buildBootstrapOpenApiDocument(workspace)),
+  ...(workspace.variant === "full"
+    ? {
+        "apps/api/package.json": emitApiPackageJson(workspace),
+        "apps/api/tsconfig.json": API_TSCONFIG,
+        "apps/api/src/contract.ts": emitContractReExport(workspace),
+        "apps/api/generated/api.contract.json": jsonFile(workspace.document),
+      }
+    : {}),
+  "apps/ui/package.json": emitUiPackageJson(workspace),
+  "apps/ui/nuxt.config.ts": NUXT_CONFIG_SOURCE,
+  "apps/ui/eslint.config.mjs": UI_ESLINT_CONFIG_SOURCE,
+  "apps/ui/tsconfig.json": UI_TSCONFIG,
+  "apps/ui/app/app.vue": emitAppVue(workspace),
+  "apps/ui/app/assets/css/app.css": UI_APP_CSS_SOURCE,
+  "apps/ui/app/plugins/rivet.client.ts": emitRivetClientPlugin(workspace),
+});
+
+/**
+ * Writes the workspace skeleton plus the caller's `files` (keyed relative to
+ * `outDir`; they win over skeleton files at the same path), then derives the
+ * bootstrap `schema.d.ts` from the bootstrap `openapi.json`, so a fresh
+ * scaffold has a coherent typed-client chain before the first `task generate`.
+ */
+export const emitWorkspace = async (config: WorkspaceConfig, files: FileTree): Promise<void> => {
+  const manifest = await readPackageManifest();
+  const workspace: Workspace = {
+    ...config,
+    packageScope: toPackageScope(config.projectName),
+    rivetTsDependency: toRivetTsDependency(manifest),
+    pin: pinnedVersions(manifest),
+  };
+
+  await writeTree(config.outDir, { ...skeletonFiles(workspace), ...files });
+
+  const generatedRoot = path.join(config.outDir, "packages", "contracts", "generated");
+  await fs.writeFile(
+    path.join(generatedRoot, "schema.d.ts"),
+    await emitClientSchemaSource(path.join(generatedRoot, "openapi.json")),
+  );
 };
 
 /**
- * Emits every file of the skeleton EXCEPT the api's app code (app.ts, modules,
- * routes, composition) — those differ per command and are layered on by the
- * caller. Also writes the bootstrap generated artifacts (api.contract.json is
- * the caller's job; openapi.json + schema.d.ts happen here so a fresh scaffold
- * has a coherent typed-client chain before the first `task generate`).
+ * Refuses to scaffold into a directory that already has content unless the
+ * caller passed --force: scaffolding overwrites files the user may have edited.
  */
-export const emitWorkspaceSkeleton = async (
-  config: WorkspaceConfig,
-  contractDocumentJson: string,
-): Promise<WorkspacePaths> => {
-  const out = config.outDir;
-  const apiRoot = path.join(out, "apps", "api");
-  const apiSourceRoot = path.join(apiRoot, "src");
-  const uiRoot = path.join(out, "apps", "ui");
-  const contractsRoot = path.join(out, "packages", "contracts");
-  const contractsGeneratedRoot = path.join(contractsRoot, "generated");
-  const withApi = config.variant !== "frontend-only";
-
-  await Promise.all([
-    ...(withApi
-      ? [
-          fs.mkdir(apiSourceRoot, { recursive: true }),
-          fs.mkdir(path.join(apiRoot, "generated"), { recursive: true }),
-        ]
-      : []),
-    fs.mkdir(path.join(uiRoot, "app", "plugins"), { recursive: true }),
-    fs.mkdir(path.join(uiRoot, "app", "assets", "css"), { recursive: true }),
-    fs.mkdir(contractsGeneratedRoot, { recursive: true }),
-    fs.mkdir(path.join(contractsRoot, "src"), { recursive: true }),
-  ]);
-
-  const configFiles = emitGoldenConfigSources();
-
-  await Promise.all([
-    ...Object.entries(configFiles).map(([name, source]) =>
-      fs.writeFile(path.join(out, name), source),
-    ),
-    fs.writeFile(path.join(out, "package.json"), emitRootPackageJson(config)),
-    fs.writeFile(path.join(out, "pnpm-workspace.yaml"), emitPnpmWorkspace()),
-    fs.writeFile(path.join(out, "Taskfile.yml"), emitTaskfile(config)),
-    fs.writeFile(path.join(out, "README.md"), emitReadme(config)),
-    fs.writeFile(path.join(contractsRoot, "package.json"), emitContractsPackageJson(config)),
-    fs.writeFile(path.join(contractsRoot, "tsconfig.json"), emitContractsTsconfig()),
-    fs.writeFile(path.join(contractsRoot, "src", "index.ts"), emitClientFacadeSource()),
-    ...(withApi
-      ? [
-          fs.writeFile(path.join(apiRoot, "package.json"), emitApiPackageJson(config)),
-          fs.writeFile(path.join(apiRoot, "tsconfig.json"), emitApiTsconfig()),
-          fs.writeFile(path.join(apiSourceRoot, "contract.ts"), emitContractReExport(config)),
-          fs.writeFile(path.join(apiSourceRoot, "local.ts"), emitLocalSource()),
-          fs.writeFile(path.join(apiSourceRoot, "main.ts"), emitMainSource()),
-          fs.writeFile(path.join(apiRoot, "generated", "api.contract.json"), contractDocumentJson),
-        ]
-      : []),
-    fs.writeFile(path.join(uiRoot, "package.json"), emitUiPackageJson(config)),
-    fs.writeFile(path.join(uiRoot, "nuxt.config.ts"), emitNuxtConfig()),
-    fs.writeFile(path.join(uiRoot, "eslint.config.mjs"), emitUiEslintConfig()),
-    fs.writeFile(path.join(uiRoot, "tsconfig.json"), emitUiTsconfig()),
-    fs.writeFile(path.join(uiRoot, "app", "app.vue"), emitAppVue(config)),
-    fs.writeFile(path.join(uiRoot, "app", "assets", "css", "app.css"), emitUiAppCss()),
-    fs.writeFile(
-      path.join(uiRoot, "app", "plugins", "rivet.client.ts"),
-      emitRivetClientPlugin(config),
-    ),
-  ]);
-
-  // Bootstrap artifacts: openapi.json (routes/statuses only) then schema.d.ts
-  // derived from it locally, so the chain is coherent without the binary.
-  const openApiPath = path.join(contractsGeneratedRoot, "openapi.json");
-  await fs.writeFile(openApiPath, `${JSON.stringify(config.bootstrapOpenApiDocument, null, 2)}\n`);
-  const schemaSource = await emitClientSchemaSource(openApiPath);
-  await fs.writeFile(path.join(contractsGeneratedRoot, "schema.d.ts"), schemaSource);
-
-  return { apiRoot, apiSourceRoot, contractsGeneratedRoot };
-};
-
-/**
- * S6 guard: refuse to scaffold into a directory that already has content,
- * unless the caller passed --force. Returns null when safe to proceed.
- */
-export const checkOutDirSafety = async (outDir: string, force: boolean): Promise<string | null> => {
+export const assertOutDirWritable = async (outDir: string, force: boolean): Promise<void> => {
   let entries: string[];
   try {
     entries = await fs.readdir(outDir);
   } catch {
-    return null; // does not exist yet
+    return; // does not exist yet
   }
 
   const meaningful = entries.filter((entry) => entry !== ".git" && entry !== ".DS_Store");
   if (meaningful.length === 0 || force) {
-    return null;
+    return;
   }
 
-  return (
+  throw new Error(
     `Output directory ${outDir} is not empty (${meaningful.length} entries). ` +
-    "Scaffolding would overwrite files you may have edited. Pass --force to proceed."
+      "Scaffolding would overwrite files you may have edited. Pass --force to proceed.",
   );
 };

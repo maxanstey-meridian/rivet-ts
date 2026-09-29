@@ -28,7 +28,7 @@ type TypeContext = TypeWalkContext & {
   readonly depth: number;
   /** Mutable: set when the synthesized value passes through a TS enum ref or a
    * brand — raw JSON literals are not assignable to either, so the emitted
-   * mock body needs an `as <Output>` cast (S7/GAPS 5.1 TS2322 class). */
+   * mock body needs an `as <Output>` cast. */
   readonly state: { needsCast: boolean };
 };
 
@@ -61,7 +61,7 @@ const parseExample = (example: RivetExample): RivetEndpointExampleValue | undefi
     return undefined;
   }
 
-  // A malformed stored example must degrade to synthesis, not crash the run (S7).
+  // A malformed stored example must degrade to synthesis, not crash the run.
   try {
     return JSON.parse(rawJson) as RivetEndpointExampleValue;
   } catch {
@@ -184,7 +184,7 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): TypeSynthes
         return { kind: "value", value: {} };
       }
       // An empty dictionary is assignable to Record<string, T> for every T;
-      // {key: null} is not (S7).
+      // {key: null} is not.
       return {
         kind: "value",
         value: value.kind === "void" ? {} : { key: value.value },
@@ -228,14 +228,15 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): TypeSynthes
     case "ref": {
       const enumValues = context.enumValues.get(type.name);
       if (enumValues) {
-        if (enumValues.length === 0) {
+        const [firstValue] = enumValues;
+        if (firstValue === undefined) {
           return {
             kind: "todo",
             message: `Endpoint "${context.endpointName}" references empty enum "${type.name}".`,
           };
         }
         context.state.needsCast = true;
-        return { kind: "value", value: enumValues[0] as string | number };
+        return { kind: "value", value: firstValue };
       }
 
       const typeDef = context.typeDefinitions.get(type.name);
@@ -340,7 +341,7 @@ export const generateEndpointMock = (
     const parsed = parseExample(firstExample);
     if (parsed !== undefined) {
       // Example-backed mocks are emitted verbatim with no conformance check
-      // against the response type, so they always cast (S7).
+      // against the response type, so they always cast.
       return {
         result: { kind: "value", value: parsed, needsCast: true },
         diagnostics,
