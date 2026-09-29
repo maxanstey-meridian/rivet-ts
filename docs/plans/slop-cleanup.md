@@ -11,6 +11,7 @@ This file is self-contained. A worker (human or subagent) should be able to pick
 ## 1. Objective
 
 Remove hand-rolled machinery, unearned seams, duplicated logic, dead code and ceremony, and fix the bugs the hunt found. Targets:
+
 - `src/` (about 10k LOC): shrink by 1,500–2,000 LOC. Most of it comes from the 3,487-line lowerer, the ~750-line example emitter stored as string arrays, and the port/use-case layer.
 - `tests/`: shrink by 1,500–2,500 LOC. Most of it comes from three suites that test the same lowering facts, and from copy-pasted setup.
 
@@ -39,7 +40,7 @@ rivet-ts is coupled to the C# tool. Any WP touching these must keep them working
   - Constraints stay sibling keywords in emitted OpenAPI, so `openapi-constraint-reader` is unaffected.
   - The `FileRouteDefinition.ContentType` alias is gone and duplicate response header names per status are refused (RIV1109). rivet-ts emits neither.
   - Pre-existing refusals (on the published release too): `tests/fixtures/openapi-smoke-contract` authors a body on a 204 (RIV1102, see BUG-13); `aliased-authoring`, `expressive` and `members` use `.Secure("admin")` and need `--security` passed to Rivet (D4).
-- **Pinning:** D4 pins to the latest *published* release (`v0.44.1`). D6 re-pins and re-vendors the schema once the owner publishes the C# cleanup; it is blocked until then and is not part of this run.
+- **Pinning:** D4 pins to the latest _published_ release (`v0.44.1`). D6 re-pins and re-vendors the schema once the owner publishes the C# cleanup; it is blocked until then and is not part of this run.
 
 ## 2. Doctrine (inline summary — Meridian)
 
@@ -48,7 +49,7 @@ rivet-ts is coupled to the C# tool. Any WP touching these must keep them working
 - **Let patterns prove themselves.** Extract a helper at ≥3 copies or when the copies have already drifted (several here have).
 - **Strict types.** No `any`/`unknown` value carriers, no convenience `!`, no `as T` on values, no `?.`/`??` on non-optional values.
 - **No `process.env` directly.** Read the environment once, into a validated config object.
-- **No self-narrating comments.** Delete ticket narration (`X6`, `S2`, `H2`, `RV-020`, "previously…", "successor of…") and section banners. Comments explain *why*.
+- **No self-narrating comments.** Delete ticket narration (`X6`, `S2`, `H2`, `RV-020`, "previously…", "successor of…") and section banners. Comments explain _why_.
 - **Tests test behaviour, once, at the cheapest honest level.** Don't pin generated source text when the output can be executed, don't hand-write JSON that the real lowerer can produce, and clean up temp dirs.
 - **No type-tag filename suffixes.**
 
@@ -76,40 +77,40 @@ Lessons carried over from the C# Rivet and tandem-ts cleanups:
 
 ## 4. Decisions (recommended defaults; owner to confirm)
 
-| ID | Decision | Recommended | Affects |
-|---|---|---|---|
-| R1 | `samples/myapp`: pinned to v0.9.1 and rivet 0.34.0, untested, imports a `generated/index.ts` that no longer exists. Delete it, or make it the vite-plugin test fixture? | **Delete** it and fix the docs (`docs/guides/sample-app.md` and others). The scaffold commands are the living sample. | D3 |
-| R2 | `tests/fixtures/expressive-contract/golden-contract.json` (591 lines, referenced nowhere). | **Use it** as the single `toMatchFileSnapshot` expectation for the expressive-contract fixture, and delete the duplicate field-by-field assertions it makes redundant. | D1 |
-| R3 | Example emitter: ~750 LOC of source code stored as `string[].join("\n")`. | **Move it to real template files** under `templates/example/`, shipped in `package.json` `files`, copied with `fs.cp` plus a few token replacements. They can then be type-checked and linted. | C2 |
-| R4 | `RivetHttpError` duplicates Hono's `HTTPException`. | **Extend `HTTPException`**, keeping the structured-500 `onError` behaviour and testing it. | C3 |
-| R5 | The `rivet-ts/local` entry point (`src/local.ts`) is no longer used by the scaffold. | **Delete** it and its `package.json` export. | W0-3 |
-| R6 | The vite plugin's `contract` option alias has no users. | **Delete** it. | B2 |
-| R7 | The deprecated `LowerContractBundleToRivetContract` export, the port/use-case layer, and the public exports of lowerer internals (`EndpointExampleSpec`, `ResponseExamplesSpec`, `RivetContractLowerer`). | **Delete all of them.** Export only what users author against, plus the lowerer entry function. | W0-2, W0-3 |
-| R8 | Root docs: `NEW_INVOKE.md` (1,102 lines, the C# `Invoke` design, "implemented in Rivet.Attributes 0.41.0") and `TEST.md` (corpus programme, stale 2026-07-13 status). | **Delete** `NEW_INVOKE.md` (it's C# history and belongs in git history). **Move** `TEST.md` to `docs/plans/zero-loss-corpus.md` unchanged. | D5 |
-| R9 | The interop test hardcodes `/Users/max/Sites/medway/rivet/Rivet.Tool` and `dotnet run`, so it never runs in CI. | **Use the product's own pinned-binary download** (`ensureRivetBinary`), with no `skipIf`, exactly as `TEST.md` §205-221 already plans. Bump the default pin to the current Rivet release (§1.1). | D4 |
-| R10 | `gitnexus` as a devDependency pulls in about 18 native build allowances. | **Remove** it and run GitNexus via `npx gitnexus` / `.gitnexus/run.cjs`. | D5 |
-| R11 | Handler body validation: the generated 422 block is duplicated in two emitters. Move validation into `registerRivetHonoRoutes` via Standard Schema? | **No.** Scaffolded code is user-owned and explicit. Keep the generated 422, but emit it from one template. | C2 |
-| R12 | Mock and Zod code generation by `lines.push`. Switch to `ts.factory`? | **No** (more verbose). Use tagged template literals where they read better. | C1 |
+| ID  | Decision                                                                                                                                                                                                  | Recommended                                                                                                                                                                                      | Affects    |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- |
+| R1  | `samples/myapp`: pinned to v0.9.1 and rivet 0.34.0, untested, imports a `generated/index.ts` that no longer exists. Delete it, or make it the vite-plugin test fixture?                                   | **Delete** it and fix the docs (`docs/guides/sample-app.md` and others). The scaffold commands are the living sample.                                                                            | D3         |
+| R2  | `tests/fixtures/expressive-contract/golden-contract.json` (591 lines, referenced nowhere).                                                                                                                | **Use it** as the single `toMatchFileSnapshot` expectation for the expressive-contract fixture, and delete the duplicate field-by-field assertions it makes redundant.                           | D1         |
+| R3  | Example emitter: ~750 LOC of source code stored as `string[].join("\n")`.                                                                                                                                 | **Move it to real template files** under `templates/example/`, shipped in `package.json` `files`, copied with `fs.cp` plus a few token replacements. They can then be type-checked and linted.   | C2         |
+| R4  | `RivetHttpError` duplicates Hono's `HTTPException`.                                                                                                                                                       | **Extend `HTTPException`**, keeping the structured-500 `onError` behaviour and testing it.                                                                                                       | C3         |
+| R5  | The `rivet-ts/local` entry point (`src/local.ts`) is no longer used by the scaffold.                                                                                                                      | **Delete** it and its `package.json` export.                                                                                                                                                     | W0-3       |
+| R6  | The vite plugin's `contract` option alias has no users.                                                                                                                                                   | **Delete** it.                                                                                                                                                                                   | B2         |
+| R7  | The deprecated `LowerContractBundleToRivetContract` export, the port/use-case layer, and the public exports of lowerer internals (`EndpointExampleSpec`, `ResponseExamplesSpec`, `RivetContractLowerer`). | **Delete all of them.** Export only what users author against, plus the lowerer entry function.                                                                                                  | W0-2, W0-3 |
+| R8  | Root docs: `NEW_INVOKE.md` (1,102 lines, the C# `Invoke` design, "implemented in Rivet.Attributes 0.41.0") and `TEST.md` (corpus programme, stale 2026-07-13 status).                                     | **Delete** `NEW_INVOKE.md` (it's C# history and belongs in git history). **Move** `TEST.md` to `docs/plans/zero-loss-corpus.md` unchanged.                                                       | D5         |
+| R9  | The interop test hardcodes `/Users/max/Sites/medway/rivet/Rivet.Tool` and `dotnet run`, so it never runs in CI.                                                                                           | **Use the product's own pinned-binary download** (`ensureRivetBinary`), with no `skipIf`, exactly as `TEST.md` §205-221 already plans. Bump the default pin to the current Rivet release (§1.1). | D4         |
+| R10 | `gitnexus` as a devDependency pulls in about 18 native build allowances.                                                                                                                                  | **Remove** it and run GitNexus via `npx gitnexus` / `.gitnexus/run.cjs`.                                                                                                                         | D5         |
+| R11 | Handler body validation: the generated 422 block is duplicated in two emitters. Move validation into `registerRivetHonoRoutes` via Standard Schema?                                                       | **No.** Scaffolded code is user-owned and explicit. Keep the generated 422, but emit it from one template.                                                                                       | C2         |
+| R12 | Mock and Zod code generation by `lines.push`. Switch to `ts.factory`?                                                                                                                                     | **No** (more verbose). Use tagged template literals where they read better.                                                                                                                      | C1         |
 
 ---
 
 ## 5. Bugs (fix first, red-first)
 
-| ID | Bug | Evidence | WP |
-|---|---|---|---|
-| BUG-1 | **Reproduced.** The Zod schema emitter recurses forever on nested generics. `Page<T>{items: Wrapper<T>}` maps `T → typeParam("T")` without resolving it against the outer frame, and there is no depth guard. `mock-value-generator.ts:92-148` already fixed the same bug ("S2"). | `src/infrastructure/scaffold/zod-schema-emitter.ts:300-320` | W0-1 |
-| BUG-2 | **Reproduced.** `rivet-ts rivet` kills the C# tool after 1 MB of output. `execFile` has a default `maxBuffer` even when output is streamed; SIGTERM leaves `close` code `null`, which becomes exit 1. | `src/cli.ts:24-33` | W0-1 |
-| BUG-3 | The vite plugin's `execFile` also has the 1 MB limit, and no timeout. | `src/vite.ts:164` | W0-1 |
-| BUG-4 | **Verified by reading.** `--help`/`-h`/`--version` are intercepted before any subcommand is dispatched, so `rivet-ts rivet -- --version` prints rivet-ts's own version. | `src/interfaces/cli/run-cli.ts:125-133` vs `:147` | W0-1 |
-| BUG-5 | Response-example diagnostics say "requestExamples entries" because the parsers were copy-pasted. | `typescript-rivet-contract-lowerer.ts:1280` | A1 |
-| BUG-6 | Response examples are never checked with `isTypeAssignableTo`, unlike request examples; the `targetNode` parameter is accepted but unused. | lowerer `:777-843` vs `:1248` | A1 |
-| BUG-7 | `Promise<X>`, `String`, `Number`, `Boolean` and `Record` are accepted as example-list containers (`EXAMPLE_CONTAINER_TYPE_NAMES`). | lowerer `:86-94`, `:1286-1314` | A2 |
-| BUG-8 | `Endpoint` is recognised by `getText() === "Endpoint"`, so `import { Endpoint as E }` fails. `Contract` has a text "fast path" that matches any local `Contract`. `Brand`/`Format`/`Record`/`Date`/`Blob`/`File` are matched by bare name. | lowerer `:175`, `:536`, `:95`, `:2297`, `:2973-3080` | A3 |
-| BUG-9 | The `lower` CLI command calls `createLowerer()` without the tsconfig path, so it ignores a custom tsconfig (unlike `scaffold-mock`). Unconfirmed; confirm with a test. | `src/interfaces/cli/run-cli.ts:166` | W0-2 |
-| BUG-10 | The scaffold re-derives endpoint names to join `document.endpoints` and silently `continue`s on a miss, so handlers disappear without an error if the naming drifts. | `mock-project-emitter.ts:145-164,247-249`; `hono.ts:83-89`; lowerer `:~100-121` | C1 |
-| BUG-11 | The CLI honours `RIVET_VERSION` but the vite plugin doesn't. | `src/cli.ts:19` vs `src/vite.ts:101` | B1 |
-| BUG-12 | An optional release `digest` silently skips checksum verification of the downloaded binary. | `src/infrastructure/vite/rivet-binary.ts:182` | B1 |
-| BUG-13 | The lowerer accepts a response body on a bodyless status (204/205/304), which C# Rivet then refuses (RIV1102). Found via `tests/fixtures/openapi-smoke-contract`. Diagnose it in the lowerer (fail early, same wording as the C# refusal) and fix the fixture. | lowerer response building (`buildResponses`) | A2 |
+| ID     | Bug                                                                                                                                                                                                                                                                               | Evidence                                                                        | WP   |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---- |
+| BUG-1  | **Reproduced.** The Zod schema emitter recurses forever on nested generics. `Page<T>{items: Wrapper<T>}` maps `T → typeParam("T")` without resolving it against the outer frame, and there is no depth guard. `mock-value-generator.ts:92-148` already fixed the same bug ("S2"). | `src/infrastructure/scaffold/zod-schema-emitter.ts:300-320`                     | W0-1 |
+| BUG-2  | **Reproduced.** `rivet-ts rivet` kills the C# tool after 1 MB of output. `execFile` has a default `maxBuffer` even when output is streamed; SIGTERM leaves `close` code `null`, which becomes exit 1.                                                                             | `src/cli.ts:24-33`                                                              | W0-1 |
+| BUG-3  | The vite plugin's `execFile` also has the 1 MB limit, and no timeout.                                                                                                                                                                                                             | `src/vite.ts:164`                                                               | W0-1 |
+| BUG-4  | **Verified by reading.** `--help`/`-h`/`--version` are intercepted before any subcommand is dispatched, so `rivet-ts rivet -- --version` prints rivet-ts's own version.                                                                                                           | `src/interfaces/cli/run-cli.ts:125-133` vs `:147`                               | W0-1 |
+| BUG-5  | Response-example diagnostics say "requestExamples entries" because the parsers were copy-pasted.                                                                                                                                                                                  | `typescript-rivet-contract-lowerer.ts:1280`                                     | A1   |
+| BUG-6  | Response examples are never checked with `isTypeAssignableTo`, unlike request examples; the `targetNode` parameter is accepted but unused.                                                                                                                                        | lowerer `:777-843` vs `:1248`                                                   | A1   |
+| BUG-7  | `Promise<X>`, `String`, `Number`, `Boolean` and `Record` are accepted as example-list containers (`EXAMPLE_CONTAINER_TYPE_NAMES`).                                                                                                                                                | lowerer `:86-94`, `:1286-1314`                                                  | A2   |
+| BUG-8  | `Endpoint` is recognised by `getText() === "Endpoint"`, so `import { Endpoint as E }` fails. `Contract` has a text "fast path" that matches any local `Contract`. `Brand`/`Format`/`Record`/`Date`/`Blob`/`File` are matched by bare name.                                        | lowerer `:175`, `:536`, `:95`, `:2297`, `:2973-3080`                            | A3   |
+| BUG-9  | The `lower` CLI command calls `createLowerer()` without the tsconfig path, so it ignores a custom tsconfig (unlike `scaffold-mock`). Unconfirmed; confirm with a test.                                                                                                            | `src/interfaces/cli/run-cli.ts:166`                                             | W0-2 |
+| BUG-10 | The scaffold re-derives endpoint names to join `document.endpoints` and silently `continue`s on a miss, so handlers disappear without an error if the naming drifts.                                                                                                              | `mock-project-emitter.ts:145-164,247-249`; `hono.ts:83-89`; lowerer `:~100-121` | C1   |
+| BUG-11 | The CLI honours `RIVET_VERSION` but the vite plugin doesn't.                                                                                                                                                                                                                      | `src/cli.ts:19` vs `src/vite.ts:101`                                            | B1   |
+| BUG-12 | An optional release `digest` silently skips checksum verification of the downloaded binary.                                                                                                                                                                                       | `src/infrastructure/vite/rivet-binary.ts:182`                                   | B1   |
+| BUG-13 | The lowerer accepts a response body on a bodyless status (204/205/304), which C# Rivet then refuses (RIV1102). Found via `tests/fixtures/openapi-smoke-contract`. Diagnose it in the lowerer (fail early, same wording as the C# refusal) and fix the fixture.                    | lowerer response building (`buildResponses`)                                    | A2   |
 
 ---
 
@@ -132,30 +133,37 @@ Each WP lists: **Tag · Est. LOC saved · Depends**, then Problem, Change, Accep
 ### Wave 0
 
 #### W0-0 — Baselines
+
 **Change.**
+
 - Capture the contract-JSON golden (§3.4).
 - Capture `vitest run` timing and test count.
 - Capture the public export list: `node -e "import('./dist/index.js').then(m=>console.log(Object.keys(m).sort().join('\n')))"` → `/tmp/rivet-ts-exports-before.txt`.
 
 #### W0-1 — Bugs 1–4
+
 NEW · ~40 LOC · Depends: W0-0
 
 **Change.**
+
 - **BUG-1:** extract the type-walk context (`typeDefinitions`, `enumValues`, `withSubstitutions`, `visiting`) from `mock-value-generator.ts:24-66,92-148` into one module used by both `mock-value-generator` and `zod-schema-emitter`. Resolve type arguments against the outer frame.
 - **BUG-2:** `runRivet` uses `spawn(path, args)` with piped stdio forwarded to `io`, and exit code `code ?? (signal ? 128 + os.constants.signals[signal] : 1)`.
 - **BUG-3:** vite uses `execFile` with `maxBuffer: Infinity` and `signal: AbortSignal.timeout(<configurable, default 120s>)`.
 - **BUG-4:** dispatch subcommands first; handle `--help`/`--version` only when there is no subcommand, or when the subcommand's own parser sees them.
 
 **Acceptance.**
+
 - A red test for each bug:
   - a nested generic emits a schema;
   - a fake binary writing 2 MB exits 0 through the passthrough;
   - `rivet-ts rivet -- --version` reaches the (fake) binary.
 
 #### W0-2 — Remove the unearned seams (fixes BUG-9)
+
 NEW · ~250 LOC · Depends: W0-1
 
 **Problem.**
+
 - `application/ports/rivet-contract-lowerer.ts` and `ports/mock-project-emitter.ts` are abstract-class ports with one implementation each. Grep finds no fake and no second `implements`.
 - `use-cases/lower-ts-contracts-to-rivet-contract.ts` only does `return this.lowerer.lower(entryPath)`.
 - `use-cases/scaffold-mock-project.ts` forwards too.
@@ -165,6 +173,7 @@ NEW · ~250 LOC · Depends: W0-1
 - `vite.ts:111` already bypasses the use case.
 
 **Change.**
+
 - Plain functions: `lowerContracts(entryPath, { tsconfigPath? })`, and `scaffoldMock(...)` that does lower → optional `enrichDocumentWithConstraints` → `emitMockProject`.
 - `runCli(args, io)` has no dependency bag.
 - Delete the ports, the use cases, the decorator class, the config/result wrappers and the `application/` directory.
@@ -174,9 +183,11 @@ NEW · ~250 LOC · Depends: W0-1
 **Acceptance.** `ls src/application` fails (the directory is gone). BUG-9 test is green. All tests pass.
 
 #### W0-3 — Dead code and public surface
+
 NEW · ~120 LOC · Depends: W0-2
 
 Delete, grep-verified at baseline (re-verify first):
+
 - `src/index.ts:65-70`: the `LowerContractBundleToRivetContract` alias (0 users), plus the exports of `EndpointExampleSpec`, `ResponseExamplesSpec` and `RivetContractLowerer` (R7).
 - `src/local.ts` and the `rivet-ts/local` package export (R5); only the stale `samples/myapp` uses it.
 - `RivetEndpointExample` class (`src/domain/rivet-contract.ts:114-120`): referenced only by its export.
@@ -191,9 +202,11 @@ Delete, grep-verified at baseline (re-verify first):
 **Acceptance.** The export list diff against W0-0 shows only the intended removals. `CHANGELOG.md` has the breaking lines.
 
 #### W0-4 — Shared test support
+
 NEW · ~500 LOC (tests) · Depends: W0-2
 
 **Problem.**
+
 - 58 `fs.mkdtemp` calls and 0 cleanups. The scaffold dirs also symlink `node_modules`, and the pack test leaves a tarball and an install dir behind.
 - `getProjectRoot` has 6 copies, `getFixturePath` 8 and `toImportPath` 4.
 - The throwaway contract project setup (`{ "type": "module" }` + `contracts.ts` + a `dist/index.js` import) is copied about 28 times. File-local helpers exist: `writeTempEntry` in `contract-discovery:67` and `writeFixtureProject` in `x-section:45`.
@@ -202,6 +215,7 @@ NEW · ~500 LOC (tests) · Depends: W0-2
 - 38 inline `JSON.parse(...) as { endpoints: … }` payload types.
 
 **Change.** Add `tests/support/`:
+
 - `temp.ts`: `tempDir()` = `fs.mkdtemp` + `onTestFinished(() => fs.rm(dir, { recursive: true, force: true }))`.
 - `paths.ts`: using `import.meta.dirname`.
 - `contract-project.ts`: `writeContractProject(files)`.
@@ -211,6 +225,7 @@ NEW · ~500 LOC (tests) · Depends: W0-2
 Convert every call site. Contract imports point at `src/index.ts`, not `dist/`, wherever the import is type-only. Keep `dist` only for the pack and vite tests, and make `test` not require a prior build if that holds.
 
 **Acceptance.**
+
 - `grep -c mkdtemp tests` returns 1 (in `support/temp.ts`).
 - No temp dirs are left in `os.tmpdir()` after a run (compare the counts before and after).
 - The test count is unchanged, and wall-clock time is recorded.
@@ -220,9 +235,11 @@ Convert every call site. Contract imports point at `src/index.ts`, not `dist/`, 
 ### Lane A — Lowerer
 
 #### A1 — One example-entry parser (fixes BUG-5, BUG-6)
+
 NEW · ~200 LOC
 
 **Change.**
+
 - Merge `parseResponseExampleEntry` (`:845-987`) and `parseRequestExampleEntry` (`:1037-1164`) into `parseExampleEntry(node, label, readData)`, where `readData` is a function parameter.
 - The "typeof exported const" resolve-and-parse block appears 3 times (`:851-881`, `:1005-1034`, `:1206-1244`). Replace it with `readExportedConstExample(typeQuery, label)`.
 - Check assignability for response examples too (BUG-6), or drop `targetNode` if the product says response examples are unchecked. Decide by what the C# side validates, and record it.
@@ -233,9 +250,11 @@ NEW · ~200 LOC
 **Acceptance.** Red tests for BUG-5 and BUG-6. Contract-JSON golden unchanged.
 
 #### A2 — Shared list, property and param helpers (fixes BUG-7)
+
 NEW · ~180 LOC · Depends: A1
 
 **Change.**
+
 - `getExampleEntryNodes` (`:1286-1314`) and `getErrorEntryNodes` (`:2535-2563`) become one `getListEntryNodes` using `BUILTIN_TYPE_NAMES`. Delete `EXAMPLE_CONTAINER_TYPE_NAMES` (BUG-7).
 - One `lowerProperties(descriptors, scope)` replaces the interface/type-literal twins in `lowerTypeDefinition` (`:1896-1957`), `lowerTypeNode` (`:2870-2884`) and `tryLowerTaggedUnionTypeNode` (`:3297-3311`).
 - One `appendRouteParams(params, route, typesByLowerName)` replaces the 4 copies at `:2014-2028`, `:2093-2105`, `:2121-2134` and `:2179-2193`. One `pushObjectParams(node, source, code)` replaces the `params`/`query` twins (`:1981-2010`, `:2030-2059`).
@@ -248,9 +267,11 @@ NEW · ~180 LOC · Depends: A1
 **Acceptance.** Red tests for BUG-7 (`Promise<X>` rejected as an example list) and BUG-13 (body on 204 is a lowering diagnostic). Golden unchanged apart from the fixed `openapi-smoke-contract`.
 
 #### A3 — Symbols and types, not source text (fixes BUG-8)
+
 NEW · ~120 LOC · Depends: A2
 
 **Change.**
+
 - One `isRivetSymbol(node, name)`: resolve the symbol through aliases and check that its declaration comes from the rivet-ts authoring types (`src/domain/authoring-types.ts`, or the `index.d.ts` it ships as). Use it for `Contract`, `Endpoint`, `Brand`, `Format` and `AUTHORING_HELPER_TYPE_NAMES`.
 - For `Record`/`Array`/`Date`/`Blob`/`File`, check the lib symbol via `checker`.
 - One `resolveSymbol(node)` for the 6 alias-resolution copies (`:180`, `:1322`, `:1452`, `:1495`, `:2731`, `:3459`).
@@ -259,11 +280,13 @@ NEW · ~120 LOC · Depends: A2
 - `isConstVariableDeclaration`/`isExportedVariableDeclaration`/`hasExportModifier`/`hasReadonlyModifier` (`:136-143`, `:1334-1350`) use `ts.getCombinedNodeFlags`/`getCombinedModifierFlags`.
 
 **Acceptance.**
+
 - Red tests for BUG-8: `import { Endpoint as E }` lowers, and a local unrelated `Contract` type is not treated as a contract.
 - An aliased method type and a computed enum member (`1 << 2`) lower.
 - Golden unchanged for existing fixtures.
 
 #### A4 — Module closure from the program
+
 NEW · ~90 LOC · Depends: A3
 
 **Problem.** `local-source-dependencies.ts` (124 LOC) hand-rolls module resolution. It probes extensions itself, re-parses with `createSourceFile`, and computes `findCommonRoot` by hand. It ignores tsconfig `paths` and type-query imports, and it re-parses files the lowerer's `ts.Program` already has (`vite.ts:193`).
@@ -273,6 +296,7 @@ NEW · ~90 LOC · Depends: A3
 **Acceptance.** A contract importing a sibling module via a tsconfig `paths` alias triggers vite reload. Existing vite tests pass.
 
 #### A5 — Shape and type cleanup
+
 NEW · ~60 LOC · Depends: A4
 
 - `lowerNamedDeclaration`/`lowerEnumDeclaration` (`:1688-1747`) return `RivetContractEnum | null`. Drop the `references: []` wrappers, the one-field `TaggedUnionMemberDescriptor` (`:69`) and the `readTaggedUnionMember` forwarder (`:3329`).
@@ -290,6 +314,7 @@ NEW · ~60 LOC · Depends: A4
 - Add a lowering test pinning that `x?: T`, `x: T | null` and `x?: T | null` produce three distinct contract-JSON property shapes (the C# side now relies on the explicit flag; see §1.1).
 
 #### A6 — Split the lowerer
+
 NEW · 0 LOC (structural) · Depends: A5
 
 `TypeEmissionContext` is one ~3,000-line class. After A1–A5, split it into plain-function modules: `contract-discovery.ts`, `endpoint-examples.ts`, `endpoint-lowering.ts` and `type-lowering.ts`, taking `(checker, declarations, diagnostics)`. Delete the section banners and ticket narration (`:456-460`, `:651-655`, …).
@@ -301,9 +326,11 @@ NEW · 0 LOC (structural) · Depends: A5
 ### Lane B — CLI, vite and binary
 
 #### B1 — CLI and binary config (fixes BUG-11, BUG-12)
+
 NEW · ~100 LOC
 
 **Change.**
+
 - `parseFlags` (`run-cli.ts:58-109`) and the 3 repeated `parsed.errors` blocks become `node:util` `parseArgs({ args, options, strict: true, allowPositionals: true })` per subcommand.
 - `readOwnVersion` (`run-cli.ts:52-56`): read the manifest once. Share it with the workspace version resolution (C1 follow-up).
 - `formatDiagnostics` exists twice (`vite.ts:19-37`, `run-cli.ts:111-118`): keep one.
@@ -320,6 +347,7 @@ NEW · ~100 LOC
 **Acceptance.** Red tests for BUG-11 and BUG-12. The CLI tests pass, with unknown flags rejected by `parseArgs`.
 
 #### B2 — Vite plugin tidy
+
 NEW · ~40 LOC · Depends: B1
 
 - Delete the `contract` option alias and its duplicated validation (`vite.ts:61-71,198-200`) (R6).
@@ -331,9 +359,11 @@ NEW · ~40 LOC · Depends: B1
 ### Lane C — Scaffold and Hono runtime
 
 #### C1 — Emitter plumbing and naming (fixes BUG-10)
+
 NEW · ~250 LOC
 
 **Change.**
+
 - `DiscoveredEndpoint` carries the lowered `name`/`controllerName`. Delete the three copies of the naming logic (`mock-project-emitter.ts:145-164`, `hono.ts:83-89`; the lowerer's copy is Lane A's to keep). **Throw** on a join miss instead of `continue` (BUG-10, red-first).
 - A `writeTree(root, Record<relPath, string>)` helper creates each file's parent directory as needed (`mkdir(dirname, { recursive: true })`), and a `jsonFile(x)` helper writes JSON. They replace:
   - 34 `fs.writeFile` calls;
@@ -350,9 +380,11 @@ NEW · ~250 LOC
 **Acceptance.** Red test for BUG-10. Scaffold snapshots (the output file tree) are unchanged apart from recorded version-pin corrections.
 
 #### C2 — Example emitter as real template files (R3, R11)
+
 NEW · ~650 LOC of TS · Depends: C1
 
 **Change.**
+
 - Move the ~30 `.join("\n")` source blocks (`example-project-emitter.ts:35-739`) into `templates/example/**` as real `.ts`/`.vue` files, and copy them with `fs.cp(src, dest, { recursive: true })` plus explicit token replacement (package scope, and whatever else genuinely varies).
 - Add `templates` to `package.json` `files`.
 - Delete the 30-entry `writeApi` list (`:795-864`).
@@ -362,9 +394,11 @@ NEW · ~650 LOC of TS · Depends: C1
 **Acceptance.** The scaffold output tree is byte-identical to baseline, except for intended template dedup changes, which are recorded. `typecheckScaffoldedWorkspace` passes.
 
 #### C3 — Hono runtime tidy (R4)
+
 NEW · ~70 LOC · Depends: C1
 
 **Change.**
+
 - `class RivetHttpError extends HTTPException` (`hono/http-exception`), using `getResponse()`. Keep the structured-500 `onError` behaviour and the per-route catch semantics, and test both.
 - One `isBodylessStatus` for the 3 copies of the 204/205/304 check (`:397,426,555`).
 - Remove:
@@ -380,11 +414,13 @@ NEW · ~70 LOC · Depends: C1
 ### Wave 2 — Tests and repo hygiene
 
 #### D1 — One suite per behaviour (R2)
+
 NEW · ~1,000–1,300 LOC · Depends: Wave 1 merged
 
 **Problem.** `cli.lifecycle` (1,215 LOC), `lower-contract-bundle.lifecycle` (1,354) and `contract-discovery.lifecycle` (1,222) cover the same lowering facts: aliases, request/response/shorthand examples, mixed descriptors, malformed errors, conflicting security, form and multipart. Some tests are verbatim triplicates (the "named inline and ref-backed request examples" test at cli:340 / lower-contract-bundle:209 / contract-discovery:323; the malformed-errors table at cli:750 / contract-discovery:951). `x-section.lifecycle` (736) is organised by audit ticket and overlaps contract-discovery.
 
 **Change.**
+
 - Lowering facts live in one suite (`lowering.test.ts`).
 - The CLI suite keeps only wiring: entry → output file, exit codes, stderr diagnostics formatting, help and flags, and one happy path.
 - The pack test (`cli:812-984`) only proves the bin and package import resolve.
@@ -396,21 +432,26 @@ NEW · ~1,000–1,300 LOC · Depends: Wave 1 merged
 **Acceptance.** Every behaviour covered before is still covered: produce a before/after mapping of test names in the ledger. Total test LOC is down about 1k.
 
 #### D2 — Behaviour over source text
+
 NEW · ~300 LOC · Depends: D1
 
 **Change.**
+
 - `scaffold-mock.lifecycle` has 85 `toContain` checks on generated code. Replace them with importing the generated app and calling `app.request(...)`, as `scaffold.lifecycle.test.ts:165` already does, plus a `toMatchFileSnapshot` of the tree where needed.
 - `hono.runtime.lifecycle` hand-writes each contract twice, as TS and as JSON literals without `types`/`enums`. Lower the TS contracts once in `beforeAll` with the real lowerer instead.
 
 #### D3 — `samples/myapp` (R1)
+
 NEW · 28 files · Depends: D1
 
 Delete `samples/myapp`. Fix every doc reference (`grep -rn "samples/myapp\|sample-app" docs README.md`), and rewrite `docs/guides/sample-app.md` to point at `rivet-ts scaffold`. Remove the `dependency-cruiser` devDependency if the root no longer uses it.
 
 #### D4 — Real interop gate and schema sync (R9)
+
 ALREADY-COVERED (`TEST.md` §205-221 plans exactly this) · Depends: D1
 
 **Change.**
+
 - `tests/integration/rivet-tool-from.lifecycle.test.ts:13-24,110`: resolve the pinned Rivet binary via the product's own `ensureRivetBinary` (cached in CI). Remove the hardcoded `/Users/max/…` path, the `dotnet run` fallback, the `describe.skipIf` and the stale `eslint-disable`.
 - Bump the default pin (`rivet-binary.ts:130`) to the latest published Rivet release (`v0.44.1`).
 - Run every lowerable fixture through `--from`, passing `--security` for the fixtures that use `.Secure(...)` (§1.1). The `invalid-*`/`unsupported` fixtures stay lowering-failure tests and are not sent to Rivet.
@@ -419,6 +460,7 @@ ALREADY-COVERED (`TEST.md` §205-221 plans exactly this) · Depends: D1
 **Acceptance.** CI runs the interop test with no skip. The schema sync test passes.
 
 #### D5 — Repo hygiene (R8, R10)
+
 NEW · Depends: D4
 
 - Delete `NEW_INVOKE.md`. `git mv TEST.md docs/plans/zero-loss-corpus.md`.
@@ -432,6 +474,7 @@ NEW · Depends: D4
 - `test:watch` shouldn't rely on a one-shot build (after W0-4 removes the `dist` dependency for most tests, run `tsc -w` alongside, or drop the build).
 
 #### D6 — Re-pin to the cleaned-up Rivet (blocked)
+
 NEW · Depends: owner publishes a Rivet release containing `../rivet` `slop/integration` + W3.
 
 Bump the pin, re-vendor `tests/rivet-contract-schema.json` from that release, run the D4 interop gate. Not part of this run.
@@ -459,6 +502,6 @@ Bump the pin, re-vendor `tests/rivet-contract-schema.json` from that release, ru
 
 ## 9. Ledger
 
-| WP | Status | LOC Δ | Tests (+/−) | Golden diff | Impact risk | Notes / follow-ups |
-|---|---|---|---|---|---|---|
-| W0-0 | todo | | | | | |
+| WP   | Status | LOC Δ | Tests (+/−) | Golden diff    | Impact risk    | Notes / follow-ups                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ---- | ------ | ----- | ----------- | -------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| W0-0 | done   | 0 / 0 | 0           | n/a (baseline) | none (no code) | Golden: `/tmp/rivet-ts-golden.sh <outdir>` lowers 12 `tests/fixtures/*` + 85 contracts the integration tests write (snapshotted once into `/tmp/rivet-ts-golden/corpus/`; failures recorded via `.exit`/`.stderr`: 3 fixtures + 34 test contracts fail by design); deterministic (re-run diff empty). Exports: `/tmp/rivet-ts-exports.sh <file>` (runtime + type-level, every `package.json` export) → `/tmp/rivet-ts-exports-before.txt`. Tests: 19 files / 217 tests, vitest 19.9s (24.4s with build). Pre-existing failure: `rivet-tool-from` runs locally against `../rivet` (`slop/integration`) and is refused with RIV1102 (BUG-13, A2/D4); every Wave 0 gate run carries it. `fmt:check` failed only on this spec; formatted here. Plumb: `[]`. 106 temp dirs left in `$TMPDIR` by one run (W0-4). |
