@@ -12,7 +12,12 @@ import type {
 import { toKebabCase } from "../codegen/kebab-case.js";
 import { collectLocalDependencies } from "../typescript/local-source-dependencies.js";
 import { generateEndpointMock } from "./mock-value-generator.js";
-import { assertOutDirWritable, emitWorkspace, type WorkspaceConfig } from "./workspace-emitter.js";
+import {
+  assertOutDirWritable,
+  emitWorkspace,
+  readTemplateTree,
+  type WorkspaceConfig,
+} from "./workspace-emitter.js";
 import { zodSourceForType, type ZodSourceResult } from "./zod-schema-emitter.js";
 
 /**
@@ -313,12 +318,7 @@ const assertUniqueGeneratedNames = (groups: readonly ContractGroup[]): void => {
         ["registerRivetHonoRoutes", 'runtime import "registerRivetHonoRoutes"'],
         [group.contractExportName, `contract import "${group.contractExportName}"`],
         [group.routeRegistrationName, `route registration "${group.routeRegistrationName}"`],
-        ...(bodyHandlers.length > 0
-          ? ([
-              ["rivetHttpError", 'runtime import "rivetHttpError"'],
-              ["z", 'validation import "z"'],
-            ] as const)
-          : []),
+        ...(bodyHandlers.length > 0 ? ([["parseBody", 'edge import "parseBody"']] as const) : []),
         ...group.handlers.map(
           (handler) =>
             [handler.useCaseExportName, `endpoint "${handler.endpointName}" handler`] as const,
@@ -412,25 +412,17 @@ const emitRouteHandlerEntry = (handler: HandlerDescriptor): string => {
     return `      ${key}: ${invocation},`;
   }
 
-  const forward = handler.bodySchema.exact
-    ? `        // The schema is exact, so the parsed value (with Zod transforms
-        // applied) IS the contract body — forward it, not the raw wire.
-        return ${handler.useCaseExportName}({ ...input, body: result.data });`
-    : `        // The synthesized schema is shape-approximate (see the TODO in
-        // the validation file): parsing strips unknown keys, so forward
+  const parse = `parseBody(${schemaExportName(handler)}, input.body)`;
+  return handler.bodySchema.exact
+    ? `      // The schema is exact, so the parsed value (with Zod transforms applied)
+      // IS the contract body — forward it, not the raw wire.
+      ${key}: async (input) => ${handler.useCaseExportName}({ ...input, body: ${parse} }),`
+    : `      ${key}: async (input) => {
+        // The synthesized schema is shape-approximate (see the TODO in the
+        // validation file): parsing strips unknown keys, so validate but forward
         // the original body until the schema is made exact.
-        return ${handler.useCaseExportName}(input);`;
-  return `      ${key}: async (input) => {
-        // The wire is untrusted: parse before the use case sees it.
-        const result = ${schemaExportName(handler)}.safeParse(input.body);
-        if (!result.success) {
-          throw rivetHttpError(422, {
-            code: "validation_failed",
-            message: "Validation failed.",
-            errors: z.flattenError(result.error).fieldErrors,
-          });
-        }
-${forward}
+        ${parse};
+        return ${handler.useCaseExportName}(input);
       },`;
 };
 
@@ -438,13 +430,9 @@ const emitRoutesSource = (group: ContractGroup): string => {
   const bodyHandlers = bodyHandlersOf(group);
   const imports = [
     'import type { Hono } from "hono";',
-    ...(bodyHandlers.length > 0
-      ? [
-          'import { type ContractJson, registerRivetHonoRoutes, rivetHttpError } from "rivet-ts/hono";',
-          'import { z } from "zod";',
-        ]
-      : ['import { type ContractJson, registerRivetHonoRoutes } from "rivet-ts/hono";']),
+    'import { type ContractJson, registerRivetHonoRoutes } from "rivet-ts/hono";',
     `import type { ${group.contractExportName} } from "#contract";`,
+    ...(bodyHandlers.length > 0 ? ['import { parseBody } from "../../http-errors.js";'] : []),
     ...group.handlers.map(
       (handler) =>
         `import { ${handler.useCaseExportName} } from "./application/${handler.fileBaseName}.js";`,
@@ -471,6 +459,7 @@ ${group.handlers.map(emitRouteHandlerEntry).join("\n")}
 
 const emitAppSource = (groups: readonly ContractGroup[]): string => `import { Hono } from "hono";
 import contract from "../generated/api.contract.json" with { type: "json" };
+import { handleUnexpectedError } from "./http-errors.js";
 ${groups
   .map(
     (group) =>
@@ -480,13 +469,7 @@ ${groups
 export const app = new Hono();
 
 ${groups.map((group) => `${group.routeRegistrationName}(app, contract);\n`).join("")}
-// Unhandled handler errors become a structured 500 in BOTH the local
-// (in-browser) transport and a real server — same envelope, same status,
-// keeping the "local now, server later" behavioral parity promise.
-app.onError((error, context) => {
-  console.error(error);
-  return context.json({ code: "internal_error", message: "Unexpected error." }, 500);
-});
+app.onError(handleUnexpectedError);
 `;
 
 const LOCAL_SOURCE = 'export { app } from "./app.js";\n';
@@ -500,7 +483,14 @@ serve({ fetch: app.fetch, port: 5180 }, (info) => {
 `;
 
 /** Emitted files at the root of `apps/api/src`; copied contract sources must not land on them. */
-const API_SOURCE_FILES = ["contract.ts", "local.ts", "main.ts", "app.ts", "validation.ts"];
+const API_SOURCE_FILES = [
+  "contract.ts",
+  "local.ts",
+  "main.ts",
+  "app.ts",
+  "validation.ts",
+  "http-errors.ts",
+];
 
 export const emitMockProject = async (config: MockProjectConfig): Promise<void> => {
   const sourceDependencies = await collectLocalDependencies(config.entryPath);
@@ -553,6 +543,7 @@ export const emitMockProject = async (config: MockProjectConfig): Promise<void> 
   };
 
   await emitWorkspace(workspaceConfig, {
+    ...(await readTemplateTree("shared")),
     "apps/api/src/local.ts": LOCAL_SOURCE,
     "apps/api/src/main.ts": MAIN_SOURCE,
     "apps/api/src/app.ts": emitAppSource(groups),

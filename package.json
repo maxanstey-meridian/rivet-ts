@@ -17,6 +17,8 @@
   },
   "files": [
     "dist",
+    "templates/example",
+    "templates/shared",
     "README.md"
   ],
   "type": "module",
@@ -40,14 +42,14 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepare": "tsc -p tsconfig.build.json",
-    "lint": "oxlint src/ tests/",
-    "lint:fix": "oxlint --fix src/ tests/",
+    "lint": "oxlint src/ tests/ templates/",
+    "lint:fix": "oxlint --fix src/ tests/ templates/",
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
     "analyze": "gitnexus analyze",
     "test": "pnpm build && vitest run",
     "test:watch": "pnpm build && vitest",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit && tsc --noEmit -p templates"
   },
   "dependencies": {
     "openapi-fetch": "^0.17.0",

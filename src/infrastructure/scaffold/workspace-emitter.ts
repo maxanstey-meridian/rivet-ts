@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { RivetContractDocument } from "../../domain/rivet-contract.js";
 import {
   emitClientFacadeSource,
@@ -47,6 +48,36 @@ type ManifestSection = "dependencies" | "devDependencies" | "peerDependencies";
 
 type PackageManifest = { readonly version?: string } & {
   readonly [Section in ManifestSection]?: Readonly<Partial<Record<string, string>>>;
+};
+
+/** `templates/` ships beside `dist/` (package `files`); `../../../` is the package root from `src/` and `dist/`. */
+export const templatePath = (...segments: readonly string[]): string =>
+  path.join(fileURLToPath(new URL("../../../templates/", import.meta.url)), ...segments);
+
+/**
+ * A `templates/<name>` tree keyed relative to it, with every occurrence of
+ * each token replaced. Tokens appear only inside string literals, so the
+ * templates stay compilable (`tsc -p templates`).
+ */
+export const readTemplateTree = async (
+  name: "example" | "shared",
+  tokens: Readonly<Record<string, string>> = {},
+): Promise<FileTree> => {
+  const root = templatePath(name);
+  const entries = await fs.readdir(root, { recursive: true, withFileTypes: true });
+  const files = await Promise.all(
+    entries
+      .filter((entry) => entry.isFile())
+      .map(async (entry) => {
+        const absolutePath = path.join(entry.parentPath, entry.name);
+        const content = Object.entries(tokens).reduce(
+          (text, [token, value]) => text.replaceAll(token, value),
+          await fs.readFile(absolutePath, "utf8"),
+        );
+        return [path.relative(root, absolutePath).split(path.sep).join("/"), content] as const;
+      }),
+  );
+  return Object.fromEntries(files);
 };
 
 /**

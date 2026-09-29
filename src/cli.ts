@@ -7,7 +7,7 @@ import { getConfiguredRivetVersion, resolveRivetBinaryConfig } from "./config/ri
 import { ExtractionDiagnostic } from "./domain/diagnostic.js";
 import { emitClientPackage } from "./infrastructure/codegen/client-package-emitter.js";
 import {
-  EXAMPLE_CONTRACTS_SOURCE,
+  EXAMPLE_CONTRACTS_PATH,
   emitExampleProject,
   emitFrontendOnlyProject,
 } from "./infrastructure/scaffold/example-project-emitter.js";
@@ -260,7 +260,7 @@ const lowerExampleEntry = async () => {
     const entryPath = path.join(stagingDir, "contracts.ts");
     const tsconfigPath = path.join(stagingDir, "tsconfig.json");
 
-    await fs.writeFile(entryPath, EXAMPLE_CONTRACTS_SOURCE);
+    await fs.copyFile(EXAMPLE_CONTRACTS_PATH, entryPath);
     await fs.writeFile(
       tsconfigPath,
       JSON.stringify(

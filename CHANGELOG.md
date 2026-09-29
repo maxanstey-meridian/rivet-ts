@@ -10,6 +10,7 @@
 - `registerRivetHonoRoutes({ group })` matches endpoints by `controllerName` only. The contract JSON never carried an endpoint `group`, so only hand-written contract objects that set one are affected.
 - Scaffolds (`scaffold`, `scaffold-mock`) now pin `zod`, `@hono/node-server` and `dexie` to the versions rivet-ts itself builds and tests against (from its own `package.json`): `@hono/node-server` `^1.14.0` → `^2.0.4`, `zod` `^4.3.6` → `^4.4.3`, `dexie` `^4.0.0` → `^4.4.3`.
 - `DiscoveredContract` gains `controllerName` and `DiscoveredEndpoint` gains `loweredName` (the lowered document's names), so hand-built values of these types need them.
+- Scaffolds emit `apps/api/src/http-errors.ts` — `parseBody(schema, body)` (the 422 `validation_failed` envelope) and `handleUnexpectedError` (the structured 500) — and scaffolded routes and `app.ts` call it instead of inlining both blocks. `scaffold-mock` refuses a contract source file that would land on `apps/api/src/http-errors.ts`.
 
 ## Unreleased — fixes
 

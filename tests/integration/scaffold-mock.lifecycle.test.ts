@@ -257,9 +257,9 @@ describe("scaffold-mock lifecycle", () => {
     expect(routesSource).toContain('group: "members"');
     expect(routesSource).toContain('"List": () => list({}),');
     // Body-carrying endpoints parse at the edge before the mock runs.
-    expect(routesSource).toContain('"Create": async (input) => {');
+    expect(routesSource).toContain('"Create": async (input) =>');
     expect(appSource).toContain("registerMembersRoutes(app, contract);");
-    expect(appSource).toContain("app.onError");
+    expect(appSource).toContain("app.onError(handleUnexpectedError);");
 
     expect(listUseCaseSource).toContain("export const list = async");
     expect(listUseCaseSource).toContain('import("#contract").MembersContract');
@@ -342,11 +342,11 @@ describe("scaffold-mock lifecycle", () => {
     expect(validationSource).toContain(
       'satisfies z.ZodType<import("rivet-ts").RivetHandlerInput<import("#contract").MembersContract, "Create">["body"]>',
     );
-    expect(routesSource).toContain("createRequest.safeParse(input.body)");
-    expect(routesSource).toContain("rivetHttpError(422");
     // The exact schema's parsed output (Zod transforms applied) is what the
     // use case receives — not the raw wire body.
-    expect(routesSource).toContain("return create({ ...input, body: result.data });");
+    expect(routesSource).toContain(
+      "create({ ...input, body: parseBody(createRequest, input.body) })",
+    );
     const validationBarrelSource = await read(path.join(apiSource, "validation.ts"));
     expect(validationBarrelSource).toContain('"./modules/members/members-validation.js"');
 
@@ -359,6 +359,27 @@ describe("scaffold-mock lifecycle", () => {
     );
 
     await typecheckScaffoldedWorkspace(outputDirectory);
+
+    // The route edge parses the body: a rejected body is the 422 envelope, an
+    // accepted one reaches the mock use case.
+    const { app } = (await import(path.join(outputDirectory, apiSource, "app.ts"))) as {
+      app: { request: (input: string, init?: RequestInit) => Promise<Response> };
+    };
+    const create = (body: object) =>
+      app.request("/api/members", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const rejected = await create({ email: 42 });
+    expect(rejected.status).toBe(422);
+    expect(await rejected.json()).toMatchObject({
+      code: "validation_failed",
+      errors: { email: expect.any(Array) },
+    });
+    const created = await create({ email: "jane@example.com" });
+    expect(created.status).toBe(201);
+    expect(await created.json()).toEqual({ id: "mem_001", email: "jane@example.com" });
   }, 120000);
 
   it("scaffolds one module per contract when multiple contracts are authored together", async () => {

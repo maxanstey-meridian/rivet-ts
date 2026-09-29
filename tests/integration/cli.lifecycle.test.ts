@@ -796,6 +796,23 @@ describe("CLI lifecycle", () => {
         }),
       ]),
     );
+
+    // The scaffold templates ship in the package, not only in the repo.
+    await execFileAsync("pnpm", ["exec", "rivet-ts", "scaffold", "--out", "scaffolded"], {
+      cwd: consumerDirectory,
+    });
+    await expect(
+      fs.readFile(
+        path.join(consumerDirectory, "scaffolded", "apps", "api", "src", "http-errors.ts"),
+        "utf8",
+      ),
+    ).resolves.toContain("export const parseBody");
+    await expect(
+      fs.readFile(
+        path.join(consumerDirectory, "scaffolded", "apps", "ui", "app", "app.vue"),
+        "utf8",
+      ),
+    ).resolves.toContain('from "@scaffolded/api/validation"');
   }, 60000);
 
   it("writes Rivet contract JSON for a form-encoded endpoint through the real CLI path", async () => {

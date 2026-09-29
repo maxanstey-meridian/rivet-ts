@@ -1,0 +1,3 @@
+# Scaffold templates are another project's code: they are gated by `tsc -p templates`,
+# oxlint, and plumb on the rendered scaffold (scaffold lifecycle tests).
+templates/
