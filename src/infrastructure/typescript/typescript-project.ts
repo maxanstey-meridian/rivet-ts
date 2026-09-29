@@ -46,29 +46,21 @@ export type ResolvedTypeScriptProject = Readonly<{
 export const mapTypeScriptDiagnostics = (
   diagnostics: readonly ts.Diagnostic[],
   defaultFilePath: string,
-): ExtractionDiagnostic[] => {
-  return diagnostics.map((diagnostic) => {
-    if (!diagnostic.file || diagnostic.start === undefined) {
-      return new ExtractionDiagnostic({
-        severity: diagnostic.category === ts.DiagnosticCategory.Warning ? "warning" : "error",
-        code: `TS${diagnostic.code}`,
-        message: ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"),
-        filePath: defaultFilePath,
-      });
-    }
-
-    const position = diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start);
+): ExtractionDiagnostic[] =>
+  diagnostics.map((diagnostic) => {
+    const { file, start } = diagnostic;
+    const position =
+      file && start !== undefined ? file.getLineAndCharacterOfPosition(start) : undefined;
 
     return new ExtractionDiagnostic({
       severity: diagnostic.category === ts.DiagnosticCategory.Warning ? "warning" : "error",
       code: `TS${diagnostic.code}`,
       message: ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"),
-      filePath: diagnostic.file.fileName,
-      line: position.line + 1,
-      column: position.character + 1,
+      filePath: file && position ? file.fileName : defaultFilePath,
+      line: position && position.line + 1,
+      column: position && position.character + 1,
     });
   });
-};
 
 export const resolveTypeScriptProject = (
   entryPath: string,

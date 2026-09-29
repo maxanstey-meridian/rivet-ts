@@ -6,7 +6,6 @@ import type { Plugin, ResolvedConfig } from "vite";
 import { resolveRivetBinaryConfig } from "./config/rivet-binary.js";
 import { emitClientPackage } from "./infrastructure/codegen/client-package-emitter.js";
 import { toKebabCase } from "./infrastructure/codegen/kebab-case.js";
-import { collectLocalDependencies } from "./infrastructure/typescript/local-source-dependencies.js";
 import { lowerContracts } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import {
   ensureRivetBinary,
@@ -199,8 +198,7 @@ const generateArtifacts = async (
 
   await emitClientPackage(options.clientOutDir, options.openApiPath);
 
-  const dependencies = await collectLocalDependencies(options.entryPath);
-  return dependencies.map((dependency) => dependency.absolutePath);
+  return lowered.sourceFiles.map((file) => file.absolutePath);
 };
 
 export const rivetTs = (options: RivetTsVitePluginOptions): Plugin => {

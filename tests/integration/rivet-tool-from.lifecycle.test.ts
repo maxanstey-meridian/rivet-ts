@@ -174,12 +174,12 @@ describe.skipIf(!rivetToolAvailable)("Rivet.Tool --from OpenAPI smoke", () => {
     expect(uploadOp).toBeDefined();
     expect(uploadOp!.requestBody?.content["multipart/form-data"]).toBeDefined();
 
-    // --- DELETE 204: response example on void response ---
+    // --- DELETE 204: bodyless ---
     const deleteOp = openApi.paths["/api/items/{id}"]?.delete;
     expect(deleteOp).toBeDefined();
     const delete204 = deleteOp!.responses["204"];
     expect(delete204).toBeDefined();
-    expect(delete204?.content).toBeDefined();
+    expect(delete204?.content).toBeUndefined();
 
     // --- File GET: success uses text/csv, error uses application/json ---
     const exportOp = openApi.paths["/api/items/export"]?.get;

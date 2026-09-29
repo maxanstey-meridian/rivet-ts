@@ -9,7 +9,6 @@ import type {
 import {
   createItemRequestExample,
   createItemResponseExample,
-  deleteAckExample,
   fileErrorExample,
   namedRequestExample,
   refBackedRequestExample,
@@ -80,7 +79,6 @@ export interface OpenApiSmokeContract extends Contract<"OpenApiSmokeContract"> {
     method: "DELETE";
     route: "/api/items/{id}";
     response: void;
-    responseExamples: [{ status: 204; examples: [typeof deleteAckExample] }];
   }>;
 
   ExportItems: Endpoint<{

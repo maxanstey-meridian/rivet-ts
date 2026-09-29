@@ -531,6 +531,72 @@ describe("vite plugin lifecycle", () => {
     ).resolves.toBeDefined();
   }, 20_000);
 
+  it("reloads when a module the contract imports through a tsconfig paths alias changes", async () => {
+    const tempDirectory = await tempDir("rivet-ts-vite-plugin-paths-alias-");
+    const uiRoot = path.join(tempDirectory, "ui");
+    await fs.mkdir(uiRoot, { recursive: true });
+    await fs.mkdir(path.join(tempDirectory, "models"), { recursive: true });
+    await fs.mkdir(path.join(tempDirectory, "node_modules"), { recursive: true });
+    await fs.symlink(PROJECT_ROOT, path.join(tempDirectory, "node_modules", "rivet-ts"), "dir");
+    await fs.writeFile(path.join(uiRoot, "index.html"), "<!DOCTYPE html><html></html>\n");
+    await fs.writeFile(
+      path.join(tempDirectory, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { strict: true, paths: { "@models/*": ["./models/*"] } } }),
+    );
+    const modelPath = path.join(tempDirectory, "models", "member.ts");
+    await fs.writeFile(modelPath, "export interface MemberDto { id: string; }\n");
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    await fs.writeFile(
+      entryPath,
+      [
+        'import type { Contract, Endpoint } from "rivet-ts";',
+        'import type { MemberDto } from "@models/member";',
+        "",
+        'export interface MembersContract extends Contract<"MembersContract"> {',
+        '  List: Endpoint<{ method: "GET"; route: "/api/members"; response: MemberDto[] }>;',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const binaryPath = path.join(tempDirectory, "fake-rivet.mjs");
+    await fs.writeFile(
+      binaryPath,
+      [
+        "#!/usr/bin/env node",
+        'import fs from "node:fs";',
+        'import path from "node:path";',
+        'const outputDir = process.argv[process.argv.indexOf("--output") + 1];',
+        'fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify({ openapi: "3.1.0", info: { title: "t", version: "1" }, paths: {} }));',
+        "",
+      ].join("\n"),
+    );
+    await fs.chmod(binaryPath, 0o755);
+    const { rivetTs } = await import("../../src/vite.js");
+
+    const server = await createServer({
+      configFile: false,
+      root: uiRoot,
+      logLevel: "silent",
+      server: { port: 0 },
+      plugins: [rivetTs({ entry: entryPath, apiRoot: tempDirectory, rivet: { binaryPath } })],
+    });
+    try {
+      await server.listen();
+      const sent: unknown[] = [];
+      server.ws.send = (payload: unknown) => {
+        sent.push(payload);
+      };
+
+      server.watcher.emit("change", modelPath);
+
+      await vi.waitFor(() => expect(sent).toContainEqual({ type: "full-reload" }), {
+        timeout: 10_000,
+      });
+    } finally {
+      await server.close();
+    }
+  }, 20_000);
+
   it("fails the build when the Rivet binary outlives rivet.timeoutMs", async () => {
     await expect(
       buildWithFakeRivet("rivet-ts-vite-plugin-hang-", "setInterval(() => undefined, 1000);", {

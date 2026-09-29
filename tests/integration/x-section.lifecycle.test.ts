@@ -394,9 +394,7 @@ describe("X-section extraction pipeline fixtures", () => {
       "contracts.ts": [
         'import type { Contract, Endpoint } from "__IMPORT_PATH__";',
         "",
-        'type Name = "UsersContract";',
-        "",
-        "export interface UsersContract extends Contract<Name> {",
+        "export interface UsersContract extends Contract<string> {",
         "  Ping: Endpoint<{",
         '    method: "GET";',
         '    route: "/api/ping";',

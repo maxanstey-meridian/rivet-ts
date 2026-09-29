@@ -1090,6 +1090,155 @@ describe("Contract discovery lifecycle", () => {
     );
   });
 
+  it("recognises Contract and Endpoint through renamed imports, and literals through aliases", async () => {
+    const { entryPath } = await writeTempEntry("rivet-ts-renamed-authoring-", [
+      'import type { Contract as C, Endpoint as E } from "__IMPORT_PATH__";',
+      "",
+      'type Name = "Users";',
+      'type Get = "GET";',
+      'type PingRoute = "/api/ping";',
+      "",
+      "export interface UsersContract extends C<Name> {",
+      "  Ping: E<{ method: Get; route: PingRoute; response: void }>;",
+      "}",
+      "",
+    ]);
+
+    const lowered = lowerContracts(entryPath);
+
+    expect(lowered.diagnostics).toEqual([]);
+    expect(lowered.contracts.map((contract) => contract.name)).toEqual(["Users"]);
+    expect(parseDocument(lowered).endpoints[0]).toMatchObject({
+      httpMethod: "GET",
+      routeTemplate: "/api/ping",
+    });
+  });
+
+  it("reports a computed endpoint member name", async () => {
+    const { entryPath } = await writeTempEntry("rivet-ts-computed-endpoint-name-", [
+      'import type { Contract, Endpoint } from "__IMPORT_PATH__";',
+      "",
+      'const ping = "Ping";',
+      "",
+      'export interface UsersContract extends Contract<"Users"> {',
+      '  [ping]: Endpoint<{ method: "GET"; route: "/api/ping"; response: void }>;',
+      "}",
+      "",
+    ]);
+
+    const lowered = lowerContracts(entryPath);
+
+    expect(lowered.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "UNSUPPORTED_ENDPOINT_NAME",
+        message:
+          "Computed endpoint names are not supported; use an identifier or a string literal.",
+      }),
+    ]);
+  });
+
+  it("does not treat a local type named Contract as the rivet-ts Contract", async () => {
+    const { entryPath } = await writeTempEntry("rivet-ts-local-contract-", [
+      'import type { Endpoint } from "__IMPORT_PATH__";',
+      "",
+      "type Contract<TName extends string> = { readonly label?: TName };",
+      "",
+      'export interface UsersContract extends Contract<"Users"> {',
+      '  Ping: Endpoint<{ method: "GET"; route: "/api/ping"; response: void }>;',
+      "}",
+      "",
+    ]);
+
+    const lowered = lowerContracts(entryPath);
+
+    expect(lowered.diagnostics).toEqual([]);
+    expect(lowered.contracts).toEqual([]);
+  });
+
+  it("rejects a non-array container such as Promise<typeof x> as an example list", async () => {
+    const { entryPath } = await writeTempEntry("rivet-ts-example-list-promise-", [
+      'import type { Contract, Endpoint } from "__IMPORT_PATH__";',
+      "",
+      "export interface CreateRequest { email: string; }",
+      'export const example = { email: "jane@example.com" } satisfies CreateRequest;',
+      "",
+      'export interface TempContract extends Contract<"TempContract"> {',
+      "  Create: Endpoint<{",
+      '    method: "POST";',
+      '    route: "/api/temp";',
+      "    input: CreateRequest;",
+      "    requestExamples: Promise<typeof example>;",
+      "  }>;",
+      "}",
+      "",
+    ]);
+
+    const lowered = lowerContracts(entryPath);
+
+    expect(lowered.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "INVALID_ENDPOINT_EXAMPLE_REFERENCE", filePath: entryPath }),
+    );
+    expect(parseDocument(lowered).endpoints[0]).not.toHaveProperty("requestExamples");
+  });
+
+  it("names the responseExamples entry, not requestExamples, when a response example descriptor is malformed", async () => {
+    const { entryPath } = await writeTempEntry("rivet-ts-response-example-descriptor-", [
+      'import type { Contract, Endpoint } from "__IMPORT_PATH__";',
+      "",
+      "export interface MemberDto { id: string; }",
+      'export const example = { id: "mem_1" } satisfies MemberDto;',
+      "",
+      'export interface TempContract extends Contract<"TempContract"> {',
+      "  Get: Endpoint<{",
+      '    method: "GET";',
+      '    route: "/api/temp";',
+      "    response: MemberDto;",
+      "    responseExamples: [{ status: 200; examples: [{ name: 42; json: typeof example }] }];",
+      "  }>;",
+      "}",
+      "",
+    ]);
+
+    const lowered = lowerContracts(entryPath);
+
+    expect(lowered.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
+        message:
+          'Endpoint "Get" responseExamples[200].examples entries must declare name as a string literal when provided.',
+      }),
+    );
+  });
+
+  // Status-scoped response examples are not checked against the response
+  // types: the DSL does not constrain them at the type level and C# Rivet
+  // carries example JSON verbatim, so the lowerer does not invent a check.
+  it("lowers status-scoped response examples without checking them against the response type", async () => {
+    const { entryPath } = await writeTempEntry("rivet-ts-response-example-unchecked-", [
+      'import type { Contract, Endpoint } from "__IMPORT_PATH__";',
+      "",
+      "export interface MemberDto { id: string; }",
+      "export const example = { other: 1 };",
+      "",
+      'export interface TempContract extends Contract<"TempContract"> {',
+      "  Get: Endpoint<{",
+      '    method: "GET";',
+      '    route: "/api/temp";',
+      "    response: MemberDto;",
+      "    responseExamples: [{ status: 200; examples: [typeof example] }];",
+      "  }>;",
+      "}",
+      "",
+    ]);
+
+    const lowered = lowerContracts(entryPath);
+
+    expect(lowered.diagnostics).toEqual([]);
+    expect(parseDocument(lowered).endpoints[0]?.responses[0]?.examples).toEqual([
+      { mediaType: "application/json", json: '{"other":1}' },
+    ]);
+  });
+
   it("lowers the formEncoded flag from a form-encoded endpoint", async () => {
     const lowered = lowerContracts(fixturePath("form-encoded-contract", "contracts.ts"));
 

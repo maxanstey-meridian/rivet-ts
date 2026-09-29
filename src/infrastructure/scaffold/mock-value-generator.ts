@@ -3,7 +3,7 @@ import type {
   RivetContractDocument,
   RivetEndpointDefinition,
   RivetEndpointExampleValue,
-  RivetResponseExample,
+  RivetExample,
   RivetType,
 } from "../../domain/rivet-contract.js";
 import { createTypeWalkContext, enterTypeDefinition, type TypeWalkContext } from "./type-walk.js";
@@ -55,7 +55,7 @@ const findSuccessResponse = (endpoint: RivetEndpointDefinition) =>
   endpoint.responses.find((response) => response.statusCode >= 200 && response.statusCode < 300) ??
   endpoint.responses[0];
 
-const parseExample = (example: RivetResponseExample): RivetEndpointExampleValue | undefined => {
+const parseExample = (example: RivetExample): RivetEndpointExampleValue | undefined => {
   const rawJson = example.resolvedJson ?? example.json;
   if (!rawJson) {
     return undefined;
