@@ -67,7 +67,7 @@ That pipeline has explicit ownership:
 2. Rivet writes `openapi.json`.
 3. `rivet-ts generate` writes `schema.d.ts`.
 
-rivet-ts pins Rivet `0.44.1` by default. On macOS arm64/x64, Linux x64, and
+rivet-ts pins Rivet `0.45.0` by default. On macOS arm64/x64, Linux x64, and
 Windows x64, the binary is downloaded from GitHub Releases and cached
 automatically; it does not need to be on `PATH`. Set `RIVET_VERSION` (honoured
 by both the CLI passthrough and the Vite plugin), or use the [Vite plugin options](https://maxanstey-meridian.github.io/rivet-ts/guides/vite-plugin)

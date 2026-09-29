@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 
 /** The Rivet release used when neither `rivet.version` nor `RIVET_VERSION` names one. */
-export const DEFAULT_RIVET_VERSION = "0.44.1";
+export const DEFAULT_RIVET_VERSION = "0.45.0";
 
 export type RivetBinaryConfig = {
   readonly version?: string;

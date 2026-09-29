@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — breaking
+
+- The default Rivet pin moves from `v0.44.1` to `v0.45.0`. Its `--from` is stricter about the contract JSON, a nullable property is no longer implicitly optional (rivet-ts already writes explicit optionality, so its output is unaffected), the `FileRouteDefinition.ContentType` alias is gone, and duplicate response header names per status are refused (RIV1109). The contract JSON schema is unchanged. Set `RIVET_VERSION` or `rivet.version` to stay on an older release.
+
 ## 0.14.0 — breaking
 
 - The lowering entry point is now the synchronous function `lowerContracts(entryPath, { tsconfigPath? })`. The `TypeScriptRivetContractLowerer` class, the `RivetContractLowerer` port, the `LowerTsContractsToRivetContract` use case and its deprecated `LowerContractBundleToRivetContract` alias are removed from the `rivet-ts` export. Replace `await new LowerTsContractsToRivetContract(new TypeScriptRivetContractLowerer(tsconfig)).execute({ entryPath })` with `lowerContracts(entryPath, { tsconfigPath: tsconfig })`.
