@@ -32,7 +32,7 @@ const SPEC = {
 };
 
 describe("generate CLI", () => {
-  it("emits schema.d.ts only — the artifact dir is openapi.json + schema.d.ts (RV-020)", async () => {
+  it("emits schema.d.ts only — the artifact dir is openapi.json + schema.d.ts", async () => {
     const tempDirectory = await tempDir("rivet-ts-generate-");
     const generatedRoot = path.join(tempDirectory, "generated");
 

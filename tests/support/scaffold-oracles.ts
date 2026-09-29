@@ -44,7 +44,7 @@ const runTsc = async (tsconfigPath: string): Promise<void> => {
 };
 
 /**
- * Real compilation oracle for scaffold output (T2): link runtime deps and
+ * Real compilation oracle for scaffold output: link runtime deps and
  * typecheck the api AND contracts packages with tsc. Catches non-compiling
  * output (bad mock values, dangling imports, facade/schema drift) that string
  * greps never could.

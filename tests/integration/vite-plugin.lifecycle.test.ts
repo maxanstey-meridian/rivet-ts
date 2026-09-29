@@ -5,6 +5,8 @@ import { PROJECT_ROOT } from "../support/paths.js";
 import { installFakeRivet } from "../support/rivet-cache.js";
 import { tempDir } from "../support/temp.js";
 
+const EMPTY_SPEC = { openapi: "3.1.0", info: { title: "t", version: "1" }, paths: {} };
+
 describe("vite plugin lifecycle", () => {
   it("generates contract artifacts and local transport for a scaffolded api package", async () => {
     const projectRoot = PROJECT_ROOT;
@@ -33,10 +35,9 @@ describe("vite plugin lifecycle", () => {
       path.join(nodeModulesDirectory, "openapi-fetch"),
       "dir",
     );
-    // Hand-built minimal sample (the scaffolder now emits the golden Nuxt
-    // workspace, which is exercised by its own lifecycle suite; this test is
-    // about the PLUGIN: artifact generation, V1 path resolution, the binary
-    // handshake, and a real vite build).
+    // A hand-built minimal workspace: this test is about the plugin (artifact
+    // generation, path resolution, the binary handshake, a real vite build),
+    // not the scaffold, which has its own suite.
     const apiRoot = path.join(sampleRoot, "packages", "api");
     const clientRoot = path.join(sampleRoot, "packages", "client");
     await fs.mkdir(path.join(apiRoot, "src", "app"), { recursive: true });
@@ -46,35 +47,28 @@ describe("vite plugin lifecycle", () => {
 
     await fs.writeFile(
       path.join(apiRoot, "src", "app", "contracts.ts"),
-      [
-        'import type { Contract, Endpoint } from "rivet-ts";',
-        "",
-        "export interface MemberDto {",
-        "  id: string;",
-        "  email: string;",
-        "}",
-        "",
-        "export interface CreateMemberRequest {",
-        "  email: string;",
-        "}",
-        "",
-        'export interface MembersContract extends Contract<"MembersContract"> {',
-        "  List: Endpoint<{",
-        '    method: "GET";',
-        '    route: "/api/members";',
-        "    response: MemberDto[];",
-        "  }>;",
-        "",
-        "  Create: Endpoint<{",
-        '    method: "POST";',
-        '    route: "/api/members";',
-        "    input: CreateMemberRequest;",
-        "    response: MemberDto;",
-        "    successStatus: 201;",
-        "  }>;",
-        "}",
-        "",
-      ].join("\n"),
+      `import type { Contract, Endpoint } from "rivet-ts";
+
+export interface MemberDto {
+  id: string;
+  email: string;
+}
+
+export interface CreateMemberRequest {
+  email: string;
+}
+
+export interface MembersContract extends Contract<"MembersContract"> {
+  List: Endpoint<{ method: "GET"; route: "/api/members"; response: MemberDto[] }>;
+  Create: Endpoint<{
+    method: "POST";
+    route: "/api/members";
+    input: CreateMemberRequest;
+    response: MemberDto;
+    successStatus: 201;
+  }>;
+}
+`,
     );
 
     await fs.writeFile(
@@ -85,17 +79,15 @@ describe("vite plugin lifecycle", () => {
     // generated dir holds artifacts only (openapi.json + schema.d.ts).
     await fs.writeFile(
       path.join(sampleRoot, "ui", "src", "main.ts"),
-      [
-        'import createOpenApiClient from "openapi-fetch";',
-        'import type { paths } from "../../packages/client/generated/schema.js";',
-        "",
-        'const client = createOpenApiClient<paths>({ baseUrl: "http://localhost" });',
-        'void client.GET("/api/members");',
-        "",
-      ].join("\n"),
+      `import createOpenApiClient from "openapi-fetch";
+import type { paths } from "../../packages/client/generated/schema.js";
+
+const client = createOpenApiClient<paths>({ baseUrl: "http://localhost" });
+void client.GET("/api/members");
+`,
     );
 
-    // The fake binary mirrors the REAL tool's post-Phase-3 contract exactly:
+    // The fake binary mirrors the real tool's contract:
     // `rivet --from <contract.json> --output <dir>` writes <dir>/openapi.json
     // and nothing else; `--openapi <path>` overrides the spec path (sole
     // writer when given; relative resolves against --output, else cwd). The
@@ -105,124 +97,83 @@ describe("vite plugin lifecycle", () => {
     const fakeRivetArgsPath = path.join(sampleRoot, "fake-rivet-args.json");
     await fs.writeFile(
       fakeRivetBinaryPath,
-      [
-        "#!/usr/bin/env node",
-        'import fs from "node:fs/promises";',
-        'import path from "node:path";',
-        "",
-        "const args = process.argv.slice(2);",
-        `await fs.writeFile(${JSON.stringify(fakeRivetArgsPath)}, JSON.stringify(args));`,
-        'const fromIndex = args.indexOf("--from");',
-        "if (fromIndex === -1 || fromIndex + 1 >= args.length) {",
-        '  throw new Error("Missing --from");',
-        "}",
-        "// The contract JSON must already exist when the binary runs.",
-        "await fs.access(args[fromIndex + 1]);",
-        'const outputIndex = args.indexOf("--output");',
-        "const outputDir = outputIndex === -1 ? undefined : args[outputIndex + 1];",
-        'const openApiIndex = args.indexOf("--openapi");',
-        "const openApiOverride = openApiIndex === -1 ? undefined : args[openApiIndex + 1];",
-        "// Spec path resolution mirrors the real EmitPipeline: --openapi wins",
-        "// (relative against --output ?? cwd); otherwise <output>/openapi.json.",
-        "const openApiPath = openApiOverride",
-        "  ? path.resolve(outputDir ?? process.cwd(), openApiOverride)",
-        "  : path.join(outputDir, 'openapi.json');",
-        "await fs.mkdir(path.dirname(openApiPath), { recursive: true });",
-        "const spec = {",
-        '  openapi: "3.1.0",',
-        '  info: { title: "myapp", version: "1.0.0" },',
-        "  paths: {",
-        '    "/api/members": {',
-        "      get: {",
-        "        responses: {",
-        '          "200": {',
-        '            description: "ok",',
-        "            content: {",
-        '              "application/json": {',
-        "                schema: {",
-        '                  type: "array",',
-        "                  items: {",
-        '                    type: "object",',
-        '                    properties: { id: { type: "string" }, email: { type: "string" } },',
-        '                    required: ["id", "email"],',
-        "                  },",
-        "                },",
-        "              },",
-        "            },",
-        "          },",
-        "        },",
-        "      },",
-        "      post: {",
-        "        requestBody: {",
-        "          required: true,",
-        "          content: {",
-        '            "application/json": {',
-        "              schema: {",
-        '                type: "object",',
-        '                properties: { email: { type: "string" } },',
-        '                required: ["email"],',
-        "              },",
-        "            },",
-        "          },",
-        "        },",
-        "        responses: {",
-        '          "201": {',
-        '            description: "created",',
-        "            content: {",
-        '              "application/json": {',
-        "                schema: {",
-        '                  type: "object",',
-        '                  properties: { id: { type: "string" }, email: { type: "string" } },',
-        '                  required: ["id", "email"],',
-        "                },",
-        "              },",
-        "            },",
-        "          },",
-        "        },",
-        "      },",
-        "    },",
-        "  },",
-        "};",
-        "await fs.writeFile(openApiPath, `${JSON.stringify(spec, null, 2)}\\n`);",
-        "",
-      ].join("\n"),
+      `#!/usr/bin/env node
+import fs from "node:fs/promises";
+import path from "node:path";
+
+const args = process.argv.slice(2);
+await fs.writeFile(${JSON.stringify(fakeRivetArgsPath)}, JSON.stringify(args));
+const fromIndex = args.indexOf("--from");
+if (fromIndex === -1 || fromIndex + 1 >= args.length) {
+  throw new Error("Missing --from");
+}
+// The contract JSON must already exist when the binary runs.
+await fs.access(args[fromIndex + 1]);
+const outputIndex = args.indexOf("--output");
+const outputDir = outputIndex === -1 ? undefined : args[outputIndex + 1];
+const openApiIndex = args.indexOf("--openapi");
+const openApiOverride = openApiIndex === -1 ? undefined : args[openApiIndex + 1];
+// Spec path resolution mirrors the real tool: --openapi wins
+// (relative against --output ?? cwd); otherwise <output>/openapi.json.
+const openApiPath = openApiOverride
+  ? path.resolve(outputDir ?? process.cwd(), openApiOverride)
+  : path.join(outputDir, "openapi.json");
+await fs.mkdir(path.dirname(openApiPath), { recursive: true });
+const member = {
+  type: "object",
+  properties: { id: { type: "string" }, email: { type: "string" } },
+  required: ["id", "email"],
+};
+const json = (schema) => ({ "application/json": { schema } });
+const spec = {
+  openapi: "3.1.0",
+  info: { title: "myapp", version: "1.0.0" },
+  paths: {
+    "/api/members": {
+      get: {
+        responses: { 200: { description: "ok", content: json({ type: "array", items: member }) } },
+      },
+      post: {
+        requestBody: {
+          required: true,
+          content: json({ type: "object", properties: { email: { type: "string" } }, required: ["email"] }),
+        },
+        responses: { 201: { description: "created", content: json(member) } },
+      },
+    },
+  },
+};
+await fs.writeFile(openApiPath, JSON.stringify(spec, null, 2));
+`,
       "utf8",
     );
     await fs.chmod(fakeRivetBinaryPath, 0o755);
 
-    // V1 pin: the build runs from THIS process's cwd (the repo, not the
-    // sample). The plugin must resolve the relative paths below against the
+    // The build runs from this process's cwd (the repo, not the sample),
+    // so the plugin must resolve the relative paths below against the
     // directory the Vite config file lives in, never process.cwd().
     await fs.writeFile(
       path.join(sampleRoot, "vite.config.ts"),
-      [
-        'import { defineConfig } from "vite";',
-        'import { rivetTs } from "rivet-ts/vite";',
-        "",
-        "export default defineConfig({",
-        // Vite resolves its own `root` against process.cwd(); use an absolute
-        // path for it. The rivetTs() options stay relative on purpose — they
-        // must resolve against the config file directory (V1).
-        `  root: ${JSON.stringify(path.join(sampleRoot, "ui"))},`,
-        '  logLevel: "silent",',
-        "  plugins: [",
-        "    rivetTs({",
-        '      entry: "./packages/api/src/app/contracts.ts",',
-        '      apiRoot: "./packages/api",',
-        '      runtimeContractOut: "./packages/api/generated/api.contract.json",',
-        '      clientOutDir: "./packages/client/generated",',
-        "      rivet: {",
-        `        binaryPath: ${JSON.stringify(fakeRivetBinaryPath)},`,
-        "      },",
-        "    }),",
-        "  ],",
-        "  build: {",
-        '    outDir: "../dist",',
-        "    emptyOutDir: true,",
-        "  },",
-        "});",
-        "",
-      ].join("\n"),
+      // Vite resolves its own `root` against process.cwd(), so it is absolute. The
+      // rivetTs() paths stay relative: they must resolve against this file's directory.
+      `import { defineConfig } from "vite";
+import { rivetTs } from "rivet-ts/vite";
+
+export default defineConfig({
+  root: ${JSON.stringify(path.join(sampleRoot, "ui"))},
+  logLevel: "silent",
+  plugins: [
+    rivetTs({
+      entry: "./packages/api/src/app/contracts.ts",
+      apiRoot: "./packages/api",
+      runtimeContractOut: "./packages/api/generated/api.contract.json",
+      clientOutDir: "./packages/client/generated",
+      rivet: { binaryPath: ${JSON.stringify(fakeRivetBinaryPath)} },
+    }),
+  ],
+  build: { outDir: "../dist", emptyOutDir: true },
+});
+`,
       "utf8",
     );
 
@@ -249,7 +200,7 @@ describe("vite plugin lifecycle", () => {
     ]);
     await expect(fs.stat(path.join(clientRoot, "generated", "rivet"))).rejects.toThrow();
     await expect(fs.stat(path.join(clientRoot, "generated", "schema.d.ts"))).resolves.toBeTruthy();
-    // Types only (RV-020): no facade inside the artifact dir.
+    // Types only: no facade inside the artifact dir.
     await expect(fs.stat(path.join(clientRoot, "generated", "index.ts"))).rejects.toThrow();
     await expect(fs.stat(path.join(sampleRoot, "dist", "index.html"))).resolves.toBeTruthy();
 
@@ -263,8 +214,6 @@ describe("vite plugin lifecycle", () => {
     expect(schemaSource).toContain("email: string;");
   }, 20_000);
 
-  // V3: the plugin used to concatenate frontend diagnostics with the lowerer
-  // result (which already includes them), reporting everything twice.
   it("reports each contract diagnostic exactly once when generation fails", async () => {
     const tempDirectory = await tempDir("rivet-ts-vite-plugin-broken-");
     const uiRoot = path.join(tempDirectory, "ui");
@@ -309,9 +258,8 @@ describe("vite plugin lifecycle", () => {
 
   // Spec-dropout fixture: a valid contract, a generated/ directory pre-seeded
   // with the scaffold-time bootstrap spec + last-good client artifacts, and a
-  // fake binary that exits 0 WITHOUT writing openapi.json. This is the §5.1
-  // P0 failure mode: the plugin used to silently re-read the stale bootstrap
-  // spec and regenerate schema.d.ts from it.
+  // fake binary that exits 0 WITHOUT writing openapi.json. The plugin must
+  // not silently re-read the stale bootstrap spec and regenerate schema.d.ts from it.
   const createSpecDropoutFixture = async (
     prefix: string,
   ): Promise<{
@@ -340,22 +288,16 @@ describe("vite plugin lifecycle", () => {
     const entryPath = path.join(tempDirectory, "contracts.ts");
     await fs.writeFile(
       entryPath,
-      [
-        'import type { Contract, Endpoint } from "rivet-ts";',
-        "",
-        "export interface MemberDto {",
-        "  id: string;",
-        "}",
-        "",
-        'export interface MembersContract extends Contract<"MembersContract"> {',
-        "  List: Endpoint<{",
-        '    method: "GET";',
-        '    route: "/api/members";',
-        "    response: MemberDto[];",
-        "  }>;",
-        "}",
-        "",
-      ].join("\n"),
+      `import type { Contract, Endpoint } from "rivet-ts";
+
+export interface MemberDto {
+  id: string;
+}
+
+export interface MembersContract extends Contract<"MembersContract"> {
+  List: Endpoint<{ method: "GET"; route: "/api/members"; response: MemberDto[] }>;
+}
+`,
     );
 
     // The stale spec the plugin must NOT fall back to.
@@ -519,13 +461,11 @@ describe("vite plugin lifecycle", () => {
   };
 
   it("accepts more than 1 MB of Rivet output", async () => {
-    const writesSpecAfterFlooding = [
-      'import fs from "node:fs";',
-      'import path from "node:path";',
-      'const outputDir = process.argv[process.argv.indexOf("--output") + 1];',
-      `process.stdout.write("x".repeat(${2 * 1024 * 1024}));`,
-      'fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify({ openapi: "3.1.0", info: { title: "t", version: "1" }, paths: {} }));',
-    ].join("\n");
+    const writesSpecAfterFlooding = `import fs from "node:fs";
+import path from "node:path";
+const outputDir = process.argv[process.argv.indexOf("--output") + 1];
+process.stdout.write("x".repeat(${2 * 1024 * 1024}));
+fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify(${JSON.stringify(EMPTY_SPEC)}));`;
 
     await expect(
       buildWithFakeRivet("rivet-ts-vite-plugin-flood-", writesSpecAfterFlooding),
@@ -549,27 +489,23 @@ describe("vite plugin lifecycle", () => {
     const entryPath = path.join(tempDirectory, "contracts.ts");
     await fs.writeFile(
       entryPath,
-      [
-        'import type { Contract, Endpoint } from "rivet-ts";',
-        'import type { MemberDto } from "@models/member";',
-        "",
-        'export interface MembersContract extends Contract<"MembersContract"> {',
-        '  List: Endpoint<{ method: "GET"; route: "/api/members"; response: MemberDto[] }>;',
-        "}",
-        "",
-      ].join("\n"),
+      `import type { Contract, Endpoint } from "rivet-ts";
+import type { MemberDto } from "@models/member";
+
+export interface MembersContract extends Contract<"MembersContract"> {
+  List: Endpoint<{ method: "GET"; route: "/api/members"; response: MemberDto[] }>;
+}
+`,
     );
     const binaryPath = path.join(tempDirectory, "fake-rivet.mjs");
     await fs.writeFile(
       binaryPath,
-      [
-        "#!/usr/bin/env node",
-        'import fs from "node:fs";',
-        'import path from "node:path";',
-        'const outputDir = process.argv[process.argv.indexOf("--output") + 1];',
-        'fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify({ openapi: "3.1.0", info: { title: "t", version: "1" }, paths: {} }));',
-        "",
-      ].join("\n"),
+      `#!/usr/bin/env node
+import fs from "node:fs";
+import path from "node:path";
+const outputDir = process.argv[process.argv.indexOf("--output") + 1];
+fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify(${JSON.stringify(EMPTY_SPEC)}));
+`,
     );
     await fs.chmod(binaryPath, 0o755);
     const { rivetTs } = await import("../../src/vite.js");
@@ -609,12 +545,10 @@ describe("vite plugin lifecycle", () => {
   it("resolves the Rivet binary pinned by RIVET_VERSION, as the CLI does", async () => {
     const fixture = await createSpecDropoutFixture("rivet-ts-vite-plugin-rivet-version-");
     await installFakeRivet(
-      [
-        'const fs = require("node:fs");',
-        'const path = require("node:path");',
-        'const outputDir = process.argv[process.argv.indexOf("--output") + 1];',
-        'fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify({ openapi: "3.1.0", info: { title: "pinned", version: "1" }, paths: {} }));',
-      ].join("\n"),
+      `const fs = require("node:fs");
+const path = require("node:path");
+const outputDir = process.argv[process.argv.indexOf("--output") + 1];
+fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify(${JSON.stringify({ ...EMPTY_SPEC, info: { title: "pinned", version: "1" } })}));`,
     );
     const { rivetTs } = await import("../../src/vite.js");
 

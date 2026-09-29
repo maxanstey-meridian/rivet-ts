@@ -117,8 +117,7 @@ describe("scaffold lifecycle", () => {
       ).resolves.toBeTruthy();
     }
 
-    // §9.10: the HTTP edge is module-local — the old top-level src/interface/
-    // tree must not come back.
+    // The HTTP edge is module-local: there is no top-level src/interface/ tree.
     await expect(
       fs.stat(path.join(outputDirectory, "apps", "api", "src", "interface")),
     ).rejects.toThrow();
@@ -221,7 +220,7 @@ describe("scaffold lifecycle", () => {
     expect(duplicate.status).toBe(409);
     expect(((await duplicate.json()) as { code: string }).code).toBe("duplicate_quote");
 
-    // S5 regression: malformed input must produce a structured response in
+    // Malformed input must produce a structured response in
     // local mode — never a rejected dispatch promise.
     const malformed = await app.request("/api/quotes", {
       method: "POST",
