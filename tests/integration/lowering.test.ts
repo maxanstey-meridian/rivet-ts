@@ -16,6 +16,10 @@ const endpointNamed = (document: ContractJson, name: string): EndpointJson => {
 const examplesAt = (endpoint: EndpointJson, status: number) =>
   endpoint.responses.find((response) => response.statusCode === status)?.examples;
 
+/** An error-severity diagnostic: a warning with the same code must fail the test. */
+const errorDiagnostic = (fields: Record<string, unknown>) =>
+  expect.objectContaining({ severity: "error", ...fields });
+
 const example = (value: unknown, mediaType = "application/json") => ({
   mediaType,
   json: JSON.stringify(value),
@@ -133,7 +137,7 @@ export interface UsersContract extends Contract<${name}> {
 `);
 
     expect(lowered.diagnostics).toContainEqual(
-      expect.objectContaining({
+      errorDiagnostic({
         code: "INVALID_CONTRACT_NAME",
         filePath: entryPath,
         line: expect.any(Number),
@@ -154,7 +158,7 @@ export interface UsersContract extends Contract<"Users"> {
 `);
 
     expect(lowered.diagnostics).toEqual([
-      expect.objectContaining({
+      errorDiagnostic({
         code: "UNSUPPORTED_ENDPOINT_NAME",
         message:
           "Endpoint names must be an identifier or a string literal; computed and numeric names are not supported.",
@@ -171,9 +175,7 @@ export interface UsersContract extends Contract<"Users"> {
 }
 `);
 
-    expect(lowered.diagnostics).toEqual([
-      expect.objectContaining({ severity: "error", code: "UNSUPPORTED_ENDPOINT_NAME" }),
-    ]);
+    expect(lowered.diagnostics).toEqual([errorDiagnostic({ code: "UNSUPPORTED_ENDPOINT_NAME" })]);
     expect(lowered.contracts[0]?.endpoints).toEqual([]);
   });
 
@@ -228,7 +230,7 @@ export interface MembersContract extends Contract<"MembersContract"> {
 `);
 
     expect(lowered.diagnostics).toContainEqual(
-      expect.objectContaining({
+      errorDiagnostic({
         code: "UNSUPPORTED_GENERIC_ENDPOINT_SPEC",
         filePath: entryPath,
         line: expect.any(Number),
@@ -257,7 +259,7 @@ export interface ItemsContract extends Contract<"ItemsContract"> {
     );
 
     expect(lowered.diagnostics).toContainEqual(
-      expect.objectContaining({
+      errorDiagnostic({
         code: "DUPLICATE_TYPE_NAME",
         filePath: expect.stringContaining(path.dirname(entryPath)),
         line: expect.any(Number),
@@ -269,7 +271,7 @@ export interface ItemsContract extends Contract<"ItemsContract"> {
     const { lowered } = lowerFixture("invalid-authoring-contract");
 
     const compilerDiagnostic = (key: string) =>
-      expect.objectContaining({
+      errorDiagnostic({
         code: expect.stringMatching(/^TS\d+$/),
         filePath: fixturePath("invalid-authoring-contract", "contracts.ts"),
         message: expect.stringContaining(key),
@@ -346,7 +348,7 @@ export interface TempContract extends Contract<"TempContract"> {
 `);
 
     expect(lowered.diagnostics).toContainEqual(
-      expect.objectContaining({
+      errorDiagnostic({
         code: "INVALID_SECURITY_SPEC",
         filePath: entryPath,
         message: expect.stringContaining("security.scheme as a string literal"),
@@ -369,7 +371,7 @@ export interface TempContract extends Contract<"TempContract"> {
 `);
 
     expect(lowered.diagnostics).toContainEqual(
-      expect.objectContaining({
+      errorDiagnostic({
         code: "CONFLICTING_SECURITY_SPEC",
         filePath: entryPath,
         message: expect.stringContaining("cannot declare both anonymous and security"),
@@ -485,9 +487,7 @@ export interface TempContract extends Contract<"TempContract"> {
 }
 `);
 
-    expect(lowered.diagnostics).toContainEqual(
-      expect.objectContaining({ code, filePath: entryPath }),
-    );
+    expect(lowered.diagnostics).toContainEqual(errorDiagnostic({ code, filePath: entryPath }));
     expect(endpointNamed(document, "create").responses).toEqual([
       expect.objectContaining({ statusCode: 201 }),
     ]);
@@ -595,7 +595,7 @@ export interface UsersContract extends Contract<"UsersContract"> {
 `);
 
     expect(lowered.diagnostics).toContainEqual(
-      expect.objectContaining({
+      errorDiagnostic({
         code: "UNSUPPORTED_QUERY_SHAPE",
         filePath: entryPath,
         line: expect.any(Number),
@@ -881,9 +881,7 @@ export interface TempContract extends Contract<"TempContract"> {
         `import type { Contract, Endpoint } from "${AUTHORING_TYPES}";\n${body}`,
       );
 
-      expect(lowered.diagnostics).toContainEqual(
-        expect.objectContaining({ code, filePath: entryPath }),
-      );
+      expect(lowered.diagnostics).toContainEqual(errorDiagnostic({ code, filePath: entryPath }));
       expect(endpointNamed(document, "create")).not.toHaveProperty("requestExamples");
     },
   );
@@ -911,7 +909,7 @@ export interface TempContract extends Contract<"TempContract"> {
 `);
 
     expect(lowered.diagnostics).toContainEqual(
-      expect.objectContaining({
+      errorDiagnostic({
         code: expect.stringMatching(/^TS\d+$/),
         filePath: entryPath,
         message: expect.stringContaining("normalize"),
@@ -951,7 +949,7 @@ export interface TempContract extends Contract<"TempContract"> {
     const { entryPath, lowered } = await lowerSource(mismatchedExamples(false));
 
     const compilerDiagnostic = (key: string) =>
-      expect.objectContaining({
+      errorDiagnostic({
         code: expect.stringMatching(/^TS\d+$/),
         filePath: entryPath,
         message: expect.stringContaining(key),
@@ -968,7 +966,7 @@ export interface TempContract extends Contract<"TempContract"> {
     const { entryPath, lowered, document } = await lowerSource(mismatchedExamples(true));
 
     const typeDiagnostic = (key: string) =>
-      expect.objectContaining({
+      errorDiagnostic({
         code: "INVALID_ENDPOINT_EXAMPLE_TYPE",
         filePath: entryPath,
         message: expect.stringContaining(key),
@@ -1020,7 +1018,7 @@ export const createMemberRequestExample = {
     );
 
     expect(lowered.diagnostics).toContainEqual(
-      expect.objectContaining({
+      errorDiagnostic({
         code: "UNSUPPORTED_ENDPOINT_EXAMPLE_VALUE",
         filePath: path.join(path.dirname(entryPath), "examples.ts"),
       }),
@@ -1098,7 +1096,7 @@ export interface TempContract extends Contract<"TempContract"> {
 }
 `);
 
-    expect(lowered.diagnostics).toContainEqual(expect.objectContaining({ code }));
+    expect(lowered.diagnostics).toContainEqual(errorDiagnostic({ code }));
   });
 });
 
@@ -1290,7 +1288,7 @@ export interface TempContract extends Contract<"TempContract"> {
 `);
 
     expect(lowered.diagnostics).toContainEqual(
-      expect.objectContaining({
+      errorDiagnostic({
         code: "UNRESOLVED_RESPONSE_EXAMPLE_STATUS",
         message: expect.stringContaining("status 404"),
       }),
@@ -1315,7 +1313,7 @@ export interface TempContract extends Contract<"TempContract"> {
 `);
 
     expect(lowered.diagnostics).toContainEqual(
-      expect.objectContaining({
+      errorDiagnostic({
         code: "INVALID_ENDPOINT_EXAMPLE_REFERENCE",
         message:
           'Endpoint "Get" responseExamples[200].examples entries must declare name as a string literal when provided.',
@@ -1343,7 +1341,7 @@ export interface TempContract extends Contract<"TempContract"> {
 `);
 
       expect(lowered.diagnostics).toEqual([
-        expect.objectContaining({
+        errorDiagnostic({
           code: "BODY_FORBIDDEN_STATUS_EXAMPLE",
           filePath: entryPath,
           message: `Endpoint "TempContract.Remove" authors response content on body-forbidden status ${status} — HTTP forbids a message body on 1xx/204/205/304, so the authored example/content could never reach the wire; move it to a status that allows a body or remove it.`,
@@ -1540,7 +1538,7 @@ export interface RatiosContract extends Contract<"RatiosContract"> {
 `);
 
     expect(lowered.diagnostics).toContainEqual(
-      expect.objectContaining({ severity: "error", code: "UNSUPPORTED_ENUM_MEMBER" }),
+      errorDiagnostic({ code: "UNSUPPORTED_ENUM_MEMBER" }),
     );
     expect(document.enums).toEqual([]);
   });
@@ -1557,7 +1555,7 @@ export interface GoneContract extends Contract<"Gone"> {
 `);
 
     expect(lowered.diagnostics).toEqual([
-      expect.objectContaining({
+      errorDiagnostic({
         code: "UNSUPPORTED_NULL_TYPE",
         message: "Standalone null types are not supported. Use a nullable union such as T | null.",
       }),
@@ -1603,8 +1601,7 @@ export interface GoneContract extends Contract<"Gone"> {
 
     const modelsPath = fixturePath("invalid-tagged-union-contract", "models.ts");
     const unsupportedUnion = (message: string, line: number) =>
-      expect.objectContaining({
-        severity: "error",
+      errorDiagnostic({
         code: "UNSUPPORTED_UNION",
         message,
         filePath: modelsPath,
@@ -1669,8 +1666,7 @@ export interface GoneContract extends Contract<"Gone"> {
 
     const modelsPath = fixturePath("unsupported-contract", "models.ts");
     const unsupported = (expression: string, line: number) =>
-      expect.objectContaining({
-        severity: "error",
+      errorDiagnostic({
         code: "UNSUPPORTED_TYPE_EXPRESSION",
         message: `Unsupported type expression "${expression}".`,
         filePath: modelsPath,
@@ -1816,7 +1812,7 @@ export interface TempContract extends Contract<"TempContract"> {
 `);
 
     expect(lowered.diagnostics).toContainEqual(
-      expect.objectContaining({
+      errorDiagnostic({
         code: "INVALID_MULTIPART_INPUT",
         filePath: entryPath,
         line: expect.any(Number),

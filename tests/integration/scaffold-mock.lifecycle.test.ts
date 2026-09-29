@@ -555,12 +555,39 @@ export interface WidgetsContract extends Contract<"Widgets"> {
       constraints: { minLength: 3, maxLength: 20 },
     });
 
-    // Constraint chains never change the output type, so the exact schema still compiles.
-    await typecheckScaffoldedWorkspace(outputDirectory);
-    const { createRequest } = (await import(
-      apiSourcePath(outputDirectory, "modules", "widgets", "widgets-validation.ts")
-    )) as { createRequest: { safeParse: (value: unknown) => { success: boolean } } };
+    // Constraint chains never change the output type, so the exactness lock
+    // survives the enrichment (and the workspace still compiles below).
+    const validationPath = apiSourcePath(
+      outputDirectory,
+      "modules",
+      "widgets",
+      "widgets-validation.ts",
+    );
+    expect(await fs.readFile(validationPath, "utf8")).toContain(
+      'satisfies z.ZodType<import("rivet-ts").RivetHandlerInput<import("#contract").WidgetsContract, "Create">["body"]>',
+    );
+    // A use case that reports the body keys it received shows it gets the
+    // parsed body (unknown keys stripped), not the raw wire body.
+    await fs.writeFile(
+      apiSourcePath(outputDirectory, "modules", "widgets", "application", "create.ts"),
+      `export const create = async (input: import("rivet-ts").RivetHandlerInput<import("#contract").WidgetsContract, "Create">): Promise<import("rivet-ts").RivetHandlerResult<import("#contract").WidgetsContract, "Create">> => ({
+  id: Object.keys(input.body).sort().join(","),
+});
+`,
+    );
+    const app = await loadScaffoldedApp(outputDirectory);
     const valid = { name: "Widget", quantity: 10, tags: ["a"], nickname: null };
+    const created = await app.request("/api/widgets", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...valid, extra: "raw" }),
+    });
+    expect(created.status).toBe(201);
+    await expect(created.json()).resolves.toEqual({ id: "name,nickname,quantity,tags" });
+
+    const { createRequest } = (await import(validationPath)) as {
+      createRequest: { safeParse: (value: unknown) => { success: boolean } };
+    };
     expect(createRequest.safeParse(valid).success).toBe(true);
     for (const invalid of [
       { name: "ab" },
