@@ -1,13 +1,16 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import * as tar from "tar";
 import { expectValidContractDocument } from "../contract-schema.js";
 import { runCliCaptured } from "../support/cli.js";
 import { writeContractProject } from "../support/contract-project.js";
 import { parseContractJson } from "../support/lower.js";
 import { AUTHORING_TYPES, PROJECT_ROOT, fixturePath } from "../support/paths.js";
+import { currentRid, installFakeRivet, useThrowawayRivetCache } from "../support/rivet-cache.js";
 import { tempDir } from "../support/temp.js";
 
 const execFileAsync = promisify(execFile);
@@ -919,8 +922,7 @@ describe("CLI argument handling and diagnostics", () => {
 
     expect(exitCode).toBe(1);
     expect(stdout).toHaveLength(0);
-    expect(stderr).toContain("Unknown argument");
-    expect(stderr).toContain("--tsconfg");
+    expect(stderr).toContain("Unknown option '--tsconfg'");
   });
 
   it("fails loudly on an unknown scaffold-mock flag", async () => {
@@ -935,8 +937,7 @@ describe("CLI argument handling and diagnostics", () => {
     ]);
 
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("Unknown argument");
-    expect(stderr).toContain("--nme");
+    expect(stderr).toContain("Unknown option '--nme'");
   });
 
   // C3: a flag missing its value is a loud error, not a silent redirect.
@@ -949,8 +950,7 @@ describe("CLI argument handling and diagnostics", () => {
 
     expect(exitCode).toBe(1);
     expect(stdout).toHaveLength(0);
-    expect(stderr).toContain("--out");
-    expect(stderr).toContain("missing a value");
+    expect(stderr).toContain("Option '--out <value>' argument missing");
   });
 
   it("lowers with the tsconfig passed via --tsconfig", async () => {
@@ -1043,39 +1043,10 @@ export interface MembersContract extends Contract<"MembersContract"> {
 });
 
 describe("rivet passthrough", () => {
-  const FAKE_RIVET_VERSION = "0.0.0-fake";
-  const RIDS: Record<string, string> = {
-    "darwin-arm64": "osx-arm64",
-    "darwin-x64": "osx-x64",
-    "linux-x64": "linux-x64",
-  };
-
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
-
-  // Seeds the real binary cache (under a throwaway HOME) so the passthrough
-  // resolves the fake exactly as it would a downloaded Rivet release.
-  const installFakeRivet = async (source: string): Promise<void> => {
-    const home = await tempDir("rivet-ts-passthrough-");
-    vi.stubEnv("HOME", home);
-    vi.stubEnv("XDG_CACHE_HOME", path.join(home, ".cache"));
-    vi.stubEnv("RIVET_VERSION", FAKE_RIVET_VERSION);
-
-    const rid = RIDS[`${process.platform}-${process.arch}`];
-    if (!rid) {
-      throw new Error(`No Rivet rid for ${process.platform}-${process.arch}.`);
-    }
-    const cacheRoot =
-      process.platform === "darwin"
-        ? path.join(home, "Library", "Caches", "rivet-ts")
-        : path.join(home, ".cache", "rivet-ts");
-    const installDirectory = path.join(cacheRoot, "rivet", `v${FAKE_RIVET_VERSION}`, rid);
-    const executablePath = path.join(installDirectory, `rivet-${rid}`);
-    await fs.mkdir(installDirectory, { recursive: true });
-    await fs.writeFile(executablePath, `#!/usr/bin/env node\n${source}\n`);
-    await fs.chmod(executablePath, 0o755);
-  };
 
   it("streams more than 1 MB of Rivet output and keeps its exit code", async () => {
     const size = 2 * 1024 * 1024;
@@ -1115,5 +1086,66 @@ describe("rivet passthrough", () => {
       stdout: "",
       stderr: "RIV1102: refused\n",
     });
+  });
+
+  // An empty cache makes the passthrough download the pinned release; the
+  // GitHub API and asset download are the only faked boundary.
+  const serveFakeRelease = async (digest: "matching" | "wrong" | "missing"): Promise<string> => {
+    const executablePath = await useThrowawayRivetCache();
+    const rid = currentRid();
+    const staging = await tempDir("rivet-ts-release-");
+    await fs.writeFile(
+      path.join(staging, `rivet-${rid}`),
+      '#!/usr/bin/env node\nconsole.log("downloaded rivet");\n',
+    );
+    const archivePath = path.join(staging, `rivet-${rid}.tar.gz`);
+    await tar.c({ gzip: true, file: archivePath, cwd: staging }, [`rivet-${rid}`]);
+    const archive = await fs.readFile(archivePath);
+    const sha256 = createHash("sha256").update(archive).digest("hex");
+
+    const asset = {
+      name: `rivet-${rid}.tar.gz`,
+      browser_download_url: `https://downloads.invalid/rivet-${rid}.tar.gz`,
+      ...(digest === "missing"
+        ? {}
+        : { digest: `sha256:${digest === "matching" ? sha256 : "0".repeat(64)}` }),
+    };
+    vi.stubGlobal("fetch", async (url: string) =>
+      url.startsWith("https://api.github.com/")
+        ? Response.json({ assets: [asset] })
+        : new Response(archive),
+    );
+    return executablePath;
+  };
+
+  it("downloads, verifies and runs the pinned release on first use", async () => {
+    const executablePath = await serveFakeRelease("matching");
+
+    expect(await runCliCaptured(["rivet"])).toEqual({
+      exitCode: 0,
+      stdout: "downloaded rivet\n",
+      stderr: "",
+    });
+    await expect(fs.access(executablePath)).resolves.toBeUndefined();
+  });
+
+  it("refuses a release asset whose digest does not match", async () => {
+    const executablePath = await serveFakeRelease("wrong");
+
+    const { exitCode, stderr } = await runCliCaptured(["rivet"]);
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("digest mismatch");
+    await expect(fs.access(executablePath)).rejects.toThrow();
+  });
+
+  it("refuses a release asset without a published digest", async () => {
+    const executablePath = await serveFakeRelease("missing");
+
+    const { exitCode, stderr } = await runCliCaptured(["rivet"]);
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("publishes no sha256 digest");
+    await expect(fs.access(executablePath)).rejects.toThrow();
   });
 });

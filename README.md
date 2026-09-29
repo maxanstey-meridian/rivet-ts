@@ -69,8 +69,8 @@ That pipeline has explicit ownership:
 
 `v0.13.0` pins Rivet `0.40.0` by default. On macOS arm64/x64, Linux x64, and
 Windows x64, the binary is downloaded from GitHub Releases and cached
-automatically; it does not need to be on `PATH`. Set `RIVET_VERSION` for the
-CLI passthrough, or use the [Vite plugin options](https://maxanstey-meridian.github.io/rivet-ts/guides/vite-plugin)
+automatically; it does not need to be on `PATH`. Set `RIVET_VERSION` (honoured
+by both the CLI passthrough and the Vite plugin), or use the [Vite plugin options](https://maxanstey-meridian.github.io/rivet-ts/guides/vite-plugin)
 to select another version or binary.
 
 ## Consume

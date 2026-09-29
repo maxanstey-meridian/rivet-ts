@@ -39,12 +39,12 @@ export default defineConfig({
 
 | Option               | Description                                                                                   |
 | -------------------- | --------------------------------------------------------------------------------------------- |
-| `entry`              | Contract entrypoint path (`contract` is a legacy alias; one of the two is required)           |
+| `entry`              | Contract entrypoint path (required)                                                           |
 | `apiRoot`            | Root of the API package (required)                                                            |
 | `runtimeContractOut` | Contract JSON output path. Default: `<apiRoot>/generated/<kebab-cased-api-dir>.contract.json` |
 | `clientOutDir`       | Artifact directory for `openapi.json` + `schema.d.ts`. Default: `<apiRoot>/generated`         |
 | `tsconfig`           | Optional TypeScript project file for reflection                                               |
-| `rivet.version`      | Rivet binary version to download (default `0.40.0`)                                           |
+| `rivet.version`      | Rivet binary version to download (default: `RIVET_VERSION`, else `0.40.0`)                    |
 | `rivet.autoInstall`  | Auto-download the binary when missing (default `true`)                                        |
 | `rivet.binaryPath`   | Use an explicit Rivet binary instead of auto-install                                          |
 | `rivet.cacheDir`     | Override the auto-installed binary cache directory                                            |
@@ -66,4 +66,4 @@ The entry's local import graph is watched and re-collected after each regenerati
 
 ## Binary install
 
-The binary downloads from GitHub releases into a per-OS cache (macOS: `~/Library/Caches/rivet-ts`; Linux: `$XDG_CACHE_HOME/rivet-ts` or `~/.cache/rivet-ts`; Windows: `%LOCALAPPDATA%\rivet-ts`), verifying the release's sha256 digest when one is published and installing atomically. Supported auto-install platforms: macOS arm64/x64, Linux x64, Windows x64. Elsewhere, build the binary yourself and pass `rivet.binaryPath`.
+The binary downloads from GitHub releases into a per-OS cache (macOS: `~/Library/Caches/rivet-ts`; Linux: `$XDG_CACHE_HOME/rivet-ts` or `~/.cache/rivet-ts`; Windows: `%LOCALAPPDATA%\rivet-ts`), verifying the release's published sha256 digest (a release asset without one is refused) and installing atomically. Supported auto-install platforms: macOS arm64/x64, Linux x64, Windows x64. Elsewhere, build the binary yourself and pass `rivet.binaryPath`.

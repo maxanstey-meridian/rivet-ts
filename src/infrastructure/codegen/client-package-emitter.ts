@@ -5,10 +5,9 @@ import openapiTS, { astToString, type OpenAPI3 } from "openapi-typescript";
 /**
  * The hand-written client facade over the generated artifacts. Emitted ONCE at
  * scaffold time into the contracts package's `src/` — never into `generated/`.
- * The artifact dir stays `openapi.json` + `schema.d.ts` only (Meridian
- * RV-020 v2: generated dirs are read-only and contain nothing hand-shaped);
- * the facade is static (it doesn't depend on the contract), so it is
- * user-owned after the first emit.
+ * The artifact dir stays `openapi.json` + `schema.d.ts` only (generated dirs
+ * are read-only and contain nothing hand-shaped); the facade is static (it
+ * doesn't depend on the contract), so it is user-owned after the first emit.
  */
 export const emitClientFacadeSource = (): string =>
   [
@@ -86,16 +85,13 @@ const writeIfChanged = async (outputPath: string, source: string): Promise<void>
 /**
  * Emits `schema.d.ts` (openapi-typescript over `<generatedRoot>/openapi.json`)
  * into the generated artifact dir. Types only — the artifact dir holds exactly
- * `openapi.json` + `schema.d.ts` (RV-020 v2); the client facade lives in the
+ * `openapi.json` + `schema.d.ts`; the client facade lives in the
  * contracts package's `src/` and is emitted once at scaffold time.
  */
-export const emitClientPackage = async (
-  generatedRoot: string,
-  openApiPath: string = path.join(generatedRoot, "openapi.json"),
-): Promise<void> => {
-  const schemaSource = await emitClientSchemaSource(openApiPath);
+export const emitClientPackage = async (generatedRoot: string): Promise<void> => {
+  const schemaSource = await emitClientSchemaSource(path.join(generatedRoot, "openapi.json"));
   await writeIfChanged(path.join(generatedRoot, "schema.d.ts"), schemaSource);
   // A pre-facade scaffold may have left index.ts inside generated/; it now
-  // lives in src/, so a stale copy here is a doctrine violation. Remove it.
+  // lives in src/, so a stale copy here would shadow it. Remove it.
   await fs.rm(path.join(generatedRoot, "index.ts"), { force: true });
 };
