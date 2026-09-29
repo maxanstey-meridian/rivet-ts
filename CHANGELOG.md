@@ -37,3 +37,4 @@
 - The Vite plugin no longer fails on more than 1 MB of Rivet output, and fails the build when one Rivet run exceeds `rivet.timeoutMs` (default 120 s).
 - `scaffold-mock` no longer overflows the stack on a generic type whose type argument is the outer type parameter (`Page<T> { data: Wrapper<T> }`) when emitting Zod schemas.
 - `scaffold-mock` refuses (with `Endpoint "<Contract>.<Endpoint>" is missing from the lowered contract document.`) when a contract endpoint has no lowered counterpart, instead of silently scaffolding without its handler.
+- Scaffolded `.oxlintrc.json` ignores `**/generated/**`, so oxlint skips the generated contract JSON, OpenAPI and `schema.d.ts` artifacts (Plumb MER-TO-003 on every fresh scaffold).

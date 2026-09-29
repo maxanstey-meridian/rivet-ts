@@ -212,7 +212,7 @@ export default defineConfig({
     expect(schemaSource).toContain("export interface paths");
     expect(schemaSource).toContain('"/api/members"');
     expect(schemaSource).toContain("email: string;");
-  }, 20_000);
+  });
 
   it("reports each contract diagnostic exactly once when generation fails", async () => {
     const tempDirectory = await tempDir("rivet-ts-vite-plugin-broken-");
@@ -254,7 +254,7 @@ export default defineConfig({
     const combinedLog = logged.join("\n");
     const occurrences = combinedLog.match(/\[ENTRY_NOT_FOUND\]/g) ?? [];
     expect(occurrences).toHaveLength(1);
-  }, 20_000);
+  });
 
   // Spec-dropout fixture: a valid contract, a generated/ directory pre-seeded
   // with the scaffold-time bootstrap spec + last-good client artifacts, and a
@@ -378,7 +378,7 @@ export interface MembersContract extends Contract<"MembersContract"> {
     await expect(fs.readFile(fixture.schemaPath, "utf8")).resolves.toBe(
       fixture.lastGoodSchemaSource,
     );
-  }, 20_000);
+  });
 
   it("dev server fails loudly on spec dropout and leaves last-good artifacts untouched", async () => {
     const fixture = await createSpecDropoutFixture("rivet-ts-vite-plugin-spec-dropout-dev-");
@@ -435,7 +435,7 @@ export interface MembersContract extends Contract<"MembersContract"> {
     await expect(fs.readFile(fixture.schemaPath, "utf8")).resolves.toBe(
       fixture.lastGoodSchemaSource,
     );
-  }, 20_000);
+  });
 
   const buildWithFakeRivet = async (
     prefix: string,
@@ -470,7 +470,7 @@ fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify(${JSON.str
     await expect(
       buildWithFakeRivet("rivet-ts-vite-plugin-flood-", writesSpecAfterFlooding),
     ).resolves.toBeDefined();
-  }, 20_000);
+  });
 
   it("reloads when a module the contract imports through a tsconfig paths alias changes", async () => {
     const tempDirectory = await tempDir("rivet-ts-vite-plugin-paths-alias-");
@@ -532,7 +532,7 @@ fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify(${JSON.str
     } finally {
       await server.close();
     }
-  }, 20_000);
+  });
 
   it("fails the build when the Rivet binary outlives rivet.timeoutMs", async () => {
     await expect(
@@ -540,7 +540,7 @@ fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify(${JSON.str
         timeoutMs: 300,
       }),
     ).rejects.toThrow("rivet-ts/vite: the Rivet binary did not finish within 300ms.");
-  }, 20_000);
+  });
 
   it("resolves the Rivet binary pinned by RIVET_VERSION, as the CLI does", async () => {
     const fixture = await createSpecDropoutFixture("rivet-ts-vite-plugin-rivet-version-");
@@ -573,5 +573,5 @@ fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify(${JSON.str
       readonly info: { readonly title: string };
     };
     expect(spec.info.title).toBe("pinned");
-  }, 20_000);
+  });
 });

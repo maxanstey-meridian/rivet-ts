@@ -119,10 +119,10 @@ pnpm test           # build then run tests (vitest)
 ```
 
 The .NET interoperability suite runs every lowerable fixture through the pinned
-Rivet release's `--from` and checks the vendored contract schema against that
-release, so the first `pnpm test` downloads the binary (then cached) and every
-run needs network access for the schema. The Meridian `plumb` integration legs
-self-skip when plumb is unavailable.
+Rivet release and checks the vendored contract schema against it, so `pnpm test`
+needs network access (the binary is downloaded once, then cached). The Plumb
+legs run when `PLUMB` or `PATH` provides plumb and are reported as skipped
+otherwise. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

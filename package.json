@@ -41,14 +41,14 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "prepare": "tsc -p tsconfig.build.json",
+    "prepare": "pnpm build",
     "lint": "oxlint src/ tests/ templates/",
     "lint:fix": "oxlint --fix src/ tests/ templates/",
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
-    "analyze": "gitnexus analyze",
+    "analyze": "npx gitnexus analyze",
     "test": "pnpm build && vitest run",
-    "test:watch": "pnpm build && vitest",
+    "test:watch": "pnpm build && (tsc -p tsconfig.build.json --watch --preserveWatchOutput > /dev/null & vitest; kill $!)",
     "check": "tsc --noEmit && tsc --noEmit -p templates"
   },
   "dependencies": {
@@ -62,7 +62,6 @@
     "@types/node": "^25.5.2",
     "ajv": "^8.20.0",
     "dexie": "^4.4.3",
-    "gitnexus": "1.6.5",
     "hono": "^4.12.14",
     "oxfmt": "^0.43.0",
     "oxlint": "^1.58.0",
@@ -83,30 +82,5 @@
       "optional": true
     }
   },
-  "packageManager": "pnpm@10.24.0",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@ladybugdb/core",
-      "gitnexus",
-      "onnxruntime-node",
-      "protobufjs",
-      "sharp",
-      "tree-sitter",
-      "tree-sitter-c",
-      "tree-sitter-c-sharp",
-      "tree-sitter-cpp",
-      "tree-sitter-go",
-      "tree-sitter-java",
-      "tree-sitter-javascript",
-      "tree-sitter-kotlin",
-      "tree-sitter-php",
-      "tree-sitter-python",
-      "tree-sitter-ruby",
-      "tree-sitter-rust",
-      "tree-sitter-typescript"
-    ],
-    "ignoredBuiltDependencies": [
-      "@scarf/scarf"
-    ]
-  }
+  "packageManager": "pnpm@10.24.0"
 }

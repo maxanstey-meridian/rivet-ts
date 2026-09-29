@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { accessSync, constants, existsSync, realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -55,29 +56,51 @@ export const typecheckScaffoldedWorkspace = async (outputDirectory: string): Pro
   await runTsc(path.join(outputDirectory, "packages", "contracts", "tsconfig.json"));
 };
 
-export const PLUMB_EXECUTABLE = path.join(process.env.HOME ?? "", ".meridian", "plumb", "plumb");
-
-export const plumbAvailable = async (): Promise<boolean> => {
-  try {
-    await fs.access(PLUMB_EXECUTABLE);
-    return true;
-  } catch {
-    return false;
+/**
+ * Plumb, from `PLUMB` (which must then exist) or else `plumb` on `PATH`;
+ * `undefined` when neither provides it. A shell alias is not on `PATH`.
+ */
+const resolvePlumb = (): string | undefined => {
+  const { PLUMB, PATH = "" } = process.env;
+  if (PLUMB) {
+    if (!existsSync(PLUMB)) {
+      throw new Error(`PLUMB is set to ${PLUMB}, which does not exist.`);
+    }
+    return realpathSync(PLUMB);
   }
+  const onPath = PATH.split(path.delimiter)
+    .map((directory) => path.join(directory, "plumb"))
+    .find((candidate) => {
+      try {
+        accessSync(candidate, constants.X_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  return onPath === undefined ? undefined : realpathSync(onPath);
 };
 
-/**
- * Doctrine oracle: a fresh scaffold must produce ZERO plumb findings — the
- * permanent coupling between the generator and Meridian doctrine. Any new
- * plumb rule a fresh scaffold violates fails this suite.
- */
-export const expectPlumbClean = async (outputDirectory: string): Promise<void> => {
-  try {
-    await execFileAsync(PLUMB_EXECUTABLE, [outputDirectory]);
-  } catch (error: unknown) {
-    const failure = error as { stdout?: string; stderr?: string };
-    throw new Error(
-      `Scaffold output has plumb findings:\n${failure.stdout ?? ""}\n${failure.stderr ?? ""}`,
-    );
-  }
+export const PLUMB_EXECUTABLE = resolvePlumb();
+
+export const PLUMB_NOT_FOUND = "plumb not found: set PLUMB=<path to plumb> or put plumb on PATH";
+
+export type PlumbFinding = {
+  readonly rule: string;
+  readonly severity: string;
+  readonly location: string;
+};
+
+/** Every plumb finding (errors, warnings and info) for a scaffold output directory. */
+export const plumbFindings = async (
+  plumb: string,
+  outputDirectory: string,
+): Promise<readonly PlumbFinding[]> => {
+  // plumb exits non-zero when a finding is an error; the JSON is on stdout either way.
+  const stdout = await execFileAsync(plumb, [outputDirectory, "--json"]).then(
+    (result) => result.stdout,
+    (error: { stdout?: string }) => error.stdout ?? "",
+  );
+  const findings = JSON.parse(stdout) as readonly PlumbFinding[];
+  return findings.map(({ rule, severity, location }) => ({ rule, severity, location }));
 };

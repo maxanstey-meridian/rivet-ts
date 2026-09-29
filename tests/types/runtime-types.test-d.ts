@@ -1,12 +1,10 @@
-import { expect, expectTypeOf, test } from "vitest";
 import type { Contract, Endpoint } from "../../src/domain/authoring-types.js";
-import { type ContractEndpointKey } from "../../src/domain/handler-types.js";
-import {
-  RivetError,
-  type RivetEndpointResult,
-  type RivetHandlerMap,
-  type RivetResult,
-  type RivetSuccessResult,
+import type { ContractEndpointKey } from "../../src/domain/handler-types.js";
+import type {
+  RivetEndpointResult,
+  RivetHandlerMap,
+  RivetResult,
+  RivetSuccessResult,
 } from "../../src/domain/runtime-types.js";
 
 // -- DTOs --
@@ -233,14 +231,4 @@ test("RivetHandlerMap has a key for each contract endpoint", () => {
 
   type Keys = keyof RivetHandlerMap<DirectoryContract>;
   expectTypeOf<Keys>().toEqualTypeOf<ContractEndpointKey<DirectoryContract>>();
-});
-
-test("RivetError extends Error and stores result", () => {
-  const error = new RivetError({ status: 400, data: { message: "bad" } });
-
-  expect(error).toBeInstanceOf(Error);
-  expect(error).toBeInstanceOf(RivetError);
-  expect(error.message).toBe("RivetError");
-  expect(error.result.status).toBe(400);
-  expect(error.result.data).toEqual({ message: "bad" });
 });

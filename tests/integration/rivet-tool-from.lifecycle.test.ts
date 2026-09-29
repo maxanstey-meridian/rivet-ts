@@ -18,7 +18,7 @@ let rivetBinary: string;
 
 beforeAll(async () => {
   rivetBinary = await ensureRivetBinary(rivetConfig);
-}, 300_000);
+});
 
 // These fixtures exist to fail lowering; every other fixture must lower cleanly
 // and be accepted by the pinned Rivet release.
@@ -101,7 +101,6 @@ describe(`pinned Rivet release (v${rivetConfig.version})`, () => {
         ).toBeDefined();
       }
     },
-    60_000,
   );
 
   it("carries examples, media types, optionality and query auth into the OpenAPI", async () => {
@@ -160,5 +159,5 @@ describe(`pinned Rivet release (v${rivetConfig.version})`, () => {
       ],
       "x-rivet-query-auth": { parameterName: "api_key" },
     });
-  }, 60_000);
+  });
 });

@@ -167,6 +167,7 @@ const trimTsExtension = (value: string): string => value.replace(/\.ts$/u, "");
 /* ─── embedded golden base configs (source: ~/.meridian/plumb/configs/) ────── */
 
 const OXLINTRC_SOURCE = jsonFile({
+  ignorePatterns: ["**/generated/**"],
   categories: { correctness: "warn" },
   rules: { "no-unused-vars": "warn", curly: ["error", "all"] },
 });

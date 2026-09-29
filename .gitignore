@@ -11,6 +11,5 @@ docs/.vitepress/dist
 .idea
 .orch
 .orchrc.json
-poc
 .claude
 CLAUDE.md

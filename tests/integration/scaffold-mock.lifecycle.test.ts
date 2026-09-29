@@ -262,7 +262,7 @@ describe("scaffold-mock lifecycle", () => {
       unknown
     >;
     expect(Object.keys(validation)).toEqual(["createRequest"]);
-  }, 120000);
+  });
 
   it("scaffolds one module per contract when contracts share endpoint names", async () => {
     // A contract named like a rivet-ts type and two `Get`/`Create` pairs: per-module
@@ -310,7 +310,7 @@ export interface SummaryContract extends Contract<"Summary"> {
       unknown
     >;
     expect(Object.keys(validation).sort()).toEqual(["petCreateRequest", "summaryCreateRequest"]);
-  }, 120000);
+  });
 
   it("serves endpoints whose names are numeric, quoted or collide with rivet-ts types", async () => {
     const quotedName = 'Say "hello" \\ now';
@@ -335,7 +335,7 @@ export interface NamesContract extends Contract<"Names"> {
     expect(Object.keys(await import(application("123-export.ts")))).toEqual(["_123Export"]);
     expect(Object.keys(await import(application("rivet-handler.ts")))).toEqual(["rivetHandler"]);
     await expect(fs.access(application("say-hello-now.ts"))).resolves.toBeUndefined();
-  }, 120000);
+  });
 
   it.each([
     {
@@ -419,7 +419,7 @@ export interface RivetHonoBrandContract extends Contract<"RivetHono"> {
     for (const route of ["/api/numeric", "/api/punctuation", "/api/rivet-hono"]) {
       await expect((await app.request(route)).json()).resolves.toBe("example");
     }
-  }, 120000);
+  });
 
   it("serves a file endpoint as a typed placeholder and keeps it out of the UI demo", async () => {
     const { exitCode, outputDirectory } = await scaffoldMock({
@@ -448,7 +448,7 @@ export interface FilesContract extends Contract<"Files"> {
     const download = await app.request("/api/files/download");
     expect(download.headers.get("content-type")).toContain("application/pdf");
     await expect(download.text()).resolves.toBe("example");
-  }, 120000);
+  });
 
   it("scaffolds from a bare contract file without tsconfig or node_modules", async () => {
     const sourceDirectory = await tempDir("rivet-ts-scaffold-mock-bare-");
@@ -477,7 +477,7 @@ export interface HelloContract extends Contract<"Hello"> {
     await expect(
       fs.access(path.join(outputDirectory, "packages", "contracts", "generated", "openapi.json")),
     ).resolves.toBeUndefined();
-  }, 60000);
+  });
 
   it("enforces spec constraints in the scaffolded validators when --spec is passed", async () => {
     const root = await tempDir("rivet-ts-scaffold-mock-spec-");
@@ -577,7 +577,7 @@ export interface WidgetsContract extends Contract<"Widgets"> {
         JSON.stringify(invalid),
       ).toBe(false);
     }
-  }, 120000);
+  });
 
   it("refuses to overwrite a non-empty output directory unless --force is passed", async () => {
     const { exitCode, entryPath, outputDirectory } = await scaffoldMock({
@@ -607,7 +607,7 @@ export interface WidgetsContract extends Contract<"Widgets"> {
 
     expect((await rerun("--force")).exitCode).toBe(0);
     await expect(fs.readFile(appPath, "utf8")).resolves.toBe(scaffolded);
-  }, 120000);
+  });
 
   it("refuses a contract endpoint the lowered document does not carry, instead of dropping its handler", async () => {
     const entryPath = await writeContractProject({

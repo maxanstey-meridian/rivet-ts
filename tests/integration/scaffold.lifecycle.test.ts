@@ -6,9 +6,9 @@ import { parseContractJson } from "../support/lower.js";
 import { PROJECT_ROOT } from "../support/paths.js";
 import {
   PLUMB_EXECUTABLE,
-  expectPlumbClean,
+  PLUMB_NOT_FOUND,
   linkScaffoldDependencies,
-  plumbAvailable,
+  plumbFindings,
   typecheckScaffoldedWorkspace,
 } from "../support/scaffold-oracles.js";
 import { makeTempDir, removeDir } from "../support/temp.js";
@@ -17,8 +17,20 @@ import { makeTempDir, removeDir } from "../support/temp.js";
  * The `scaffold` command is the engine behind `plumb init --ts-backend`:
  * a contract-less golden-shape workspace with one worked example module.
  * Gates, in order of strictness: shape → tsc → runtime behavior → plumb
- * (zero findings — the permanent generator/doctrine coupling).
+ * (no findings beyond the recorded ones — the generator/doctrine coupling).
  */
+
+// Findings on fresh scaffolds that need product changes, recorded as
+// follow-ups in the slop-cleanup ledger (D5). A new finding fails the gate,
+// and so does fixing one of these without removing it here.
+const RECORDED_UI_FINDINGS = [
+  // The Nuxt ui package has no vue-tsc/`nuxt typecheck` script (that needs a vue-tsc pin).
+  { rule: "MER-TO-004", severity: "warn", location: "apps/ui/package.json:1" },
+];
+const RECORDED_API_FINDINGS = [
+  // `src/contract.ts` re-exports the contract interfaces as the `#contract` alias target.
+  { rule: "MER-FE-030", severity: "warn", location: "apps/api/src/contract.ts:1" },
+];
 describe("scaffold lifecycle", () => {
   let outputDirectory: string;
 
@@ -37,7 +49,7 @@ describe("scaffold lifecycle", () => {
     expect(exitCode).toBe(0);
     expect(stderr).toBe("");
     return () => removeDir(tempDirectory);
-  }, 120000);
+  });
 
   it("emits the golden workspace shape with the worked quotes example", async () => {
     const mustExist = [
@@ -163,7 +175,7 @@ describe("scaffold lifecycle", () => {
 
   it("typechecks (api + contracts) against the current runtime", async () => {
     await typecheckScaffoldedWorkspace(outputDirectory);
-  }, 120000);
+  });
 
   it("serves the contract: list, add, 422, declared 409, structured 500, /api/me", async () => {
     await linkScaffoldDependencies(outputDirectory);
@@ -228,24 +240,27 @@ describe("scaffold lifecycle", () => {
       body: "{not json",
     });
     expect([400, 500]).toContain(malformed.status);
-  }, 60000);
+  });
 
-  it("passes plumb with zero findings (generator/doctrine coupling)", async () => {
-    if (!(await plumbAvailable())) {
-      console.warn(`plumb not found at ${PLUMB_EXECUTABLE}; skipping the doctrine gate.`);
-      return;
-    }
+  it("has no plumb findings beyond the recorded ones", async (context) => {
+    const plumb = PLUMB_EXECUTABLE ?? context.skip(PLUMB_NOT_FOUND);
 
-    await expectPlumbClean(outputDirectory);
-  }, 60000);
+    expect(await plumbFindings(plumb, outputDirectory)).toEqual([
+      ...RECORDED_API_FINDINGS,
+      ...RECORDED_UI_FINDINGS,
+      // plumb wants test doubles under TestSupport/<Module>, a .NET layout.
+      {
+        rule: "MER-TE-008",
+        severity: "info",
+        location: "apps/api/test/support/fake-quote-store.ts:5",
+      },
+    ]);
+  });
 
-  it("keeps the embedded golden configs in sync with plumb's configs/ (D3)", async () => {
-    if (!(await plumbAvailable())) {
-      console.warn(`plumb not found at ${PLUMB_EXECUTABLE}; skipping the config sync gate.`);
-      return;
-    }
+  it("keeps the embedded golden configs in sync with plumb's configs/", async (context) => {
+    const plumb = PLUMB_EXECUTABLE ?? context.skip(PLUMB_NOT_FOUND);
 
-    const plumbConfigsRoot = path.join(path.dirname(PLUMB_EXECUTABLE), "configs");
+    const plumbConfigsRoot = path.join(path.dirname(plumb), "configs");
     const embedded = emitGoldenConfigSources();
 
     // plumb's golden base is a SUPERSET floor: every key plumb requires must
@@ -317,7 +332,7 @@ describe("scaffold --no-api lifecycle", () => {
     expect(exitCode).toBe(0);
     expect(stderr).toBe("");
     return () => removeDir(tempDirectory);
-  }, 60000);
+  });
 
   it("emits ui + contracts and no api app", async () => {
     await expect(fs.stat(path.join(outputDirectory, "apps", "api"))).rejects.toThrow();
@@ -359,14 +374,11 @@ describe("scaffold --no-api lifecycle", () => {
       "-p",
       path.join(outputDirectory, "packages", "contracts", "tsconfig.json"),
     ]);
-  }, 60000);
+  });
 
-  it("passes plumb with zero findings", async () => {
-    if (!(await plumbAvailable())) {
-      console.warn(`plumb not found at ${PLUMB_EXECUTABLE}; skipping the doctrine gate.`);
-      return;
-    }
+  it("has no plumb findings beyond the recorded ones", async (context) => {
+    const plumb = PLUMB_EXECUTABLE ?? context.skip(PLUMB_NOT_FOUND);
 
-    await expectPlumbClean(outputDirectory);
-  }, 60000);
+    expect(await plumbFindings(plumb, outputDirectory)).toEqual(RECORDED_UI_FINDINGS);
+  });
 });

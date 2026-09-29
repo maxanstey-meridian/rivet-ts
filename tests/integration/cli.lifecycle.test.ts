@@ -134,7 +134,7 @@ export interface HealthContract extends Contract<"HealthContract"> {
     await expect(
       fs.access(path.join(consumerDirectory, "scaffolded", "apps", "ui", "app", "app.vue")),
     ).resolves.toBeUndefined();
-  }, 60000);
+  });
 });
 
 describe("CLI argument handling and diagnostics", () => {
