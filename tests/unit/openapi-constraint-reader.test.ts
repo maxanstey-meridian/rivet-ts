@@ -1,10 +1,5 @@
-import {
-  MockProjectEmitter,
-  type MockProjectEmitterConfig,
-} from "../../src/application/ports/mock-project-emitter.js";
 import { RivetContractDocument, RivetTypeDefinition } from "../../src/domain/rivet-contract.js";
 import {
-  ConstraintEnrichingMockProjectEmitter,
   enrichDocumentWithConstraints,
   readOpenApiConstraints,
 } from "../../src/infrastructure/scaffold/openapi-constraint-reader.js";
@@ -180,47 +175,5 @@ describe("enrichDocumentWithConstraints", () => {
     const name = properties.find((property) => property.name === "name");
     expect(name?.constraints).toEqual({ minLength: 1, maxLength: 200 });
     expect(alias?.properties).toBeUndefined();
-  });
-});
-
-describe("ConstraintEnrichingMockProjectEmitter", () => {
-  it("hands the inner emitter an enriched document, all other config untouched", async () => {
-    const received: MockProjectEmitterConfig[] = [];
-    class RecordingEmitter implements MockProjectEmitter {
-      public emit(config: MockProjectEmitterConfig): Promise<void> {
-        received.push(config);
-        return Promise.resolve();
-      }
-    }
-
-    const document = new RivetContractDocument({
-      types: [
-        new RivetTypeDefinition({
-          name: "ProductDto",
-          properties: [
-            { name: "name", type: { kind: "primitive", type: "string" }, optional: false },
-          ],
-        }),
-      ],
-    });
-
-    const emitter = new ConstraintEnrichingMockProjectEmitter(
-      new RecordingEmitter(),
-      readOpenApiConstraints(emitterShapedSpec),
-    );
-    await emitter.emit({
-      outDir: "/tmp/out",
-      projectName: "demo",
-      entryPath: "/tmp/contracts.ts",
-      contracts: [],
-      document,
-    });
-
-    expect(received).toHaveLength(1);
-    expect(received[0]?.outDir).toBe("/tmp/out");
-    expect(received[0]?.document.types[0]?.properties[0]?.constraints).toEqual({
-      minLength: 1,
-      maxLength: 200,
-    });
   });
 });

@@ -9,8 +9,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LowerTsContractsToRivetContract } from "../../src/application/use-cases/lower-ts-contracts-to-rivet-contract.js";
-import { TypeScriptRivetContractLowerer } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
+import { lowerContracts } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 
 type EndpointPayload = {
   name: string;
@@ -57,8 +56,7 @@ const getFixturePath = (relativePath: string): string => {
 };
 
 const lowerEntry = async (entryPath: string) => {
-  const lowerer = new TypeScriptRivetContractLowerer();
-  return new LowerTsContractsToRivetContract(lowerer).execute({ entryPath });
+  return lowerContracts(entryPath);
 };
 
 const parseDocument = (lowered: { toJson(): string }): DocumentPayload =>

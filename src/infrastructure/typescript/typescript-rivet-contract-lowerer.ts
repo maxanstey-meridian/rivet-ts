@@ -1,5 +1,4 @@
 import ts from "typescript";
-import { RivetContractLowerer } from "../../application/ports/rivet-contract-lowerer.js";
 import {
   EndpointExampleSpec,
   type EndpointExampleValue,
@@ -303,126 +302,122 @@ const collectTypeReferences = (type: RivetType, references: Set<string>): void =
   }
 };
 
-export class TypeScriptRivetContractLowerer implements RivetContractLowerer {
-  public constructor(private readonly tsconfigPath?: string) {}
+/**
+ * One pass from a TypeScript entry file to the Rivet contract document: one
+ * tsconfig parse, one ts.Program and one checker shared by contract discovery
+ * and lowering.
+ */
+export const lowerContracts = (
+  entryPath: string,
+  options: { readonly tsconfigPath?: string } = {},
+): RivetContractLoweringResult => {
+  const project = resolveTypeScriptProject(entryPath, options.tsconfigPath);
+  const absoluteEntryPath = project.absoluteEntryPath;
+  const program = ts.createProgram([absoluteEntryPath], project.compilerOptions);
+  const checker = program.getTypeChecker();
+  const sourceFile = program.getSourceFile(absoluteEntryPath);
+  const diagnostics = [
+    ...mapTypeScriptDiagnostics(project.configDiagnostics, absoluteEntryPath),
+    ...mapTypeScriptDiagnostics(ts.getPreEmitDiagnostics(program), absoluteEntryPath),
+  ];
 
-  /**
-   * Single AST→document pass (X13 collapse): one tsconfig parse, one
-   * ts.Program, one semantic check. Contract discovery (formerly the
-   * TypeScript contract frontend) and lowering share the same checker.
-   */
-  public async lower(entryPath: string): Promise<RivetContractLoweringResult> {
-    const project = resolveTypeScriptProject(entryPath, this.tsconfigPath);
-    const absoluteEntryPath = project.absoluteEntryPath;
-    const program = ts.createProgram([absoluteEntryPath], project.compilerOptions);
-    const checker = program.getTypeChecker();
-    const sourceFile = program.getSourceFile(absoluteEntryPath);
-    const diagnostics = [
-      ...mapTypeScriptDiagnostics(project.configDiagnostics, absoluteEntryPath),
-      ...mapTypeScriptDiagnostics(ts.getPreEmitDiagnostics(program), absoluteEntryPath),
-    ];
-
-    if (!sourceFile) {
-      diagnostics.push(
-        new ExtractionDiagnostic({
-          severity: "error",
-          code: "ENTRY_NOT_FOUND",
-          message: `Could not load entry file: ${absoluteEntryPath}`,
-          filePath: absoluteEntryPath,
-        }),
-      );
-
-      return new RivetContractLoweringResult({
-        document: EMPTY_DOCUMENT,
-        diagnostics,
-      });
-    }
-
-    const declarations = indexDeclarations(program, checker, diagnostics);
-    const typeDefinitions = new Map<string, RivetTypeDefinition>();
-    const enums = new Map<string, RivetContractEnum>();
-    const endpoints: RivetEndpointDefinition[] = [];
-    const referencedTypeNames = new Set<string>();
-    const emissionContext = new TypeEmissionContext(checker, declarations, diagnostics);
-    const contracts = emissionContext.discoverContracts(sourceFile);
-
-    for (const contract of contracts) {
-      for (const endpoint of contract.endpoints) {
-        const loweredEndpoint = emissionContext.lowerEndpoint(endpoint.specNode, {
-          contractName: contract.name,
-          endpointName: endpoint.name,
-          httpMethod: endpoint.method,
-          formEncoded: endpoint.formEncoded,
-          acceptsFile: endpoint.acceptsFile,
-          requestExamples:
-            endpoint.requestExamples.length > 0 ? endpoint.requestExamples : undefined,
-          responseExamples:
-            endpoint.responseExamples.length > 0 ? endpoint.responseExamples : undefined,
-        });
-
-        if (!loweredEndpoint) {
-          continue;
-        }
-
-        endpoints.push(loweredEndpoint);
-        for (const parameter of loweredEndpoint.params) {
-          collectTypeReferences(parameter.type, referencedTypeNames);
-        }
-        if (loweredEndpoint.returnType) {
-          collectTypeReferences(loweredEndpoint.returnType, referencedTypeNames);
-        }
-        for (const response of loweredEndpoint.responses) {
-          if (response.dataType) {
-            collectTypeReferences(response.dataType, referencedTypeNames);
-          }
-        }
-      }
-    }
-
-    const queue = [...referencedTypeNames].sort();
-    const queued = new Set(queue);
-    while (queue.length > 0) {
-      const name = queue.shift();
-      if (!name || typeDefinitions.has(name) || enums.has(name)) {
-        continue;
-      }
-
-      const lowered = emissionContext.lowerNamedDeclaration(name);
-      if (!lowered) {
-        continue;
-      }
-
-      if (lowered.kind === "enum") {
-        enums.set(name, lowered.value);
-      } else {
-        typeDefinitions.set(name, lowered.value);
-      }
-
-      for (const reference of lowered.references) {
-        if (typeDefinitions.has(reference) || enums.has(reference) || queued.has(reference)) {
-          continue;
-        }
-
-        queue.push(reference);
-        queued.add(reference);
-      }
-    }
-
-    const document = new RivetContractDocument({
-      types: [...typeDefinitions.values()].sort((left, right) =>
-        left.name.localeCompare(right.name),
-      ),
-      enums: [...enums.values()].sort((left, right) => left.name.localeCompare(right.name)),
-      endpoints,
-    });
+  if (!sourceFile) {
+    diagnostics.push(
+      new ExtractionDiagnostic({
+        severity: "error",
+        code: "ENTRY_NOT_FOUND",
+        message: `Could not load entry file: ${absoluteEntryPath}`,
+        filePath: absoluteEntryPath,
+      }),
+    );
 
     return new RivetContractLoweringResult({
-      document,
+      document: EMPTY_DOCUMENT,
       diagnostics,
-      contracts: contracts.map(toDiscoveredContract),
     });
   }
-}
+
+  const declarations = indexDeclarations(program, checker, diagnostics);
+  const typeDefinitions = new Map<string, RivetTypeDefinition>();
+  const enums = new Map<string, RivetContractEnum>();
+  const endpoints: RivetEndpointDefinition[] = [];
+  const referencedTypeNames = new Set<string>();
+  const emissionContext = new TypeEmissionContext(checker, declarations, diagnostics);
+  const contracts = emissionContext.discoverContracts(sourceFile);
+
+  for (const contract of contracts) {
+    for (const endpoint of contract.endpoints) {
+      const loweredEndpoint = emissionContext.lowerEndpoint(endpoint.specNode, {
+        contractName: contract.name,
+        endpointName: endpoint.name,
+        httpMethod: endpoint.method,
+        formEncoded: endpoint.formEncoded,
+        acceptsFile: endpoint.acceptsFile,
+        requestExamples: endpoint.requestExamples.length > 0 ? endpoint.requestExamples : undefined,
+        responseExamples:
+          endpoint.responseExamples.length > 0 ? endpoint.responseExamples : undefined,
+      });
+
+      if (!loweredEndpoint) {
+        continue;
+      }
+
+      endpoints.push(loweredEndpoint);
+      for (const parameter of loweredEndpoint.params) {
+        collectTypeReferences(parameter.type, referencedTypeNames);
+      }
+      if (loweredEndpoint.returnType) {
+        collectTypeReferences(loweredEndpoint.returnType, referencedTypeNames);
+      }
+      for (const response of loweredEndpoint.responses) {
+        if (response.dataType) {
+          collectTypeReferences(response.dataType, referencedTypeNames);
+        }
+      }
+    }
+  }
+
+  const queue = [...referencedTypeNames].sort();
+  const queued = new Set(queue);
+  while (queue.length > 0) {
+    const name = queue.shift();
+    if (!name || typeDefinitions.has(name) || enums.has(name)) {
+      continue;
+    }
+
+    const lowered = emissionContext.lowerNamedDeclaration(name);
+    if (!lowered) {
+      continue;
+    }
+
+    if (lowered.kind === "enum") {
+      enums.set(name, lowered.value);
+    } else {
+      typeDefinitions.set(name, lowered.value);
+    }
+
+    for (const reference of lowered.references) {
+      if (typeDefinitions.has(reference) || enums.has(reference) || queued.has(reference)) {
+        continue;
+      }
+
+      queue.push(reference);
+      queued.add(reference);
+    }
+  }
+
+  const document = new RivetContractDocument({
+    types: [...typeDefinitions.values()].sort((left, right) => left.name.localeCompare(right.name)),
+    enums: [...enums.values()].sort((left, right) => left.name.localeCompare(right.name)),
+    endpoints,
+  });
+
+  return new RivetContractLoweringResult({
+    document,
+    diagnostics,
+    contracts: contracts.map(toDiscoveredContract),
+  });
+};
 
 const toDiscoveredContract = (contract: DiscoveredContractSpec): DiscoveredContract => ({
   name: contract.name,

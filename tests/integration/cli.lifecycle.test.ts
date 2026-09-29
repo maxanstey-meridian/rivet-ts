@@ -1162,6 +1162,55 @@ describe("CLI argument handling and diagnostics", () => {
     expect(stderr.join("")).toContain("missing a value");
   });
 
+  it("lowers with the tsconfig passed via --tsconfig", async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-lower-tsconfig-"));
+    onTestFinished(() => fs.rm(tempDirectory, { recursive: true, force: true }));
+    const entryPath = path.join(tempDirectory, "contracts.ts");
+    const tsconfigPath = path.join(tempDirectory, "tsconfig.contracts.json");
+    const packageTypesPath = toImportPath(
+      tempDirectory,
+      path.join(getProjectRoot(), "dist", "index.js"),
+    );
+    await fs.mkdir(path.join(tempDirectory, "models"));
+    await fs.writeFile(
+      path.join(tempDirectory, "models", "member.ts"),
+      "export interface MemberDto { id: string }\n",
+    );
+    await fs.writeFile(
+      entryPath,
+      `import type { Contract, Endpoint } from "${packageTypesPath}";
+import type { MemberDto } from "@models/member";
+
+export interface MembersContract extends Contract<"MembersContract"> {
+  List: Endpoint<{ method: "GET"; route: "/api/members"; response: MemberDto[] }>;
+}
+`,
+    );
+    await fs.writeFile(
+      tsconfigPath,
+      JSON.stringify({
+        compilerOptions: {
+          module: "ESNext",
+          moduleResolution: "Bundler",
+          strict: true,
+          paths: { "@models/*": ["./models/*"] },
+        },
+      }),
+    );
+
+    const { exitCode, stdout, stderr } = await runCapture([
+      "--entry",
+      entryPath,
+      "--tsconfig",
+      tsconfigPath,
+    ]);
+
+    expect(stderr).toEqual([]);
+    expect(exitCode).toBe(0);
+    const payload = JSON.parse(stdout.join("")) as { types: Array<{ name: string }> };
+    expect(payload.types.map((type) => type.name)).toEqual(["MemberDto"]);
+  });
+
   // C1: --out into a directory that does not exist yet creates it.
   it("creates missing parent directories for --out", async () => {
     const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-out-create-"));

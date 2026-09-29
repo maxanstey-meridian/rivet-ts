@@ -2,8 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LowerTsContractsToRivetContract } from "../../src/application/use-cases/lower-ts-contracts-to-rivet-contract.js";
-import { TypeScriptRivetContractLowerer } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
+import { lowerContracts } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { expectValidContractDocument } from "../contract-schema.js";
 
 const getProjectRoot = (): string => {
@@ -21,14 +20,9 @@ const getFixturePath = (relativePath: string): string => {
   return path.resolve(path.dirname(currentFilePath), "..", "fixtures", relativePath);
 };
 
-describe("LowerTsContractsToRivetContract lifecycle", () => {
+describe("lowerContracts lifecycle", () => {
   it("lowers an extracted contract bundle into Rivet contract JSON", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
-
-    const lowered = await lowerUseCase.execute({
-      entryPath: getFixturePath(path.join("members-contract", "contracts.ts")),
-    });
+    const lowered = lowerContracts(getFixturePath(path.join("members-contract", "contracts.ts")));
 
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
@@ -101,12 +95,9 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("lowers aliased endpoint-spec examples into Rivet contract JSON", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
-
-    const lowered = await lowerUseCase.execute({
-      entryPath: getFixturePath(path.join("aliased-authoring-contract", "contracts.ts")),
-    });
+    const lowered = lowerContracts(
+      getFixturePath(path.join("aliased-authoring-contract", "contracts.ts")),
+    );
 
     expect(lowered.hasErrors).toBe(false);
 
@@ -148,12 +139,9 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("lowers plural inline request examples from the dedicated fixture", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
-
-    const lowered = await lowerUseCase.execute({
-      entryPath: getFixturePath(path.join("request-examples-contract", "contracts.ts")),
-    });
+    const lowered = lowerContracts(
+      getFixturePath(path.join("request-examples-contract", "contracts.ts")),
+    );
 
     expect(lowered.hasErrors).toBe(false);
 
@@ -207,8 +195,6 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("lowers named inline and ref-backed request example descriptors without reordering or reshaping them", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
     const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-request-examples-v2-"));
     const entryPath = path.join(tempDirectory, "contracts.ts");
     const normalizedImportPath = toImportPath(
@@ -266,7 +252,7 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
       "utf8",
     );
 
-    const lowered = await lowerUseCase.execute({ entryPath });
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
 
@@ -314,8 +300,6 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("reports request example descriptors that mix inline and ref-backed fields", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
     const tempDirectory = await fs.mkdtemp(
       path.join(os.tmpdir(), "rivet-ts-invalid-request-example-descriptor-"),
     );
@@ -360,7 +344,7 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
       "utf8",
     );
 
-    const lowered = await lowerUseCase.execute({ entryPath });
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(true);
     expect(lowered.diagnostics).toEqual(
@@ -385,8 +369,6 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
     ["Array helper syntax", "Array<ValidationFailure>"],
     ["ReadonlyArray helper syntax", "ReadonlyArray<ValidationFailure>"],
   ])("lowers array-authored endpoint errors from the public DSL via %s", async (_, errorsType) => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
     const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-lower-errors-array-"));
     const entryPath = path.join(tempDirectory, "contracts.ts");
     const normalizedImportPath = toImportPath(
@@ -422,7 +404,7 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
       "utf8",
     );
 
-    const lowered = await lowerUseCase.execute({ entryPath });
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
@@ -454,8 +436,6 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("preserves frontend example diagnostics when lowering an invalid bundle", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
     const tempDirectory = await fs.mkdtemp(
       path.join(os.tmpdir(), "rivet-ts-lower-invalid-example-"),
     );
@@ -497,7 +477,7 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
       "utf8",
     );
 
-    const lowered = await lowerUseCase.execute({ entryPath });
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(true);
     expect(lowered.diagnostics).toEqual(
@@ -518,8 +498,6 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("lowers scalar and array-root endpoint examples without wrapping or reshaping them", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
     const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-root-examples-"));
     const entryPath = path.join(tempDirectory, "contracts.ts");
     const normalizedImportPath = toImportPath(
@@ -561,7 +539,7 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
       "utf8",
     );
 
-    const lowered = await lowerUseCase.execute({ entryPath });
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
 
@@ -588,8 +566,6 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("lowers shorthand-property endpoint examples through the full bundle pipeline", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
     const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-shorthand-example-"));
     const entryPath = path.join(tempDirectory, "contracts.ts");
     const normalizedImportPath = toImportPath(
@@ -629,7 +605,7 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
       "utf8",
     );
 
-    const lowered = await lowerUseCase.execute({ entryPath });
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
 
@@ -654,8 +630,6 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("defaults file responses to application/octet-stream when fileContentType is omitted", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
     const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-file-response-"));
     const entryPath = path.join(tempDirectory, "contracts.ts");
     const normalizedImportPath = toImportPath(
@@ -680,7 +654,7 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
       "utf8",
     );
 
-    const lowered = await lowerUseCase.execute({ entryPath });
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
@@ -703,8 +677,6 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("reports contradictory anonymous and security metadata instead of silently dropping security", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
     const tempDirectory = await fs.mkdtemp(
       path.join(os.tmpdir(), "rivet-ts-conflicting-security-"),
     );
@@ -732,7 +704,7 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
       "utf8",
     );
 
-    const lowered = await lowerUseCase.execute({ entryPath });
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(true);
     expect(lowered.diagnostics).toEqual(
@@ -747,12 +719,9 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("lowers status-scoped response examples from the dedicated fixture", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
-
-    const lowered = await lowerUseCase.execute({
-      entryPath: getFixturePath(path.join("response-examples-contract", "contracts.ts")),
-    });
+    const lowered = lowerContracts(
+      getFixturePath(path.join("response-examples-contract", "contracts.ts")),
+    );
 
     expect(lowered.hasErrors).toBe(false);
 
@@ -809,8 +778,6 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("emits a diagnostic when response examples target an undeclared status", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
     const tempDirectory = await fs.mkdtemp(
       path.join(os.tmpdir(), "rivet-ts-unresolved-response-status-"),
     );
@@ -844,7 +811,7 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
       "utf8",
     );
 
-    const lowered = await lowerUseCase.execute({ entryPath });
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(true);
     expect(lowered.diagnostics).toEqual(
@@ -858,8 +825,6 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("lowers named and ref-backed response example descriptors with metadata preserved", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
     const tempDirectory = await fs.mkdtemp(
       path.join(os.tmpdir(), "rivet-ts-response-example-descriptors-"),
     );
@@ -917,7 +882,7 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
       "utf8",
     );
 
-    const lowered = await lowerUseCase.execute({ entryPath });
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
 
@@ -963,8 +928,6 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("lowers DELETE 204 void response examples without requiring a dataType", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
     const tempDirectory = await fs.mkdtemp(
       path.join(os.tmpdir(), "rivet-ts-response-example-void-"),
     );
@@ -998,7 +961,7 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
       "utf8",
     );
 
-    const lowered = await lowerUseCase.execute({ entryPath });
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
 
@@ -1022,8 +985,6 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("defaults file endpoint success response examples to fileContentType and error examples to application/json", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
     const tempDirectory = await fs.mkdtemp(
       path.join(os.tmpdir(), "rivet-ts-response-example-file-"),
     );
@@ -1063,7 +1024,7 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
       "utf8",
     );
 
-    const lowered = await lowerUseCase.execute({ entryPath });
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
 
@@ -1089,12 +1050,9 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("lowers a form-encoded endpoint with isFormEncoded and form-urlencoded request example media type", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
-
-    const lowered = await lowerUseCase.execute({
-      entryPath: getFixturePath(path.join("form-encoded-contract", "contracts.ts")),
-    });
+    const lowered = lowerContracts(
+      getFixturePath(path.join("form-encoded-contract", "contracts.ts")),
+    );
 
     expect(lowered.hasErrors).toBe(false);
 
@@ -1126,12 +1084,9 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("defaults request example media type to application/json for non-form-encoded endpoints", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
-
-    const lowered = await lowerUseCase.execute({
-      entryPath: getFixturePath(path.join("request-examples-contract", "contracts.ts")),
-    });
+    const lowered = lowerContracts(
+      getFixturePath(path.join("request-examples-contract", "contracts.ts")),
+    );
 
     expect(lowered.hasErrors).toBe(false);
 
@@ -1149,12 +1104,7 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("lowers a multipart endpoint with file, formField, and route params in order", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
-
-    const lowered = await lowerUseCase.execute({
-      entryPath: getFixturePath(path.join("multipart-contract", "contracts.ts")),
-    });
+    const lowered = lowerContracts(getFixturePath(path.join("multipart-contract", "contracts.ts")));
 
     expect(lowered.hasErrors).toBe(false);
 
@@ -1185,8 +1135,6 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("defaults request example media type to multipart/form-data for acceptsFile endpoints", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
     const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-multipart-media-"));
     const entryPath = path.join(tempDirectory, "contracts.ts");
     const normalizedImportPath = toImportPath(
@@ -1227,7 +1175,7 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
       "utf8",
     );
 
-    const lowered = await lowerUseCase.execute({ entryPath });
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(false);
     expect(lowered.diagnostics).toEqual([]);
@@ -1254,8 +1202,6 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("reports a diagnostic when a multipart endpoint has no file-typed property", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
     const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "rivet-ts-multipart-no-file-"));
     const entryPath = path.join(tempDirectory, "contracts.ts");
     const normalizedImportPath = toImportPath(
@@ -1289,7 +1235,7 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
       "utf8",
     );
 
-    const lowered = await lowerUseCase.execute({ entryPath });
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(true);
     expect(lowered.diagnostics).toEqual(
@@ -1302,8 +1248,6 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
   });
 
   it("reports a diagnostic when a multipart endpoint has multiple file-typed properties", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
     const tempDirectory = await fs.mkdtemp(
       path.join(os.tmpdir(), "rivet-ts-multipart-multi-file-"),
     );
@@ -1340,7 +1284,7 @@ describe("LowerTsContractsToRivetContract lifecycle", () => {
       "utf8",
     );
 
-    const lowered = await lowerUseCase.execute({ entryPath });
+    const lowered = lowerContracts(entryPath);
 
     expect(lowered.hasErrors).toBe(true);
     expect(lowered.diagnostics).toEqual(

@@ -7,7 +7,7 @@ import { resolveRivetBinaryConfig } from "./config/rivet-binary.js";
 import { emitClientPackage } from "./infrastructure/codegen/client-package-emitter.js";
 import { toKebabCase } from "./infrastructure/codegen/kebab-case.js";
 import { collectLocalDependencies } from "./infrastructure/typescript/local-source-dependencies.js";
-import { TypeScriptRivetContractLowerer } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
+import { lowerContracts } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import {
   ensureRivetBinary,
   type ResolvedRivetBinaryConfig,
@@ -111,10 +111,7 @@ const generateArtifacts = async (
   options: NormalizedPluginOptions,
   config: ResolvedConfig,
 ): Promise<readonly string[]> => {
-  // Single AST→document pass (X13): one ts.Program per regeneration, and the
-  // result carries every diagnostic exactly once (V3).
-  const lowerer = new TypeScriptRivetContractLowerer(options.tsconfigPath);
-  const lowered = await lowerer.lower(options.entryPath);
+  const lowered = lowerContracts(options.entryPath, { tsconfigPath: options.tsconfigPath });
   const diagnostics = lowered.diagnostics;
 
   if (diagnostics.length > 0) {

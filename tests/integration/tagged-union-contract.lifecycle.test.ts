@@ -1,7 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LowerTsContractsToRivetContract } from "../../src/application/use-cases/lower-ts-contracts-to-rivet-contract.js";
-import { TypeScriptRivetContractLowerer } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
+import { lowerContracts } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 
 const getFixturePath = (relativePath: string): string => {
   const currentFilePath = fileURLToPath(import.meta.url);
@@ -10,12 +9,9 @@ const getFixturePath = (relativePath: string): string => {
 
 describe("Tagged union contract lifecycle", () => {
   it("lowers discriminated object unions into tagged union contract types", async () => {
-    const lowerer = new TypeScriptRivetContractLowerer();
-    const lowerUseCase = new LowerTsContractsToRivetContract(lowerer);
-
-    const lowered = await lowerUseCase.execute({
-      entryPath: getFixturePath(path.join("tagged-union-contract", "contracts.ts")),
-    });
+    const lowered = lowerContracts(
+      getFixturePath(path.join("tagged-union-contract", "contracts.ts")),
+    );
 
     expect(lowered.hasErrors).toBe(false);
 

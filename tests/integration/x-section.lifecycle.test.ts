@@ -6,8 +6,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LowerTsContractsToRivetContract } from "../../src/application/use-cases/lower-ts-contracts-to-rivet-contract.js";
-import { TypeScriptRivetContractLowerer } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
+import { lowerContracts } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { expectValidContractDocument } from "../contract-schema.js";
 
 type DocumentPayload = {
@@ -66,8 +65,7 @@ const writeFixtureProject = async (
 };
 
 const extractAndLower = async (entryPath: string) => {
-  const lowerer = new TypeScriptRivetContractLowerer();
-  const lowered = await new LowerTsContractsToRivetContract(lowerer).execute({ entryPath });
+  const lowered = lowerContracts(entryPath);
   return { lowered };
 };
 

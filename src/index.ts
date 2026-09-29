@@ -60,14 +60,6 @@ export {
   type DiscoveredContract,
   type DiscoveredEndpoint,
 } from "./domain/rivet-contract-lowering-result.js";
-export { RivetContractLowerer } from "./application/ports/rivet-contract-lowerer.js";
-export { LowerTsContractsToRivetContract } from "./application/use-cases/lower-ts-contracts-to-rivet-contract.js";
-/**
- * @deprecated The frontend/lowerer split was collapsed into a single pass
- * (X13); lowering now starts from the entry path. Use
- * {@link LowerTsContractsToRivetContract} — `execute({ entryPath })`.
- */
-export { LowerTsContractsToRivetContract as LowerContractBundleToRivetContract } from "./application/use-cases/lower-ts-contracts-to-rivet-contract.js";
-export { TypeScriptRivetContractLowerer } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
+export { lowerContracts } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 export { runCli } from "./cli.js";
 export { rivetTs, type RivetTsVitePluginOptions } from "./vite.js";

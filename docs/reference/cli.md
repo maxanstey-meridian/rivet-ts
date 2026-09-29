@@ -11,14 +11,14 @@ The package exposes two identical binaries — `rivet-ts` and the legacy alias `
 Usage (from `rivet-ts --help`):
 
 ```text
-rivet-ts --entry <path> [--out <file>]
+rivet-ts --entry <path> [--out <file>] [--tsconfig <file>]
 rivet-ts scaffold --out <dir> [--name <project-name>] [--no-api] [--force]
 rivet-ts scaffold-mock --entry <file> --out <dir> [--name <project-name>] [--tsconfig <file>] [--spec <openapi.json>] [--force]
 rivet-ts generate --generated-root <dir>
 rivet-ts rivet [--] <args passed to the Rivet binary>
 ```
 
-`--help`/`-h` prints usage; `--version` prints the package version. Unknown flags and valued flags missing their value are loud errors, never silently ignored.
+`--help`/`-h` prints usage; `--version` prints the package version. After `rivet`, both are passed to the Rivet binary instead. Unknown flags and valued flags missing their value are loud errors, never silently ignored.
 
 ## Reflect (bare form)
 
@@ -29,6 +29,7 @@ pnpm exec rivet-ts --entry ./contracts.ts --out ./contract.json
 ```
 
 - If `--out` is omitted, JSON is written to stdout.
+- `--tsconfig` names the TypeScript project file; without it the nearest `tsconfig.json` above the entry is used, if there is one.
 - `--out` creates missing parent directories.
 - An entry containing zero contracts produces an `ENTRY_NO_CONTRACTS` warning instead of silently emitting an empty document.
 - Exit code is 1 when any error diagnostic was produced.

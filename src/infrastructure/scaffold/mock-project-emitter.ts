@@ -1,10 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import {
-  MockProjectEmitter,
-  type MockProjectEmitterConfig,
-} from "../../application/ports/mock-project-emitter.js";
-import type { RivetType } from "../../domain/rivet-contract.js";
+import type { DiscoveredContract } from "../../domain/rivet-contract-lowering-result.js";
+import type { RivetContractDocument, RivetType } from "../../domain/rivet-contract.js";
 import { toKebabCase } from "../codegen/kebab-case.js";
 import { collectLocalDependencies } from "../typescript/local-source-dependencies.js";
 import { generateEndpointMock } from "./mock-value-generator.js";
@@ -25,6 +22,15 @@ import { zodSourceForType } from "./zod-schema-emitter.js";
  * `modules/<m>/<m>-validation.ts`. No `<m>.module.ts` here — mock use cases are
  * standalone functions with nothing to wire, and seams must be earned.
  */
+
+export type MockProjectConfig = {
+  readonly outDir: string;
+  readonly projectName: string;
+  readonly entryPath: string;
+  readonly force: boolean;
+  readonly contracts: readonly DiscoveredContract[];
+  readonly document: RivetContractDocument;
+};
 
 type ContractGroup = {
   readonly contractName: string;
@@ -196,7 +202,7 @@ export const resolveWorkspaceVersions = (
   vitest: manifest.devDependencies?.vitest ?? "^4.1.2",
 });
 
-const buildContractGroups = (config: MockProjectEmitterConfig): readonly ContractGroup[] =>
+const buildContractGroups = (config: MockProjectConfig): readonly ContractGroup[] =>
   config.contracts.map((contract) => {
     const contractBaseName = deriveContractBaseName(contract.name);
     const moduleDirectoryName = toKebabCase(contractBaseName) || "contract";
@@ -221,7 +227,7 @@ const buildContractGroups = (config: MockProjectEmitterConfig): readonly Contrac
   });
 
 const buildHandlerDescriptors = (
-  config: MockProjectEmitterConfig,
+  config: MockProjectConfig,
   groups: readonly ContractGroup[],
 ): readonly HandlerDescriptor[] => {
   const endpointByName = new Map(
@@ -497,7 +503,7 @@ const schemaExportName = (handler: HandlerDescriptor): string =>
 const emitValidationSource = (
   group: ContractGroup,
   bodyHandlers: readonly HandlerDescriptor[],
-  config: MockProjectEmitterConfig,
+  config: MockProjectConfig,
 ): string => {
   const schemas = bodyHandlers.map((handler) => ({
     handler,
@@ -564,7 +570,7 @@ const emitValidationBarrelSource = (
 const emitRoutesSource = (
   group: ContractGroup,
   handlers: readonly HandlerDescriptor[],
-  config: MockProjectEmitterConfig,
+  config: MockProjectConfig,
 ): string => {
   const bodyHandlers = handlers.filter((handler) => handler.hasBody && handler.bodyType);
   const lines = ['import type { Hono } from "hono";'];
@@ -683,7 +689,7 @@ const emitAppSource = (groups: readonly ContractGroup[]): string => {
  */
 export const buildBootstrapOpenApiDocument = (config: {
   readonly projectName: string;
-  readonly document: MockProjectEmitterConfig["document"];
+  readonly document: RivetContractDocument;
 }): object => {
   const paths: Record<string, Record<string, object>> = {};
 
@@ -714,144 +720,139 @@ export const buildBootstrapOpenApiDocument = (config: {
   };
 };
 
-export class FileSystemMockProjectEmitter implements MockProjectEmitter {
-  public async emit(config: MockProjectEmitterConfig): Promise<void> {
-    const sourceDependencies = await collectLocalDependencies(config.entryPath);
-    const entryDependency = sourceDependencies.find(
-      (dependency) => path.resolve(dependency.absolutePath) === path.resolve(config.entryPath),
-    );
+export const emitMockProject = async (config: MockProjectConfig): Promise<void> => {
+  const sourceDependencies = await collectLocalDependencies(config.entryPath);
+  const entryDependency = sourceDependencies.find(
+    (dependency) => path.resolve(dependency.absolutePath) === path.resolve(config.entryPath),
+  );
 
-    if (!entryDependency) {
-      throw new Error(`Could not locate copied entry path for ${config.entryPath}.`);
-    }
+  if (!entryDependency) {
+    throw new Error(`Could not locate copied entry path for ${config.entryPath}.`);
+  }
 
-    const safetyError = await checkOutDirSafety(config.outDir, config.force ?? false);
-    if (safetyError) {
-      throw new Error(safetyError);
-    }
+  const safetyError = await checkOutDirSafety(config.outDir, config.force);
+  if (safetyError) {
+    throw new Error(safetyError);
+  }
 
-    const groups = buildContractGroups(config);
-    const handlers = buildHandlerDescriptors(config, groups);
-    assertUniqueGeneratedGroupNames(groups, handlers);
-    assertUniqueGeneratedHandlerNames(handlers);
-    assertUniqueRouteModuleBindings(groups, handlers);
-    const manifest = await readPackageManifest();
+  const groups = buildContractGroups(config);
+  const handlers = buildHandlerDescriptors(config, groups);
+  assertUniqueGeneratedGroupNames(groups, handlers);
+  assertUniqueGeneratedHandlerNames(handlers);
+  assertUniqueRouteModuleBindings(groups, handlers);
+  const manifest = await readPackageManifest();
 
-    // The entry (and its local imports) are copied into src/ preserving their
-    // relative layout; every reference to the entry derives from where it
-    // actually lands — never a hardcoded "contracts.ts" (S4).
-    const entryRelativePath = entryDependency.relativePath.split(path.sep).join("/");
+  // The entry (and its local imports) are copied into src/ preserving their
+  // relative layout; every reference to the entry derives from where it
+  // actually lands — never a hardcoded "contracts.ts" (S4).
+  const entryRelativePath = entryDependency.relativePath.split(path.sep).join("/");
 
-    // Copied user files must not silently clobber emitted app files (S6).
-    const reservedSourcePaths = new Set([
-      "contract.ts",
-      "local.ts",
-      "main.ts",
-      "app.ts",
-      "validation.ts",
-    ]);
-    for (const dependency of sourceDependencies) {
-      const landed = dependency.relativePath.split(path.sep).join("/");
-      if (reservedSourcePaths.has(landed)) {
-        throw new Error(
-          `Entry dependency "${landed}" collides with a scaffold-emitted file in apps/api/src/. ` +
-            "Rename the source file and re-run.",
-        );
-      }
-    }
-
-    const workspaceConfig: WorkspaceConfig = {
-      outDir: config.outDir,
-      projectName: config.projectName,
-      packageScope: toPackageScope(config.projectName),
-      rivetTsDependency: toRivetTsDependency(manifest),
-      versions: resolveWorkspaceVersions(manifest),
-      contractEntryRelativePath: entryRelativePath,
-      // The facade re-exports TYPE identifiers, so it needs the exported
-      // interface names — the brand strings do not resolve.
-      contractNames: groups.map((group) => group.contractExportName),
-      bootstrapOpenApiDocument: buildBootstrapOpenApiDocument(config),
-      demoCall: selectDemoClientCall(groups, handlers),
-    };
-
-    const { apiSourceRoot } = await emitWorkspaceSkeleton(
-      workspaceConfig,
-      `${JSON.stringify(config.document, null, 2)}\n`,
-    );
-
-    const groupsWithBodies = groups.filter((group) =>
-      handlers.some(
-        (handler) =>
-          handler.contractName === group.contractName && handler.hasBody && handler.bodyType,
-      ),
-    );
-
-    for (const group of groups) {
-      await fs.mkdir(
-        path.join(apiSourceRoot, "modules", group.moduleDirectoryName, "application"),
-        {
-          recursive: true,
-        },
+  // Copied user files must not silently clobber emitted app files (S6).
+  const reservedSourcePaths = new Set([
+    "contract.ts",
+    "local.ts",
+    "main.ts",
+    "app.ts",
+    "validation.ts",
+  ]);
+  for (const dependency of sourceDependencies) {
+    const landed = dependency.relativePath.split(path.sep).join("/");
+    if (reservedSourcePaths.has(landed)) {
+      throw new Error(
+        `Entry dependency "${landed}" collides with a scaffold-emitted file in apps/api/src/. ` +
+          "Rename the source file and re-run.",
       );
     }
-
-    await Promise.all([
-      fs.writeFile(path.join(apiSourceRoot, "app.ts"), emitAppSource(groups)),
-      fs.writeFile(
-        path.join(apiSourceRoot, "validation.ts"),
-        emitValidationBarrelSource(groupsWithBodies, handlers),
-      ),
-      ...groupsWithBodies.map((group) =>
-        fs.writeFile(
-          path.join(
-            apiSourceRoot,
-            "modules",
-            group.moduleDirectoryName,
-            `${group.moduleDirectoryName}-validation.ts`,
-          ),
-          emitValidationSource(
-            group,
-            handlers.filter(
-              (handler) =>
-                handler.contractName === group.contractName && handler.hasBody && handler.bodyType,
-            ),
-            config,
-          ),
-        ),
-      ),
-      ...groups.map((group) =>
-        fs.writeFile(
-          path.join(
-            apiSourceRoot,
-            "modules",
-            group.moduleDirectoryName,
-            `${group.moduleDirectoryName}-routes.ts`,
-          ),
-          emitRoutesSource(
-            group,
-            handlers.filter((handler) => handler.contractName === group.contractName),
-            config,
-          ),
-        ),
-      ),
-      ...handlers.map((handler) =>
-        fs.writeFile(
-          path.join(
-            apiSourceRoot,
-            "modules",
-            handler.moduleDirectoryName,
-            "application",
-            `${handler.fileBaseName}.ts`,
-          ),
-          emitUseCaseSource(handler),
-        ),
-      ),
-      ...sourceDependencies.map(async (dependency) => {
-        const targetPath = path.join(apiSourceRoot, dependency.relativePath);
-        await fs.mkdir(path.dirname(targetPath), { recursive: true });
-        const content = await fs.readFile(dependency.absolutePath, "utf8");
-        await fs.writeFile(targetPath, content);
-      }),
-    ]);
   }
-}
+
+  const workspaceConfig: WorkspaceConfig = {
+    outDir: config.outDir,
+    projectName: config.projectName,
+    packageScope: toPackageScope(config.projectName),
+    rivetTsDependency: toRivetTsDependency(manifest),
+    versions: resolveWorkspaceVersions(manifest),
+    contractEntryRelativePath: entryRelativePath,
+    // The facade re-exports TYPE identifiers, so it needs the exported
+    // interface names — the brand strings do not resolve.
+    contractNames: groups.map((group) => group.contractExportName),
+    bootstrapOpenApiDocument: buildBootstrapOpenApiDocument(config),
+    demoCall: selectDemoClientCall(groups, handlers),
+  };
+
+  const { apiSourceRoot } = await emitWorkspaceSkeleton(
+    workspaceConfig,
+    `${JSON.stringify(config.document, null, 2)}\n`,
+  );
+
+  const groupsWithBodies = groups.filter((group) =>
+    handlers.some(
+      (handler) =>
+        handler.contractName === group.contractName && handler.hasBody && handler.bodyType,
+    ),
+  );
+
+  for (const group of groups) {
+    await fs.mkdir(path.join(apiSourceRoot, "modules", group.moduleDirectoryName, "application"), {
+      recursive: true,
+    });
+  }
+
+  await Promise.all([
+    fs.writeFile(path.join(apiSourceRoot, "app.ts"), emitAppSource(groups)),
+    fs.writeFile(
+      path.join(apiSourceRoot, "validation.ts"),
+      emitValidationBarrelSource(groupsWithBodies, handlers),
+    ),
+    ...groupsWithBodies.map((group) =>
+      fs.writeFile(
+        path.join(
+          apiSourceRoot,
+          "modules",
+          group.moduleDirectoryName,
+          `${group.moduleDirectoryName}-validation.ts`,
+        ),
+        emitValidationSource(
+          group,
+          handlers.filter(
+            (handler) =>
+              handler.contractName === group.contractName && handler.hasBody && handler.bodyType,
+          ),
+          config,
+        ),
+      ),
+    ),
+    ...groups.map((group) =>
+      fs.writeFile(
+        path.join(
+          apiSourceRoot,
+          "modules",
+          group.moduleDirectoryName,
+          `${group.moduleDirectoryName}-routes.ts`,
+        ),
+        emitRoutesSource(
+          group,
+          handlers.filter((handler) => handler.contractName === group.contractName),
+          config,
+        ),
+      ),
+    ),
+    ...handlers.map((handler) =>
+      fs.writeFile(
+        path.join(
+          apiSourceRoot,
+          "modules",
+          handler.moduleDirectoryName,
+          "application",
+          `${handler.fileBaseName}.ts`,
+        ),
+        emitUseCaseSource(handler),
+      ),
+    ),
+    ...sourceDependencies.map(async (dependency) => {
+      const targetPath = path.join(apiSourceRoot, dependency.relativePath);
+      await fs.mkdir(path.dirname(targetPath), { recursive: true });
+      const content = await fs.readFile(dependency.absolutePath, "utf8");
+      await fs.writeFile(targetPath, content);
+    }),
+  ]);
+};

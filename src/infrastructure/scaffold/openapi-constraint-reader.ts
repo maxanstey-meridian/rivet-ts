@@ -1,8 +1,4 @@
 import {
-  MockProjectEmitter,
-  type MockProjectEmitterConfig,
-} from "../../application/ports/mock-project-emitter.js";
-import {
   RivetContractDocument,
   type RivetPropertyConstraints,
   RivetTypeDefinition,
@@ -188,25 +184,3 @@ export const enrichDocumentWithConstraints = (
     endpoints: document.endpoints,
   });
 };
-
-/**
- * Decorator over the real emitter: enriches the lowered document with the
- * spec's constraints before emission, leaving the emitter itself — and the
- * no-spec scaffold path — untouched.
- */
-export class ConstraintEnrichingMockProjectEmitter implements MockProjectEmitter {
-  private readonly inner: MockProjectEmitter;
-  private readonly index: OpenApiConstraintIndex;
-
-  public constructor(inner: MockProjectEmitter, index: OpenApiConstraintIndex) {
-    this.inner = inner;
-    this.index = index;
-  }
-
-  public async emit(config: MockProjectEmitterConfig): Promise<void> {
-    await this.inner.emit({
-      ...config,
-      document: enrichDocumentWithConstraints(config.document, this.index),
-    });
-  }
-}
