@@ -24,10 +24,6 @@ export interface UploadDocumentRequest {
   title: string;
 }
 
-export interface DeleteAckDto {
-  deletedAt: string;
-}
-
 export const createItemRequestExample = {
   email: "jane@example.com",
   role: "admin",
@@ -57,10 +53,6 @@ export const submitFormRequestExample = {
   name: "Jane Doe",
   email: "jane@example.com",
 } satisfies SubmitFormRequest;
-
-export const deleteAckExample = {
-  deletedAt: "2026-01-01T00:00:00Z",
-} satisfies DeleteAckDto;
 
 export const fileErrorExample = {
   message: "File not found",

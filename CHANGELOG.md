@@ -12,6 +12,8 @@
 
 ## Unreleased — fixes
 
+- Response examples on a body-forbidden status (1xx, 204, 205, 304) are a lowering error (`BODY_FORBIDDEN_STATUS_EXAMPLE`) with C# Rivet's RIV1102 wording, instead of contract JSON that `rivet --from` then refuses.
+- Example lists must be arrays or tuples (`T[]`, `[A, B]`, `Array<T>`, `ReadonlyArray<T>`); `Promise<T>`, `Record<…>`, `String`, `Number` and `Boolean` are no longer accepted as example-list containers.
 - Malformed `name`/`mediaType` on a `responseExamples` descriptor is reported against `responseExamples[<status>].examples entries`, not `requestExamples entries`.
 - `rivet-ts --entry` accepts `--tsconfig <file>` (it previously rejected the flag, so a non-default tsconfig could not be used).
 - `rivet-ts rivet` no longer kills the Rivet binary after 1 MB of output, and reports a signal-killed binary as `128 + signal`.

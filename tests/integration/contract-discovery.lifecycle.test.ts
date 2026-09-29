@@ -1090,6 +1090,32 @@ describe("Contract discovery lifecycle", () => {
     );
   });
 
+  it("rejects a non-array container such as Promise<typeof x> as an example list", async () => {
+    const { entryPath } = await writeTempEntry("rivet-ts-example-list-promise-", [
+      'import type { Contract, Endpoint } from "__IMPORT_PATH__";',
+      "",
+      "export interface CreateRequest { email: string; }",
+      'export const example = { email: "jane@example.com" } satisfies CreateRequest;',
+      "",
+      'export interface TempContract extends Contract<"TempContract"> {',
+      "  Create: Endpoint<{",
+      '    method: "POST";',
+      '    route: "/api/temp";',
+      "    input: CreateRequest;",
+      "    requestExamples: Promise<typeof example>;",
+      "  }>;",
+      "}",
+      "",
+    ]);
+
+    const lowered = lowerContracts(entryPath);
+
+    expect(lowered.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "INVALID_ENDPOINT_EXAMPLE_REFERENCE", filePath: entryPath }),
+    );
+    expect(parseDocument(lowered).endpoints[0]).not.toHaveProperty("requestExamples");
+  });
+
   it("names the responseExamples entry, not requestExamples, when a response example descriptor is malformed", async () => {
     const { entryPath } = await writeTempEntry("rivet-ts-response-example-descriptor-", [
       'import type { Contract, Endpoint } from "__IMPORT_PATH__";',

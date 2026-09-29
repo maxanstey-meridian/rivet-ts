@@ -23,10 +23,13 @@ import { mapTypeScriptDiagnostics, resolveTypeScriptProject } from "./typescript
 type SupportedDeclaration = ts.EnumDeclaration | ts.InterfaceDeclaration | ts.TypeAliasDeclaration;
 
 type DiscoveredEndpointSpec = {
+  contractName: string;
   name: string;
   specNode: ts.TypeNode;
+  propertyMap: ReadonlyMap<string, ts.TypeNode>;
   method: HttpMethod;
   route: string;
+  successStatus: number | null;
   formEncoded: boolean;
   acceptsFile: boolean;
   hasInput: boolean;
@@ -40,6 +43,7 @@ type DiscoveredEndpointSpec = {
 type ResponseExampleGroup = {
   status: number;
   examples: readonly RivetExample[];
+  node: ts.TypeNode;
 };
 
 type ExampleReadContext = {
@@ -60,17 +64,6 @@ type DiscoveredContractSpec = {
   exportedName: string;
   sourceFilePath: string;
   endpoints: readonly DiscoveredEndpointSpec[];
-};
-
-type EndpointContext = {
-  contractName: string;
-  endpointName: string;
-  httpMethod: string;
-  formEncoded: boolean;
-  acceptsFile: boolean;
-  fileContentType: string | undefined;
-  requestExamples: readonly RivetExample[];
-  responseExamples: readonly ResponseExampleGroup[];
 };
 
 type PropertyDescriptor = {
@@ -95,22 +88,15 @@ const AUTHORING_HELPER_TYPE_NAMES = new Set([
   "EndpointSecurityAuthoringSpec",
 ]);
 const BUILTIN_TYPE_NAMES = new Set(["Array", "ReadonlyArray"]);
-// Example-list containers accept a broader builtin set than the type lowering
-// path does (inherited from the contract frontend this pass absorbed).
-const EXAMPLE_CONTAINER_TYPE_NAMES = new Set([
-  "Array",
-  "Record",
-  "ReadonlyArray",
-  "String",
-  "Number",
-  "Boolean",
-  "Promise",
-]);
 const MULTIPART_FILE_TYPE_NAMES = new Set(["Blob", "File"]);
 const JSON_MEDIA_TYPE = "application/json";
 
 const getResponseExampleMediaType = (status: number, fileContentType: string | undefined): string =>
   status >= 200 && status < 300 && fileContentType ? fileContentType : JSON_MEDIA_TYPE;
+
+// HTTP forbids a message body on these; C# Rivet refuses authored content there (RIV1102).
+const isBodyForbiddenStatus = (status: number): boolean =>
+  (status >= 100 && status < 200) || status === 204 || status === 205 || status === 304;
 
 const parseRouteParamNames = (route: string): string[] => {
   const matches = route.matchAll(ROUTE_PARAM_PATTERN);
@@ -365,21 +351,7 @@ export const lowerContracts = (
 
   for (const contract of contracts) {
     for (const endpoint of contract.endpoints) {
-      const loweredEndpoint = emissionContext.lowerEndpoint(endpoint.specNode, {
-        contractName: contract.name,
-        endpointName: endpoint.name,
-        httpMethod: endpoint.method,
-        formEncoded: endpoint.formEncoded,
-        acceptsFile: endpoint.acceptsFile,
-        fileContentType: endpoint.fileContentType,
-        requestExamples: endpoint.requestExamples,
-        responseExamples: endpoint.responseExamples,
-      });
-
-      if (!loweredEndpoint) {
-        continue;
-      }
-
+      const loweredEndpoint = emissionContext.lowerEndpoint(endpoint);
       endpoints.push(loweredEndpoint);
       for (const parameter of loweredEndpoint.params) {
         collectTypeReferences(parameter.type, referencedTypeNames);
@@ -515,7 +487,7 @@ class TypeEmissionContext {
           continue;
         }
 
-        const endpoint = this.discoverEndpoint(member.type, endpointName);
+        const endpoint = this.discoverEndpoint(member.type, endpointName, contractName);
         if (endpoint) {
           endpoints.push(endpoint);
         }
@@ -543,6 +515,7 @@ class TypeEmissionContext {
   private discoverEndpoint(
     typeNode: ts.TypeNode,
     endpointName: string,
+    contractName: string,
   ): DiscoveredEndpointSpec | null {
     if (
       !ts.isTypeReferenceNode(typeNode) ||
@@ -610,6 +583,7 @@ class TypeEmissionContext {
       return null;
     }
 
+    const successStatus = this.readNumericLiteral(propertyMap.get("successStatus"));
     const formEncoded = this.readBooleanLiteral(propertyMap.get("formEncoded")) ?? false;
     const acceptsFile = this.readBooleanLiteral(propertyMap.get("acceptsFile")) ?? false;
     const fileContentType =
@@ -623,10 +597,13 @@ class TypeEmissionContext {
         : JSON_MEDIA_TYPE;
 
     return {
+      contractName,
       name: endpointName,
       specNode,
+      propertyMap,
       method,
       route,
+      successStatus,
       formEncoded,
       acceptsFile,
       hasInput: propertyMap.has("input"),
@@ -638,6 +615,7 @@ class TypeEmissionContext {
         propertyMap,
         endpointName,
         method,
+        successStatus,
         fileContentType,
       ),
     };
@@ -684,7 +662,7 @@ class TypeEmissionContext {
     }
 
     if (pluralNode) {
-      const entryNodes = this.getExampleEntryNodes(pluralNode);
+      const entryNodes = this.getListEntryNodes(pluralNode);
       if (!entryNodes) {
         this.diagnostics.push(
           createNodeDiagnostic(
@@ -716,6 +694,7 @@ class TypeEmissionContext {
     propertyMap: ReadonlyMap<string, ts.TypeNode>,
     endpointName: string,
     method: HttpMethod,
+    successStatus: number | null,
     fileContentType: string | undefined,
   ): ResponseExampleGroup[] {
     const pluralNode = propertyMap.get("responseExamples");
@@ -734,7 +713,7 @@ class TypeEmissionContext {
     }
 
     if (pluralNode) {
-      const entryNodes = this.getExampleEntryNodes(pluralNode);
+      const entryNodes = this.getListEntryNodes(pluralNode);
       if (!entryNodes) {
         this.diagnostics.push(
           createNodeDiagnostic(
@@ -766,13 +745,13 @@ class TypeEmissionContext {
     }
 
     const status =
-      this.readNumericLiteral(propertyMap.get("successStatus")) ??
+      successStatus ??
       this.getDefaultSuccessStatus(
         method,
         responseNode !== undefined && responseNode.kind !== ts.SyntaxKind.VoidKeyword,
       );
     const mediaType = getResponseExampleMediaType(status, fileContentType);
-    return [{ status, examples: [new RivetExample({ mediaType, json })] }];
+    return [{ status, examples: [new RivetExample({ mediaType, json })], node: singularNode }];
   }
 
   // Status-scoped response examples are deliberately not type-checked: the
@@ -818,7 +797,7 @@ class TypeEmissionContext {
       return null;
     }
 
-    const entryNodes = this.getExampleEntryNodes(examplesNode);
+    const entryNodes = this.getListEntryNodes(examplesNode);
     if (!entryNodes) {
       this.diagnostics.push(
         createNodeDiagnostic(
@@ -838,6 +817,7 @@ class TypeEmissionContext {
     return {
       status,
       examples: entryNodes.flatMap((entryNode) => this.parseExampleEntry(entryNode, context) ?? []),
+      node,
     };
   }
 
@@ -1043,13 +1023,14 @@ class TypeEmissionContext {
     return null;
   }
 
-  private getExampleEntryNodes(node: ts.TypeNode): ts.TypeNode[] | null {
+  /** Elements of an authored list: `T[]`, `[A, B]`, `Array<T>`/`ReadonlyArray<T>`, or an alias of one. */
+  private getListEntryNodes(node: ts.TypeNode): ts.TypeNode[] | null {
     if (ts.isParenthesizedTypeNode(node)) {
-      return this.getExampleEntryNodes(node.type);
+      return this.getListEntryNodes(node.type);
     }
 
     if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) {
-      return this.getExampleEntryNodes(node.type);
+      return this.getListEntryNodes(node.type);
     }
 
     if (ts.isTupleTypeNode(node)) {
@@ -1063,14 +1044,14 @@ class TypeEmissionContext {
     if (
       ts.isTypeReferenceNode(node) &&
       ts.isIdentifier(node.typeName) &&
-      EXAMPLE_CONTAINER_TYPE_NAMES.has(node.typeName.text)
+      BUILTIN_TYPE_NAMES.has(node.typeName.text)
     ) {
       const [elementType] = node.typeArguments ?? [];
       return elementType ? [elementType] : null;
     }
 
     const resolvedNode = this.resolveAliasedTypeNode(node);
-    return resolvedNode ? this.getExampleEntryNodes(resolvedNode) : null;
+    return resolvedNode ? this.getListEntryNodes(resolvedNode) : null;
   }
 
   private resolveExampleDeclaration(entityName: ts.EntityName): ts.VariableDeclaration | null {
@@ -1301,46 +1282,15 @@ class TypeEmissionContext {
     return undefined;
   }
 
-  public lowerEndpoint(
-    specNode: ts.TypeNode,
-    context: EndpointContext,
-  ): RivetEndpointDefinition | null {
-    const propertyMap = this.createPropertyMap(specNode);
-    if (!propertyMap) {
-      this.diagnostics.push(
-        createNodeDiagnostic(
-          specNode,
-          "INVALID_ENDPOINT_SPEC",
-          `Endpoint "${context.contractName}.${context.endpointName}" must use a type literal spec or a type alias that resolves to one.`,
-        ),
-      );
-      return null;
-    }
-
-    const routeNode = propertyMap.get("route");
-    const routeLiteral = routeNode ? this.readStringLiteral(routeNode) : null;
-
-    if (!routeLiteral) {
-      this.diagnostics.push(
-        createNodeDiagnostic(
-          specNode,
-          "INCOMPLETE_ENDPOINT",
-          `Endpoint "${context.contractName}.${context.endpointName}" is missing a string literal route.`,
-        ),
-      );
-      return null;
-    }
-
+  public lowerEndpoint(endpoint: DiscoveredEndpointSpec): RivetEndpointDefinition {
+    const { propertyMap, specNode, fileContentType } = endpoint;
     const inputNode = propertyMap.get("input");
     const paramsNode = propertyMap.get("params");
     const queryNode = propertyMap.get("query");
-    const responseNode = propertyMap.get("response");
-    const successStatus = this.readNumericLiteral(propertyMap.get("successStatus"));
     const summary = this.readStringLiteral(propertyMap.get("summary")) ?? undefined;
     const description = this.readStringLiteral(propertyMap.get("description")) ?? undefined;
     const anonymous = this.readBooleanLiteral(propertyMap.get("anonymous")) ?? false;
-    const securityScheme = this.readSecurityScheme(propertyMap.get("security"), context);
-    const fileContentType = context.fileContentType;
+    const securityScheme = this.readSecurityScheme(propertyMap.get("security"), endpoint);
     const queryAuthBool = this.readBooleanLiteral(propertyMap.get("queryAuth"));
     const queryAuthString = this.readStringLiteral(propertyMap.get("queryAuth"));
     const queryAuth =
@@ -1350,49 +1300,36 @@ class TypeEmissionContext {
           ? { parameterName: queryAuthString }
           : undefined;
     const inputType = this.lowerOptionalTypeNode(inputNode);
-    const responseType = this.lowerOptionalTypeNode(responseNode);
+    const responseType = this.lowerOptionalTypeNode(propertyMap.get("response"));
 
-    // X7: buildExplicitEndpointParams has no multipart handling, so explicit
-    // params:/query: would silently bypass acceptsFile and emit output that
-    // contradicts the multipart/form-data request media type.
-    if (context.acceptsFile && (paramsNode || queryNode)) {
+    // buildExplicitEndpointParams has no multipart handling, so explicit
+    // params:/query: would bypass acceptsFile and contradict the
+    // multipart/form-data request media type.
+    if (endpoint.acceptsFile && (paramsNode || queryNode)) {
       this.diagnostics.push(
         createNodeDiagnostic(
           paramsNode ?? queryNode ?? specNode,
           "INVALID_MULTIPART_INPUT",
-          `Endpoint "${context.contractName}.${context.endpointName}" cannot combine acceptsFile with explicit params/query declarations; declare route and form fields on the input type instead.`,
+          `Endpoint "${endpoint.contractName}.${endpoint.name}" cannot combine acceptsFile with explicit params/query declarations; declare route and form fields on the input type instead.`,
         ),
       );
     }
 
     const params =
       paramsNode || queryNode
-        ? this.buildExplicitEndpointParams(
-            routeLiteral,
-            context,
-            inputNode,
-            inputType,
-            paramsNode,
-            queryNode,
-          )
-        : this.buildEndpointParams(routeLiteral, context, inputNode, inputType);
-    const baseResponses = this.buildResponses(
-      specNode,
-      context,
-      successStatus,
-      responseNode,
-      responseType,
-      fileContentType !== undefined,
+        ? this.buildExplicitEndpointParams(endpoint, inputType, paramsNode, queryNode)
+        : this.buildEndpointParams(endpoint, inputType);
+    const responses = this.mergeResponseExamples(
+      this.buildResponses(endpoint, responseType),
+      endpoint,
     );
-    const responses = this.mergeResponseExamples(baseResponses, context);
 
     if (anonymous && securityScheme) {
-      const conflictingNode = propertyMap.get("security") ?? specNode;
       this.diagnostics.push(
         createNodeDiagnostic(
-          conflictingNode,
+          propertyMap.get("security") ?? specNode,
           "CONFLICTING_SECURITY_SPEC",
-          `Endpoint "${context.contractName}.${context.endpointName}" cannot declare both anonymous and security.`,
+          `Endpoint "${endpoint.contractName}.${endpoint.name}" cannot declare both anonymous and security.`,
         ),
       );
     }
@@ -1405,7 +1342,7 @@ class TypeEmissionContext {
           })
         : undefined;
     const inputTypeName =
-      context.acceptsFile &&
+      endpoint.acceptsFile &&
       inputNode &&
       ts.isTypeReferenceNode(inputNode) &&
       !inputNode.typeArguments?.length
@@ -1413,20 +1350,20 @@ class TypeEmissionContext {
         : undefined;
 
     return new RivetEndpointDefinition({
-      name: toCamelCase(context.endpointName),
-      httpMethod: context.httpMethod,
-      routeTemplate: routeLiteral,
+      name: toCamelCase(endpoint.name),
+      httpMethod: endpoint.method,
+      routeTemplate: endpoint.route,
       params,
       returnType: responseType ?? undefined,
-      controllerName: deriveGroupName(context.contractName),
+      controllerName: deriveGroupName(endpoint.contractName),
       responses,
       summary,
       description,
-      requestExamples: context.requestExamples.length > 0 ? context.requestExamples : undefined,
+      requestExamples: endpoint.requestExamples.length > 0 ? endpoint.requestExamples : undefined,
       security,
       fileContentType,
       inputTypeName,
-      isFormEncoded: context.formEncoded || undefined,
+      isFormEncoded: endpoint.formEncoded || undefined,
       queryAuth,
     });
   }
@@ -1637,171 +1574,81 @@ class TypeEmissionContext {
   private lowerTypeDefinition(
     declaration: ts.InterfaceDeclaration | ts.TypeAliasDeclaration,
   ): RivetTypeDefinition | null {
+    const name = declaration.name.text;
     const typeParameters =
       declaration.typeParameters?.map((parameter) => parameter.name.text) ?? [];
+    const scope = new Set(typeParameters);
+
+    let descriptors: PropertyDescriptor[] | null;
     if (ts.isInterfaceDeclaration(declaration)) {
-      const properties = this.readInterfaceProperties(
-        declaration,
-        `Type "${declaration.name.text}"`,
-      );
+      descriptors = this.readInterfaceProperties(declaration, `Type "${name}"`);
+    } else if (ts.isTypeLiteralNode(declaration.type)) {
+      descriptors = this.readPropertyMembers(declaration.type.members, `Type "${name}"`);
+    } else {
+      const type = this.lowerTypeNode(declaration.type, scope);
+      return type ? new RivetTypeDefinition({ name, typeParameters, type }) : null;
+    }
 
-      if (!properties) {
+    const properties = descriptors && this.lowerProperties(descriptors, scope);
+    return properties ? new RivetTypeDefinition({ name, typeParameters, properties }) : null;
+  }
+
+  private lowerProperties(
+    descriptors: readonly PropertyDescriptor[],
+    scope: Set<string>,
+  ): RivetPropertyDefinition[] | null {
+    const properties: RivetPropertyDefinition[] = [];
+    for (const descriptor of descriptors) {
+      const type = this.lowerTypeNode(descriptor.typeNode, scope);
+      if (!type) {
         return null;
       }
 
-      const loweredProperties: RivetPropertyDefinition[] = [];
-      for (const property of properties) {
-        const loweredType = this.lowerTypeNode(property.typeNode, new Set(typeParameters));
-        if (!loweredType) {
-          return null;
-        }
-
-        loweredProperties.push({
-          name: property.name,
-          type: loweredType,
-          optional: property.optional,
-          readOnly: property.readOnly || undefined,
-        });
-      }
-
-      return new RivetTypeDefinition({
-        name: declaration.name.text,
-        typeParameters,
-        properties: loweredProperties,
+      properties.push({
+        name: descriptor.name,
+        type,
+        optional: descriptor.optional,
+        readOnly: descriptor.readOnly || undefined,
       });
     }
 
-    if (ts.isTypeLiteralNode(declaration.type)) {
-      const properties = this.readPropertyMembers(
-        declaration.type.members,
-        `Type "${declaration.name.text}"`,
-      );
-      if (!properties) {
-        return null;
-      }
+    return properties;
+  }
 
-      const loweredProperties: RivetPropertyDefinition[] = [];
-      for (const property of properties) {
-        const loweredType = this.lowerTypeNode(property.typeNode, new Set(typeParameters));
-        if (!loweredType) {
-          return null;
+  // Inline objects carry `optional` only when it is true or the type is
+  // nullable, so `x?: T`, `x: T | null` and `x?: T | null` stay distinct.
+  private lowerInlineObject(
+    descriptors: readonly PropertyDescriptor[],
+    scope: Set<string>,
+  ): RivetType | null {
+    const properties = this.lowerProperties(descriptors, scope);
+    return properties
+      ? {
+          kind: "inlineObject",
+          properties: properties.map(({ name, type, optional }) => ({
+            name,
+            type,
+            ...(optional || type.kind === "nullable" ? { optional } : {}),
+          })),
         }
-
-        loweredProperties.push({
-          name: property.name,
-          type: loweredType,
-          optional: property.optional,
-          readOnly: property.readOnly || undefined,
-        });
-      }
-
-      return new RivetTypeDefinition({
-        name: declaration.name.text,
-        typeParameters,
-        properties: loweredProperties,
-      });
-    }
-
-    const loweredType = this.lowerTypeNode(declaration.type, new Set(typeParameters));
-    if (!loweredType) {
-      return null;
-    }
-
-    return new RivetTypeDefinition({
-      name: declaration.name.text,
-      typeParameters,
-      type: loweredType,
-    });
+      : null;
   }
 
   private buildExplicitEndpointParams(
-    route: string,
-    context: EndpointContext,
-    inputNode: ts.TypeNode | undefined,
+    endpoint: DiscoveredEndpointSpec,
     inputType: RivetType | null,
     paramsNode: ts.TypeNode | undefined,
     queryNode: ts.TypeNode | undefined,
   ): RivetEndpointParam[] {
     const params: RivetEndpointParam[] = [];
-
     if (paramsNode) {
-      const properties = this.getObjectProperties(paramsNode);
-      if (!properties) {
-        // X4: non-object params: shapes were previously discarded silently.
-        this.diagnostics.push(
-          createNodeDiagnostic(
-            paramsNode,
-            "UNSUPPORTED_PARAMS_SHAPE",
-            `Endpoint "${context.contractName}.${context.endpointName}" must declare params as an object literal type or an interface/alias of property signatures.`,
-          ),
-        );
-      } else {
-        for (const property of properties) {
-          const propertyType = this.lowerTypeNode(
-            property.typeNode,
-            this.getTypeParameterScope(paramsNode),
-          );
-          if (propertyType) {
-            params.push(
-              new RivetEndpointParam({
-                name: property.name,
-                type: propertyType,
-                source: "route",
-                isOptional: property.optional,
-              }),
-            );
-          }
-        }
-      }
+      this.pushObjectParams(params, paramsNode, "route", endpoint);
     }
 
-    // X3: route placeholders not covered by params: previously vanished;
-    // emit fallback string route params like the implicit branches do.
-    const coveredRouteParams = new Set(
-      params.filter((param) => param.source === "route").map((param) => param.name.toLowerCase()),
-    );
-    for (const routeParamName of parseRouteParamNames(route)) {
-      if (!coveredRouteParams.has(routeParamName.toLowerCase())) {
-        params.push(
-          new RivetEndpointParam({
-            name: routeParamName,
-            type: { kind: "primitive", type: "string" },
-            source: "route",
-            isOptional: false,
-          }),
-        );
-      }
-    }
+    this.appendRouteParams(params, endpoint.route);
 
     if (queryNode) {
-      const properties = this.getObjectProperties(queryNode);
-      if (!properties) {
-        // X4: non-object query: shapes were previously discarded silently.
-        this.diagnostics.push(
-          createNodeDiagnostic(
-            queryNode,
-            "UNSUPPORTED_QUERY_SHAPE",
-            `Endpoint "${context.contractName}.${context.endpointName}" must declare query as an object literal type or an interface/alias of property signatures.`,
-          ),
-        );
-      } else {
-        for (const property of properties) {
-          const propertyType = this.lowerTypeNode(
-            property.typeNode,
-            this.getTypeParameterScope(queryNode),
-          );
-          if (propertyType) {
-            params.push(
-              new RivetEndpointParam({
-                name: property.name,
-                type: propertyType,
-                source: "query",
-                isOptional: property.optional,
-              }),
-            );
-          }
-        }
-      }
+      this.pushObjectParams(params, queryNode, "query", endpoint);
     }
 
     if (inputType) {
@@ -1818,38 +1665,85 @@ class TypeEmissionContext {
     return params;
   }
 
-  private buildEndpointParams(
-    route: string,
-    context: EndpointContext,
-    inputNode: ts.TypeNode | undefined,
-    inputType: RivetType | null,
-  ): RivetEndpointParam[] {
-    const routeParamNames = parseRouteParamNames(route);
-    const hasBody = BODY_HTTP_METHODS.has(context.httpMethod);
-    const params: RivetEndpointParam[] = [];
+  private pushObjectParams(
+    params: RivetEndpointParam[],
+    node: ts.TypeNode,
+    source: "route" | "query",
+    endpoint: DiscoveredEndpointSpec,
+  ): void {
+    const properties = this.getObjectProperties(node);
+    if (!properties) {
+      const slot = source === "route" ? "params" : "query";
+      this.diagnostics.push(
+        createNodeDiagnostic(
+          node,
+          source === "route" ? "UNSUPPORTED_PARAMS_SHAPE" : "UNSUPPORTED_QUERY_SHAPE",
+          `Endpoint "${endpoint.contractName}.${endpoint.name}" must declare ${slot} as an object literal type or an interface/alias of property signatures.`,
+        ),
+      );
+      return;
+    }
 
-    if (hasBody) {
-      if (context.acceptsFile && inputNode) {
-        return this.buildMultipartParams(routeParamNames, inputNode, context);
+    const scope = this.getTypeParameterScope(node);
+    for (const property of properties) {
+      const type = this.lowerTypeNode(property.typeNode, scope);
+      if (type) {
+        params.push(
+          new RivetEndpointParam({
+            name: property.name,
+            type,
+            source,
+            isOptional: property.optional,
+          }),
+        );
       }
+    }
+  }
 
-      const matchedRouteTypes = inputNode
-        ? this.getNamedPropertyTypes(inputNode)
-        : new Map<string, RivetType>();
-      for (const routeParamName of routeParamNames) {
+  /**
+   * Adds a route param for every `{placeholder}` no route param covers yet,
+   * typed from `typesByLowerName` when the input declares it, else string.
+   */
+  private appendRouteParams(
+    params: RivetEndpointParam[],
+    route: string,
+    typesByLowerName: ReadonlyMap<string, RivetType> = new Map(),
+  ): void {
+    const covered = new Set(
+      params.filter((param) => param.source === "route").map((param) => param.name.toLowerCase()),
+    );
+    for (const routeParamName of parseRouteParamNames(route)) {
+      const key = routeParamName.toLowerCase();
+      if (!covered.has(key)) {
         params.push(
           new RivetEndpointParam({
             name: routeParamName,
-            type: matchedRouteTypes.get(routeParamName.toLowerCase()) ?? {
-              kind: "primitive",
-              type: "string",
-            },
+            type: typesByLowerName.get(key) ?? { kind: "primitive", type: "string" },
             source: "route",
             isOptional: false,
           }),
         );
       }
+    }
+  }
 
+  private buildEndpointParams(
+    endpoint: DiscoveredEndpointSpec,
+    inputType: RivetType | null,
+  ): RivetEndpointParam[] {
+    const inputNode = endpoint.propertyMap.get("input");
+    const params: RivetEndpointParam[] = [];
+
+    if (BODY_HTTP_METHODS.has(endpoint.method)) {
+      if (endpoint.acceptsFile && inputNode) {
+        return this.buildMultipartParams(endpoint, inputNode);
+      }
+
+      this.appendRouteParams(
+        params,
+        endpoint.route,
+        inputNode ? this.getNamedPropertyTypes(inputNode) : undefined,
+      );
       if (inputType) {
         params.push(
           new RivetEndpointParam({
@@ -1865,20 +1759,7 @@ class TypeEmissionContext {
     }
 
     if (!inputNode) {
-      for (const routeParamName of routeParamNames) {
-        params.push(
-          new RivetEndpointParam({
-            name: routeParamName,
-            type: {
-              kind: "primitive",
-              type: "string",
-            },
-            source: "route",
-            isOptional: false,
-          }),
-        );
-      }
-
+      this.appendRouteParams(params, endpoint.route);
       return params;
     }
 
@@ -1888,63 +1769,39 @@ class TypeEmissionContext {
         createNodeDiagnostic(
           inputNode,
           "UNSUPPORTED_INPUT_SHAPE",
-          `Endpoint "${context.contractName}.${context.endpointName}" must use an object-like input type for ${context.httpMethod} parameters.`,
+          `Endpoint "${endpoint.contractName}.${endpoint.name}" must use an object-like input type for ${endpoint.method} parameters.`,
         ),
       );
       return params;
     }
 
+    const routeParamNames = new Set(
+      parseRouteParamNames(endpoint.route).map((name) => name.toLowerCase()),
+    );
+    const scope = this.getTypeParameterScope(inputNode);
     for (const property of objectProperties) {
-      const propertyType = this.lowerTypeNode(
-        property.typeNode,
-        this.getTypeParameterScope(inputNode),
-      );
+      const propertyType = this.lowerTypeNode(property.typeNode, scope);
       if (!propertyType) {
         continue;
       }
-
-      const source = routeParamNames.some(
-        (routeParamName) => routeParamName.toLowerCase() === property.name.toLowerCase(),
-      )
-        ? "route"
-        : "query";
 
       params.push(
         new RivetEndpointParam({
           name: property.name,
           type: propertyType,
-          source,
+          source: routeParamNames.has(property.name.toLowerCase()) ? "route" : "query",
           isOptional: property.optional,
         }),
       );
     }
 
-    // X3: route placeholders with no matching input property previously
-    // vanished on non-body methods; emit fallback string route params like
-    // the no-input and body-method branches do.
-    const coveredRouteParams = new Set(
-      params.filter((param) => param.source === "route").map((param) => param.name.toLowerCase()),
-    );
-    for (const routeParamName of routeParamNames) {
-      if (!coveredRouteParams.has(routeParamName.toLowerCase())) {
-        params.push(
-          new RivetEndpointParam({
-            name: routeParamName,
-            type: { kind: "primitive", type: "string" },
-            source: "route",
-            isOptional: false,
-          }),
-        );
-      }
-    }
-
+    this.appendRouteParams(params, endpoint.route);
     return params;
   }
 
   private buildMultipartParams(
-    routeParamNames: string[],
+    endpoint: DiscoveredEndpointSpec,
     inputNode: ts.TypeNode,
-    context: EndpointContext,
   ): RivetEndpointParam[] {
     const objectProperties = this.getObjectProperties(inputNode);
     if (!objectProperties) {
@@ -1952,13 +1809,15 @@ class TypeEmissionContext {
         createNodeDiagnostic(
           inputNode,
           "INVALID_MULTIPART_INPUT",
-          `Endpoint "${context.contractName}.${context.endpointName}" must use an object-like input type for multipart parameters.`,
+          `Endpoint "${endpoint.contractName}.${endpoint.name}" must use an object-like input type for multipart parameters.`,
         ),
       );
       return [];
     }
 
-    const routeParamNamesLower = new Set(routeParamNames.map((name) => name.toLowerCase()));
+    const routeParamNamesLower = new Set(
+      parseRouteParamNames(endpoint.route).map((name) => name.toLowerCase()),
+    );
     const params: RivetEndpointParam[] = [];
     const typeParameterScope = this.getTypeParameterScope(inputNode);
     let fileProperty: PropertyDescriptor | null = null;
@@ -1984,7 +1843,7 @@ class TypeEmissionContext {
             createNodeDiagnostic(
               inputNode,
               "INVALID_MULTIPART_INPUT",
-              `Endpoint "${context.contractName}.${context.endpointName}" must have exactly one Blob or File property for multipart upload, but found multiple.`,
+              `Endpoint "${endpoint.contractName}.${endpoint.name}" must have exactly one Blob or File property for multipart upload, but found multiple.`,
             ),
           );
           return params;
@@ -2000,7 +1859,7 @@ class TypeEmissionContext {
         createNodeDiagnostic(
           inputNode,
           "INVALID_MULTIPART_INPUT",
-          `Endpoint "${context.contractName}.${context.endpointName}" must have exactly one Blob or File property for multipart upload, but found none.`,
+          `Endpoint "${endpoint.contractName}.${endpoint.name}" must have exactly one Blob or File property for multipart upload, but found none.`,
         ),
       );
       return params;
@@ -2067,18 +1926,17 @@ class TypeEmissionContext {
   }
 
   private buildResponses(
-    specNode: ts.TypeNode,
-    context: EndpointContext,
-    successStatusOverride: number | null,
-    responseNode: ts.TypeNode | undefined,
+    endpoint: DiscoveredEndpointSpec,
     responseType: RivetType | null,
-    fileResponse: boolean,
   ): RivetResponseType[] {
     const responses: RivetResponseType[] = [];
-    const errorsNode = this.createPropertyMap(specNode)?.get("errors");
-    const errorResponses = errorsNode ? this.readErrorResponses(errorsNode, context) : [];
+    const responseNode = endpoint.propertyMap.get("response");
+    const errorsNode = endpoint.propertyMap.get("errors");
+    const errorResponses = errorsNode ? this.readErrorResponses(errorsNode, endpoint) : [];
+    const fileResponse = endpoint.fileContentType !== undefined;
+    const successStatusOverride = endpoint.successStatus;
     const hasResponseBody = responseType !== null || fileResponse;
-    const defaultSuccessStatus = this.getDefaultSuccessStatus(context.httpMethod, hasResponseBody);
+    const defaultSuccessStatus = this.getDefaultSuccessStatus(endpoint.method, hasResponseBody);
 
     if (responseType) {
       responses.push(
@@ -2108,9 +1966,9 @@ class TypeEmissionContext {
 
   private mergeResponseExamples(
     responses: RivetResponseType[],
-    context: EndpointContext,
+    endpoint: DiscoveredEndpointSpec,
   ): RivetResponseType[] {
-    if (context.responseExamples.length === 0) {
+    if (endpoint.responseExamples.length === 0) {
       return responses;
     }
 
@@ -2120,14 +1978,25 @@ class TypeEmissionContext {
     }
 
     const merged = [...responses];
-    for (const group of context.responseExamples) {
+    for (const group of endpoint.responseExamples) {
+      if (group.examples.length > 0 && isBodyForbiddenStatus(group.status)) {
+        this.diagnostics.push(
+          createNodeDiagnostic(
+            group.node,
+            "BODY_FORBIDDEN_STATUS_EXAMPLE",
+            `Endpoint "${endpoint.contractName}.${endpoint.name}" authors response content on body-forbidden status ${group.status} — HTTP forbids a message body on 1xx/204/205/304, so the authored example/content could never reach the wire; move it to a status that allows a body or remove it.`,
+          ),
+        );
+        continue;
+      }
+
       const index = responsesByStatus.get(group.status);
       if (index === undefined) {
         this.diagnostics.push(
           new ExtractionDiagnostic({
             severity: "error",
             code: "UNRESOLVED_RESPONSE_EXAMPLE_STATUS",
-            message: `Endpoint "${context.contractName}.${context.endpointName}" declares response examples for status ${group.status}, but no matching response exists.`,
+            message: `Endpoint "${endpoint.contractName}.${endpoint.name}" declares response examples for status ${group.status}, but no matching response exists.`,
           }),
         );
         continue;
@@ -2148,14 +2017,17 @@ class TypeEmissionContext {
     return merged;
   }
 
-  private readErrorResponses(node: ts.TypeNode, context: EndpointContext): RivetResponseType[] {
-    const errorEntries = this.getErrorEntryNodes(node);
+  private readErrorResponses(
+    node: ts.TypeNode,
+    endpoint: DiscoveredEndpointSpec,
+  ): RivetResponseType[] {
+    const errorEntries = this.getListEntryNodes(node);
     if (!errorEntries) {
       this.diagnostics.push(
         createNodeDiagnostic(
           node,
           "INVALID_ERRORS_SPEC",
-          `Endpoint "${context.contractName}.${context.endpointName}" must declare errors as an array or tuple type.`,
+          `Endpoint "${endpoint.contractName}.${endpoint.name}" must declare errors as an array or tuple type.`,
         ),
       );
       return [];
@@ -2169,7 +2041,7 @@ class TypeEmissionContext {
           createNodeDiagnostic(
             element,
             "INVALID_ERROR_ENTRY",
-            `Endpoint "${context.contractName}.${context.endpointName}" has an error entry that is not an object type.`,
+            `Endpoint "${endpoint.contractName}.${endpoint.name}" has an error entry that is not an object type.`,
           ),
         );
         continue;
@@ -2182,7 +2054,7 @@ class TypeEmissionContext {
           createNodeDiagnostic(
             element,
             "MISSING_ERROR_STATUS",
-            `Endpoint "${context.contractName}.${context.endpointName}" has an error entry without a numeric status.`,
+            `Endpoint "${endpoint.contractName}.${endpoint.name}" has an error entry without a numeric status.`,
           ),
         );
         continue;
@@ -2200,36 +2072,6 @@ class TypeEmissionContext {
     }
 
     return responses;
-  }
-
-  private getErrorEntryNodes(node: ts.TypeNode): ts.TypeNode[] | null {
-    if (ts.isParenthesizedTypeNode(node)) {
-      return this.getErrorEntryNodes(node.type);
-    }
-
-    if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) {
-      return this.getErrorEntryNodes(node.type);
-    }
-
-    if (ts.isTupleTypeNode(node)) {
-      return [...node.elements];
-    }
-
-    if (ts.isArrayTypeNode(node)) {
-      return [node.elementType];
-    }
-
-    if (
-      ts.isTypeReferenceNode(node) &&
-      ts.isIdentifier(node.typeName) &&
-      BUILTIN_TYPE_NAMES.has(node.typeName.text)
-    ) {
-      const [elementType] = node.typeArguments ?? [];
-      return elementType ? [elementType] : null;
-    }
-
-    const resolvedNode = this.resolveAliasedTypeNode(node);
-    return resolvedNode ? this.getErrorEntryNodes(resolvedNode) : null;
   }
 
   private createPropertyMap(typeNode: ts.TypeNode): Map<string, ts.TypeNode> | null {
@@ -2533,30 +2375,7 @@ class TypeEmissionContext {
 
     if (ts.isTypeLiteralNode(node)) {
       const properties = this.readPropertyMembers(node.members, "Inline object");
-      if (!properties) {
-        return null;
-      }
-
-      const loweredProperties = [];
-      for (const property of properties) {
-        const loweredPropertyType = this.lowerTypeNode(property.typeNode, typeParameters);
-        if (!loweredPropertyType) {
-          return null;
-        }
-
-        loweredProperties.push({
-          name: property.name,
-          type: loweredPropertyType,
-          ...(property.optional || loweredPropertyType.kind === "nullable"
-            ? { optional: property.optional }
-            : {}),
-        });
-      }
-
-      return {
-        kind: "inlineObject",
-        properties: loweredProperties,
-      };
+      return properties && this.lowerInlineObject(properties, typeParameters);
     }
 
     if (ts.isTypeReferenceNode(node)) {
@@ -2964,29 +2783,12 @@ class TypeEmissionContext {
       }
       seenTags.add(tag);
 
-      const loweredProperties = [];
-      for (const property of member.properties) {
-        const loweredPropertyType = this.lowerTypeNode(property.typeNode, typeParameters);
-        if (!loweredPropertyType) {
-          return null;
-        }
-
-        loweredProperties.push({
-          name: property.name,
-          type: loweredPropertyType,
-          ...(property.optional || loweredPropertyType.kind === "nullable"
-            ? { optional: property.optional }
-            : {}),
-        });
+      const type = this.lowerInlineObject(member.properties, typeParameters);
+      if (!type) {
+        return null;
       }
 
-      variants.push({
-        tag,
-        type: {
-          kind: "inlineObject" as const,
-          properties: loweredProperties,
-        },
-      });
+      variants.push({ tag, type });
     }
 
     return {
@@ -3040,7 +2842,7 @@ class TypeEmissionContext {
 
   private readSecurityScheme(
     node: ts.TypeNode | undefined,
-    context: EndpointContext,
+    endpoint: DiscoveredEndpointSpec,
   ): string | null {
     if (!node) {
       return null;
@@ -3052,7 +2854,7 @@ class TypeEmissionContext {
         createNodeDiagnostic(
           node,
           "INVALID_SECURITY_SPEC",
-          `Endpoint "${context.contractName}.${context.endpointName}" must declare security as an object type with a string literal scheme.`,
+          `Endpoint "${endpoint.contractName}.${endpoint.name}" must declare security as an object type with a string literal scheme.`,
         ),
       );
       return null;
@@ -3068,7 +2870,7 @@ class TypeEmissionContext {
       createNodeDiagnostic(
         schemeNode ?? node,
         "INVALID_SECURITY_SPEC",
-        `Endpoint "${context.contractName}.${context.endpointName}" must declare security.scheme as a string literal.`,
+        `Endpoint "${endpoint.contractName}.${endpoint.name}" must declare security.scheme as a string literal.`,
       ),
     );
     return null;

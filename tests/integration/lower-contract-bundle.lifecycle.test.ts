@@ -726,43 +726,42 @@ describe("lowerContracts lifecycle", () => {
     ]);
   });
 
-  it("lowers DELETE 204 void response examples without requiring a dataType", async () => {
-    const entryPath = await writeContractProject(
-      {
-        "contracts.ts": [
-          `import type { Contract, Endpoint } from "${AUTHORING_TYPES}";`,
-          "",
-          "export const deleteConfirmation = { deleted: true } satisfies { deleted: boolean };",
-          "",
-          'export interface TempContract extends Contract<"TempContract"> {',
-          "  Remove: Endpoint<{",
-          '    method: "DELETE";',
-          '    route: "/api/temp/{id}";',
-          "    response: void;",
-          "    responseExamples: [",
-          "      { status: 204; examples: [typeof deleteConfirmation] },",
-          "    ];",
-          "  }>;",
-          "}",
-          "",
-        ].join("\n"),
-      },
-      "rivet-ts-response-example-void-",
-    );
+  it.each([101, 204, 205, 304])(
+    "refuses response examples on body-forbidden status %i, as C# Rivet does (RIV1102)",
+    async (status) => {
+      const entryPath = await writeContractProject(
+        {
+          "contracts.ts": [
+            `import type { Contract, Endpoint } from "${AUTHORING_TYPES}";`,
+            "",
+            "export const confirmation = { deleted: true } satisfies { deleted: boolean };",
+            "",
+            'export interface TempContract extends Contract<"TempContract"> {',
+            "  Remove: Endpoint<{",
+            '    method: "DELETE";',
+            '    route: "/api/temp/{id}";',
+            "    response: void;",
+            `    successStatus: ${status};`,
+            `    responseExamples: [{ status: ${status}; examples: [typeof confirmation] }];`,
+            "  }>;",
+            "}",
+            "",
+          ].join("\n"),
+        },
+        "rivet-ts-response-example-bodyless-",
+      );
 
-    const lowered = lowerContracts(entryPath);
+      const lowered = lowerContracts(entryPath);
 
-    expect(lowered.hasErrors).toBe(false);
-
-    const payload = parseContractJson(lowered.toJson());
-
-    const remove = payload.endpoints.find((endpoint) => endpoint.name === "remove");
-    const voidResponse = remove?.responses.find((r) => r.statusCode === 204);
-    expect(voidResponse?.dataType).toBeUndefined();
-    expect(voidResponse?.examples).toEqual([
-      { mediaType: "application/json", json: JSON.stringify({ deleted: true }) },
-    ]);
-  });
+      expect(lowered.diagnostics).toEqual([
+        expect.objectContaining({
+          code: "BODY_FORBIDDEN_STATUS_EXAMPLE",
+          filePath: entryPath,
+          message: `Endpoint "TempContract.Remove" authors response content on body-forbidden status ${status} — HTTP forbids a message body on 1xx/204/205/304, so the authored example/content could never reach the wire; move it to a status that allows a body or remove it.`,
+        }),
+      ]);
+    },
+  );
 
   it("defaults file endpoint success response examples to fileContentType and error examples to application/json", async () => {
     const entryPath = await writeContractProject(
