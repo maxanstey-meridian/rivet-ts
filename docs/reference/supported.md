@@ -37,7 +37,7 @@ Legacy singular example keys also still exist:
 
 Endpoint metadata is authored as literal types. `method`, `route`, `summary`, `description`, `fileContentType`, `security.scheme`, and string `queryAuth` must be string literals; `successStatus` and error/example statuses must be numeric literals; boolean flags must be boolean literals.
 
-Endpoint members may use identifier property names or string-literal property names. Computed endpoint names are not supported.
+Endpoint members may use identifier property names or string-literal property names. Computed and numeric endpoint names are not supported.
 
 Parameter lowering has two modes:
 

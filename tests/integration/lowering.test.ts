@@ -157,9 +157,24 @@ export interface UsersContract extends Contract<"Users"> {
       expect.objectContaining({
         code: "UNSUPPORTED_ENDPOINT_NAME",
         message:
-          "Computed endpoint names are not supported; use an identifier or a string literal.",
+          "Endpoint names must be an identifier or a string literal; computed and numeric names are not supported.",
       }),
     ]);
+  });
+
+  it("reports a numeric endpoint member name", async () => {
+    const { lowered } = await lowerSource(`
+import type { Contract, Endpoint } from "${AUTHORING_TYPES}";
+
+export interface UsersContract extends Contract<"Users"> {
+  0: Endpoint<{ method: "GET"; route: "/api/ping"; response: void }>;
+}
+`);
+
+    expect(lowered.diagnostics).toEqual([
+      expect.objectContaining({ severity: "error", code: "UNSUPPORTED_ENDPOINT_NAME" }),
+    ]);
+    expect(lowered.contracts[0]?.endpoints).toEqual([]);
   });
 
   it("reads an endpoint spec alias declared in another file", async () => {
@@ -410,6 +425,47 @@ export interface TempContract extends Contract<"TempContract"> {
         dataType: expect.objectContaining({ name: "ValidationErrorDto" }),
       }),
     ]);
+  });
+
+  it("reads errors and example lists through type aliases imported from another file", async () => {
+    const { lowered, document } = await lowerSource(
+      `
+import type { Contract, Endpoint } from "${AUTHORING_TYPES}";
+import type { ApiErrors, CreateRequestExamples, CreateResponseExamples, CreateRequest, CreatedDto } from "./shared.js";
+
+export interface TempContract extends Contract<"TempContract"> {
+  Create: Endpoint<{
+    method: "POST";
+    route: "/api/temp";
+    input: CreateRequest;
+    requestExamples: CreateRequestExamples;
+    response: CreatedDto;
+    responseExamples: CreateResponseExamples;
+    errors: ApiErrors;
+  }>;
+}
+`,
+      {
+        "shared.ts": `
+export interface CreateRequest { email: string; }
+export interface CreatedDto { id: number; }
+export interface ValidationErrorDto { message: string; }
+
+export const createRequestExample = { email: "jane@example.com" } satisfies CreateRequest;
+export const createdExample = { id: 1 } satisfies CreatedDto;
+
+export type ApiErrors = [{ status: 422; response: ValidationErrorDto }];
+export type CreateRequestExamples = [typeof createRequestExample];
+export type CreateResponseExamples = [{ status: 201; examples: [typeof createdExample] }];
+`,
+      },
+    );
+
+    expect(lowered.diagnostics).toEqual([]);
+    const create = endpointNamed(document, "create");
+    expect(create.requestExamples).toEqual([example({ email: "jane@example.com" })]);
+    expect(examplesAt(create, 201)).toEqual([example({ id: 1 })]);
+    expect(create.responses.map((response) => response.statusCode)).toEqual([201, 422]);
   });
 
   it.each([
@@ -1441,6 +1497,52 @@ export interface MembersContract extends Contract<"MembersContract"> {
       { name: "Permission", intValues: [1, 2, 4] },
       { name: "Role", intValues: [0, 1] },
     ]);
+  });
+
+  it("numbers the uninitialised members of an ambient enum as the compiler does", async () => {
+    const { lowered, document } = await lowerSource(`
+import type { Contract, Endpoint } from "${AUTHORING_TYPES}";
+
+export declare enum Amb { X, Y }
+export declare enum Shifted { X = 5, Y }
+
+export interface MemberDto {
+  amb: Amb;
+  shifted: Shifted;
+}
+
+export interface MembersContract extends Contract<"MembersContract"> {
+  Get: Endpoint<{ method: "GET"; route: "/api/member"; response: MemberDto }>;
+}
+`);
+
+    expect(lowered.diagnostics).toEqual([]);
+    expect(document.enums).toEqual([
+      { name: "Amb", intValues: [0, 1] },
+      { name: "Shifted", intValues: [5, 6] },
+    ]);
+  });
+
+  it.each([
+    ["Infinity", "1 / 0"],
+    ["NaN", "0 / 0"],
+  ])("rejects an enum member whose value is %s", async (_, initializer) => {
+    const { lowered, document } = await lowerSource(`
+import type { Contract, Endpoint } from "${AUTHORING_TYPES}";
+
+export enum Ratio { A = ${initializer} }
+
+export interface RatioDto { ratio: Ratio; }
+
+export interface RatiosContract extends Contract<"RatiosContract"> {
+  Get: Endpoint<{ method: "GET"; route: "/api/ratio"; response: RatioDto }>;
+}
+`);
+
+    expect(lowered.diagnostics).toContainEqual(
+      expect.objectContaining({ severity: "error", code: "UNSUPPORTED_ENUM_MEMBER" }),
+    );
+    expect(document.enums).toEqual([]);
   });
 
   it("reports a standalone null type with the nullable-union hint", async () => {

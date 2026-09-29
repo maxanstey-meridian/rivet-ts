@@ -8,7 +8,6 @@ import type { RivetExample } from "../../domain/rivet-contract.js";
 import {
   createNodeDiagnostic,
   createPropertyMap,
-  getPropertyName,
   hasModifier,
   isRivetSymbol,
   readBooleanLiteral,
@@ -194,17 +193,17 @@ export const discoverContracts = (
         continue;
       }
 
-      const endpointName = getPropertyName(member.name);
-      if (!endpointName) {
+      if (!ts.isIdentifier(member.name) && !ts.isStringLiteral(member.name)) {
         ctx.diagnostics.push(
           createNodeDiagnostic(
             member,
             "UNSUPPORTED_ENDPOINT_NAME",
-            "Computed endpoint names are not supported; use an identifier or a string literal.",
+            "Endpoint names must be an identifier or a string literal; computed and numeric names are not supported.",
           ),
         );
         continue;
       }
+      const endpointName = member.name.text;
 
       const endpoint = discoverEndpoint(ctx, member.type, endpointName, contractName);
       if (endpoint) {

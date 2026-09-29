@@ -114,6 +114,9 @@ export const lowerNamedDeclaration = (
   return lowerTypeDefinition(ctx, declaration);
 };
 
+const nextAutoNumber = (index: number, previous: string | number | undefined): number | undefined =>
+  index === 0 ? 0 : typeof previous === "number" ? previous + 1 : undefined;
+
 const lowerEnumDeclaration = (
   ctx: LoweringContext,
   declaration: ts.EnumDeclaration,
@@ -121,18 +124,24 @@ const lowerEnumDeclaration = (
   const name = declaration.name.text;
   const stringValues: string[] = [];
   const intValues: number[] = [];
-  for (const member of declaration.members) {
-    const value = ctx.checker.getConstantValue(member);
-    if (value === undefined) {
+  let previous: string | number | undefined;
+  for (const [index, member] of declaration.members.entries()) {
+    // The checker has no constant value for an uninitialised member of an
+    // ambient (`declare`) enum; it still numbers on from the previous member.
+    const value =
+      ctx.checker.getConstantValue(member) ??
+      (member.initializer === undefined ? nextAutoNumber(index, previous) : undefined);
+    if (value === undefined || (typeof value === "number" && !Number.isFinite(value))) {
       ctx.diagnostics.push(
         createNodeDiagnostic(
           member,
           "UNSUPPORTED_ENUM_MEMBER",
-          `Enum "${name}" must use members with constant string or numeric values.`,
+          `Enum "${name}" must use members with constant string or finite numeric values.`,
         ),
       );
       return null;
     }
+    previous = value;
 
     if (typeof value === "string") {
       stringValues.push(value);

@@ -24,10 +24,10 @@
 
 ## Unreleased — fixes
 
-- A standalone `null` property type reports `UNSUPPORTED_NULL_TYPE` with the `T | null` hint (it fell through to a generic "Unsupported type expression"), and a computed endpoint member name says so instead of "Only identifier endpoint names are supported".
+- A standalone `null` property type reports `UNSUPPORTED_NULL_TYPE` with the `T | null` hint (it fell through to a generic "Unsupported type expression"), and a computed or numeric endpoint member name is reported as such instead of "Only identifier endpoint names are supported".
 - The Vite plugin watches every module the contract program compiles, including modules imported through tsconfig `paths` aliases, and `scaffold-mock` copies the same set (both previously followed relative import specifiers only).
 - `Contract`, `Endpoint`, `Brand` and `Format` are recognised by symbol, so renamed imports (`import type { Endpoint as E }`) work and a contract's own type that happens to be called `Contract`, `Brand` or `Format` is no longer mistaken for the rivet-ts one. `Array`/`ReadonlyArray`/`Record`/`Date`/`Blob`/`File` are recognised only as the library types.
-- Endpoint-spec literals resolve through aliases (`type Get = "GET"; method: Get`, `Contract<Name>`), negative literal types (`-1 | 1`) lower, and enums lower any constant member value (`Write = 1 << 1`).
+- Endpoint-spec literals resolve through aliases (`type Get = "GET"; method: Get`, `Contract<Name>`), negative literal types (`-1 | 1`) lower, and enums lower any finite constant member value (`Write = 1 << 1`); `Infinity`/`NaN` members (`A = 1 / 0`) are still refused.
 - Response examples on a body-forbidden status (1xx, 204, 205, 304) are a lowering error (`BODY_FORBIDDEN_STATUS_EXAMPLE`) with C# Rivet's RIV1102 wording, instead of contract JSON that `rivet --from` then refuses.
 - Example lists must be arrays or tuples (`T[]`, `[A, B]`, `Array<T>`, `ReadonlyArray<T>`); `Promise<T>`, `Record<…>`, `String`, `Number` and `Boolean` are no longer accepted as example-list containers.
 - Malformed `name`/`mediaType` on a `responseExamples` descriptor is reported against `responseExamples[<status>].examples entries`, not `requestExamples entries`.
@@ -38,3 +38,4 @@
 - `scaffold-mock` no longer overflows the stack on a generic type whose type argument is the outer type parameter (`Page<T> { data: Wrapper<T> }`) when emitting Zod schemas.
 - `scaffold-mock` refuses (with `Endpoint "<Contract>.<Endpoint>" is missing from the lowered contract document.`) when a contract endpoint has no lowered counterpart, instead of silently scaffolding without its handler.
 - Scaffolded `.oxlintrc.json` ignores `**/generated/**`, so oxlint skips the generated contract JSON, OpenAPI and `schema.d.ts` artifacts (Plumb MER-TO-003 on every fresh scaffold).
+- `errors`, `requestExamples` and `responseExamples` resolve a list type alias imported from another file (`errors: ApiErrors`), where they reported `INVALID_ERRORS_SPEC` / `INVALID_ENDPOINT_EXAMPLE_REFERENCE` / `INVALID_RESPONSE_EXAMPLES_SPEC`.

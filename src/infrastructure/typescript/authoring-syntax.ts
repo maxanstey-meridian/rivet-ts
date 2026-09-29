@@ -193,8 +193,7 @@ const resolveAliasedTypeNode = (ctx: LoweringContext, node: ts.TypeNode): ts.Typ
     return null;
   }
 
-  const symbol = ctx.checker.getSymbolAtLocation(node.typeName);
-  const declarations = symbol?.getDeclarations() ?? [];
+  const declarations = resolveSymbol(ctx.checker, node.typeName)?.getDeclarations() ?? [];
   for (const declaration of declarations) {
     if (ts.isTypeAliasDeclaration(declaration)) {
       return declaration.type;
