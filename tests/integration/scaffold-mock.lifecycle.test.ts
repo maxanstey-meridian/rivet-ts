@@ -7,7 +7,13 @@ import { runCliCaptured } from "../support/cli.js";
 import { writeContractProject } from "../support/contract-project.js";
 import { parseContractJson } from "../support/lower.js";
 import { AUTHORING_TYPES, PROJECT_ROOT } from "../support/paths.js";
-import { typecheckScaffoldedWorkspace } from "../support/scaffold-oracles.js";
+import {
+  PLUMB_EXECUTABLE,
+  PLUMB_NOT_FOUND,
+  RECORDED_UI_PLUMB_FINDINGS,
+  plumbFindings,
+  typecheckScaffoldedWorkspace,
+} from "../support/scaffold-oracles.js";
 import { tempDir } from "../support/temp.js";
 
 type ScaffoldedApp = {
@@ -178,7 +184,7 @@ describe("scaffold-mock lifecycle", () => {
       exports: Record<string, string>;
       dependencies: Record<string, string>;
     }>(path.join(outputDirectory, "apps", "api", "package.json"));
-    expect(apiPackage.imports["#contract"]).toBe("./src/contract.ts");
+    expect(apiPackage.imports["#contract"]).toBe("./src/contracts.ts");
     expect(apiPackage.exports).toMatchObject({
       "./local": "./src/local.ts",
       "./validation": "./src/validation.ts",
@@ -262,6 +268,17 @@ describe("scaffold-mock lifecycle", () => {
       unknown
     >;
     expect(Object.keys(validation)).toEqual(["createRequest"]);
+  });
+
+  it("has no plumb findings on a fresh mock beyond the recorded ones", async (context) => {
+    const plumb = PLUMB_EXECUTABLE ?? context.skip(PLUMB_NOT_FOUND);
+    const { exitCode, outputDirectory } = await scaffoldMock(
+      { "models.ts": MEMBERS_MODELS, "contracts.ts": MEMBERS_CONTRACTS },
+      ["--name", "members-mock"],
+    );
+
+    expect(exitCode).toBe(0);
+    expect(await plumbFindings(plumb, outputDirectory)).toEqual(RECORDED_UI_PLUMB_FINDINGS);
   });
 
   it("scaffolds one module per contract when contracts share endpoint names", async () => {

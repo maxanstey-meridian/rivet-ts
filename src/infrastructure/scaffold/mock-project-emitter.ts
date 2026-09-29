@@ -479,14 +479,7 @@ serve({ fetch: app.fetch, port: 5180 }, (info) => {
 `;
 
 /** Emitted files at the root of `apps/api/src`; copied contract sources must not land on them. */
-const API_SOURCE_FILES = [
-  "contract.ts",
-  "local.ts",
-  "main.ts",
-  "app.ts",
-  "validation.ts",
-  "http-errors.ts",
-];
+const API_SOURCE_FILES = ["local.ts", "main.ts", "app.ts", "validation.ts", "http-errors.ts"];
 
 export const emitMockProject = async (config: MockProjectConfig): Promise<void> => {
   const entryAbsolutePath = path.resolve(config.entryPath);
@@ -530,9 +523,6 @@ export const emitMockProject = async (config: MockProjectConfig): Promise<void> 
     variant: "full",
     document: config.document,
     contractEntryRelativePath: entryDependency.relativePath,
-    // The facade re-exports TYPE identifiers, so it needs the exported
-    // interface names — the brand strings do not resolve.
-    contractNames: groups.map((group) => group.contractExportName),
     demoCall: selectDemoClientCall(groups),
   };
 

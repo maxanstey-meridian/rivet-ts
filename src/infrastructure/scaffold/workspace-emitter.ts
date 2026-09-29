@@ -142,8 +142,6 @@ export type WorkspaceConfig = {
       readonly document: RivetContractDocument;
       /** entry path relative to `apps/api/src`, POSIX separators (e.g. `contracts.ts`) */
       readonly contractEntryRelativePath: string;
-      /** contract interface names re-exported by `src/contract.ts` */
-      readonly contractNames: readonly string[];
       /** demo client call rendered in the UI, when one is callable without input */
       readonly demoCall?: { readonly httpMethod: string; readonly routeTemplate: string };
       /** extra runtime dependencies for the api package */
@@ -161,8 +159,6 @@ type Workspace<TConfig extends WorkspaceConfig = WorkspaceConfig> = TConfig & {
 
 export const toPackageScope = (projectName: string): string =>
   `@${toKebabCase(projectName) || "rivet-app"}`;
-
-const trimTsExtension = (value: string): string => value.replace(/\.ts$/u, "");
 
 /* ─── embedded golden base configs (source: plumb's configs/) ───────────────── */
 
@@ -433,7 +429,7 @@ const emitApiPackageJson = (workspace: Workspace<FullWorkspaceConfig>): string =
     name: `${workspace.packageScope}/api`,
     private: true,
     type: "module",
-    imports: { "#contract": "./src/contract.ts" },
+    imports: { "#contract": `./src/${workspace.contractEntryRelativePath}` },
     exports: {
       "./local": "./src/local.ts",
       // The same schemas that guard the server's front door validate UForm
@@ -475,12 +471,6 @@ const API_TSCONFIG = jsonFile({
   },
   include: ["src", "test"],
 });
-
-const emitContractReExport = (workspace: Workspace<FullWorkspaceConfig>): string => {
-  const exports = [...workspace.contractNames].sort().join(", ");
-  const fromPath = `./${trimTsExtension(workspace.contractEntryRelativePath)}.js`;
-  return `export type { ${exports} } from ${JSON.stringify(fromPath)};\n`;
-};
 
 /* ─── ui app ───────────────────────────────────────────────────────────────── */
 
@@ -625,7 +615,6 @@ const skeletonFiles = (workspace: Workspace): FileTree => ({
     ? {
         "apps/api/package.json": emitApiPackageJson(workspace),
         "apps/api/tsconfig.json": API_TSCONFIG,
-        "apps/api/src/contract.ts": emitContractReExport(workspace),
         "apps/api/generated/api.contract.json": jsonFile(workspace.document),
       }
     : {}),

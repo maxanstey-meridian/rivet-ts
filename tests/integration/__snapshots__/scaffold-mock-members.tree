@@ -7,7 +7,6 @@ Taskfile.yml
 apps/api/generated/api.contract.json
 apps/api/package.json
 apps/api/src/app.ts
-apps/api/src/contract.ts
 apps/api/src/contracts.ts
 apps/api/src/http-errors.ts
 apps/api/src/local.ts

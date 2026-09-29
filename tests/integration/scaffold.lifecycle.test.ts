@@ -7,6 +7,7 @@ import { PROJECT_ROOT } from "../support/paths.js";
 import {
   PLUMB_EXECUTABLE,
   PLUMB_NOT_FOUND,
+  RECORDED_UI_PLUMB_FINDINGS,
   TASK_EXECUTABLE,
   TASK_NOT_FOUND,
   linkScaffoldDependencies,
@@ -23,17 +24,6 @@ import { makeTempDir, removeDir } from "../support/temp.js";
  * (no findings beyond the recorded ones — the generator/doctrine coupling).
  */
 
-// Findings on fresh scaffolds that need product changes, recorded as
-// follow-ups in the slop-cleanup ledger (D5). A new finding fails the gate,
-// and so does fixing one of these without removing it here.
-const RECORDED_UI_FINDINGS = [
-  // The Nuxt ui package has no vue-tsc/`nuxt typecheck` script (that needs a vue-tsc pin).
-  { rule: "MER-TO-004", severity: "warn", location: "apps/ui/package.json:1" },
-];
-const RECORDED_API_FINDINGS = [
-  // `src/contract.ts` re-exports the contract interfaces as the `#contract` alias target.
-  { rule: "MER-FE-030", severity: "warn", location: "apps/api/src/contract.ts:1" },
-];
 describe("scaffold lifecycle", () => {
   let outputDirectory: string;
 
@@ -249,9 +239,9 @@ describe("scaffold lifecycle", () => {
     const plumb = PLUMB_EXECUTABLE ?? context.skip(PLUMB_NOT_FOUND);
 
     expect(await plumbFindings(plumb, outputDirectory)).toEqual([
-      ...RECORDED_API_FINDINGS,
-      ...RECORDED_UI_FINDINGS,
-      // plumb wants test doubles under TestSupport/<Module>, a .NET layout.
+      ...RECORDED_UI_PLUMB_FINDINGS,
+      // plumb only accepts a PascalCase `TestSupport/<Module>/` path for doubles,
+      // which is .NET casing in a kebab-case TS tree (Plumb follow-up).
       {
         rule: "MER-TE-008",
         severity: "info",
@@ -410,6 +400,6 @@ describe("scaffold --no-api lifecycle", () => {
   it("has no plumb findings beyond the recorded ones", async (context) => {
     const plumb = PLUMB_EXECUTABLE ?? context.skip(PLUMB_NOT_FOUND);
 
-    expect(await plumbFindings(plumb, outputDirectory)).toEqual(RECORDED_UI_FINDINGS);
+    expect(await plumbFindings(plumb, outputDirectory)).toEqual(RECORDED_UI_PLUMB_FINDINGS);
   });
 });

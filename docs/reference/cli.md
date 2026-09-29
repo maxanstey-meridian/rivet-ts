@@ -72,7 +72,7 @@ Options:
 
 Body-carrying endpoints get a Zod schema in `apps/api/src/modules/<module>/<module>-validation.ts` (exported from the api package as `./validation`, user-owned after emission) and a handler wrapper that rejects invalid bodies with `422 { code: "validation_failed" }`.
 
-The entry and its local imports are copied into `apps/api/src/` preserving their relative layout. A copied file that would collide with a scaffold-emitted file (`contract.ts`, `local.ts`, `main.ts`, `app.ts`) is an error, not a silent overwrite.
+The entry and its local imports are copied into `apps/api/src/` preserving their relative layout. A copied file that would collide with a scaffold-emitted file (`app.ts`, `local.ts`, `main.ts`, `validation.ts`, `http-errors.ts`) is an error, not a silent overwrite. The api package's `#contract` import alias points at the copied entry.
 
 ## `rivet-ts generate`
 

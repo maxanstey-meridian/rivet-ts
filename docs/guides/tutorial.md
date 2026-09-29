@@ -83,7 +83,7 @@ myapp/
 │   │   ├── package.json / tsconfig.json
 │   │   └── src/
 │   │       ├── contracts.ts                 ← your entry, copied in
-│   │       ├── app.ts / contract.ts / local.ts / main.ts
+│   │       ├── app.ts / local.ts / main.ts
 │   │       └── modules/todo/
 │   │           ├── todo-routes.ts
 │   │           ├── todo-validation.ts       ← user-owned Zod edge schema

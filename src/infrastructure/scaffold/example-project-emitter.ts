@@ -51,7 +51,6 @@ export const emitExampleProject = async (config: ExampleProjectConfig): Promise<
       variant: "full",
       document: config.document,
       contractEntryRelativePath: "contracts.ts",
-      contractNames: ["QuotesContract", "UsersContract"],
       extraApiDependencies: ["dexie", "typed-inject"],
     },
     {
