@@ -9,6 +9,15 @@ at runtime. `rivet-ts` lowers it to Rivet contract JSON; the downloaded
 3.1 emitter; `openapi-typescript` then generates client types for
 `openapi-fetch`.
 
+## Prerequisites
+
+- Node.js 20.19 or later (CI runs Node 24).
+- pnpm 10 or later. Scaffolded workspaces pin pnpm 10.24.0 in `packageManager`.
+- [go-task](https://taskfile.dev/installation/) for the `task` commands of
+  scaffolded workspaces.
+- Network access the first time Rivet runs: the binary is downloaded from
+  GitHub Releases, then cached.
+
 ## Install
 
 ```bash
@@ -123,6 +132,7 @@ for all commands, flags, exports, and artifact ownership.
 ## Development
 
 ```bash
+pnpm install
 pnpm lint           # oxlint
 pnpm check          # tsc --noEmit
 pnpm test           # build then run tests (vitest)

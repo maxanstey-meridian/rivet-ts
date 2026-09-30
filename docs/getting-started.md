@@ -7,6 +7,10 @@
 
 ## 1. Install
 
+You need Node.js 20.19 or later, pnpm 10 or later, and
+[go-task](https://taskfile.dev/installation/) for the scaffolded workspace's
+`task` commands.
+
 ```bash
 pnpm add -D @maxanstey-meridian/rivet-ts
 ```

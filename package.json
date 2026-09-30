@@ -91,5 +91,8 @@
       "optional": true
     }
   },
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "packageManager": "pnpm@10.24.0"
 }
