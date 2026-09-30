@@ -19,7 +19,7 @@ pnpm build && pnpm check && pnpm lint && pnpm fmt:check && pnpm test
 
 ## Why some runtime-looking packages are devDependencies
 
-`zod`, `dexie`, `typed-inject` and `@hono/node-server` are not used by rivet-ts itself. They are devDependencies for two reasons:
+`zod`, `dexie`, `typed-inject`, `@hono/node-server` and `vue-tsc` are not used by rivet-ts itself. They are devDependencies for two reasons (`vue-tsc` only for the first: the scaffolded ui's `typecheck` script uses it, and the scaffold tests do not install nuxt):
 
 1. The scaffolds pin these packages to the versions in this `package.json` (`PINNED_PACKAGE_SECTIONS` in `src/infrastructure/scaffold/workspace-emitter.ts`, which fails if a pin is missing). Bumping one here bumps what `rivet-ts scaffold` and `scaffold-mock` emit.
 2. The scaffold tests type-check and run the emitted workspace offline by linking this repo's `node_modules` into it (`tests/support/scaffold-oracles.ts`). So every package a scaffold imports must be installed here.

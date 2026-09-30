@@ -7,7 +7,6 @@ import { PROJECT_ROOT } from "../support/paths.js";
 import {
   PLUMB_EXECUTABLE,
   PLUMB_NOT_FOUND,
-  RECORDED_UI_PLUMB_FINDINGS,
   TASK_EXECUTABLE,
   TASK_NOT_FOUND,
   linkScaffoldDependencies,
@@ -239,7 +238,6 @@ describe("scaffold lifecycle", () => {
     const plumb = PLUMB_EXECUTABLE ?? context.skip(PLUMB_NOT_FOUND);
 
     expect(await plumbFindings(plumb, outputDirectory)).toEqual([
-      ...RECORDED_UI_PLUMB_FINDINGS,
       // plumb only accepts a PascalCase `TestSupport/<Module>/` path for doubles,
       // which is .NET casing in a kebab-case TS tree (Plumb follow-up).
       {
@@ -371,6 +369,15 @@ describe("scaffold --no-api lifecycle", () => {
     );
     expect(uiPackageJsonSource).not.toContain("@fe-demo/api");
     expect(uiPackageJsonSource).toContain("@fe-demo/contracts");
+    const uiPackage = JSON.parse(uiPackageJsonSource) as {
+      scripts: Record<string, string>;
+      devDependencies: Record<string, string>;
+    };
+    expect(uiPackage.scripts.typecheck).toBe("nuxt typecheck");
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(PROJECT_ROOT, "package.json"), "utf8"),
+    ) as { devDependencies: Record<string, string> };
+    expect(uiPackage.devDependencies["vue-tsc"]).toBe(manifest.devDependencies["vue-tsc"]);
 
     const pluginSource = await fs.readFile(
       path.join(outputDirectory, "apps", "ui", "app", "plugins", "rivet.client.ts"),
@@ -400,6 +407,6 @@ describe("scaffold --no-api lifecycle", () => {
   it("has no plumb findings beyond the recorded ones", async (context) => {
     const plumb = PLUMB_EXECUTABLE ?? context.skip(PLUMB_NOT_FOUND);
 
-    expect(await plumbFindings(plumb, outputDirectory)).toEqual(RECORDED_UI_PLUMB_FINDINGS);
+    expect(await plumbFindings(plumb, outputDirectory)).toEqual([]);
   });
 });

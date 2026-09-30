@@ -108,15 +108,6 @@ export type PlumbFinding = {
   readonly location: string;
 };
 
-// Findings on fresh scaffolds that are kept deliberately, each with its reason
-// in the slop-cleanup ledger (D5, post-0.14 follow-ups). A new finding fails
-// the gate, and so does fixing one of these without removing it here.
-export const RECORDED_UI_PLUMB_FINDINGS: readonly PlumbFinding[] = [
-  // No `nuxt typecheck` script: the scaffold suites cannot run one (nuxt is not
-  // among the offline-linked dependencies), so the scaffold does not emit it untested.
-  { rule: "MER-TO-004", severity: "warn", location: "apps/ui/package.json:1" },
-];
-
 /** Every plumb finding (errors, warnings and info) for a scaffold output directory. */
 export const plumbFindings = async (
   plumb: string,

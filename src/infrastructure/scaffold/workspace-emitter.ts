@@ -95,6 +95,7 @@ const PINNED_PACKAGE_SECTIONS = {
   zod: "devDependencies",
   dexie: "devDependencies",
   "typed-inject": "devDependencies",
+  "vue-tsc": "devDependencies",
 } as const satisfies Record<string, ManifestSection>;
 
 export type PinnedPackage = keyof typeof PINNED_PACKAGE_SECTIONS;
@@ -480,6 +481,7 @@ const emitUiPackageJson = (workspace: Workspace): string =>
     scripts: {
       dev: "nuxt dev",
       build: "nuxt build",
+      typecheck: "nuxt typecheck",
       postinstall: "nuxt prepare",
     },
     dependencies: {
@@ -494,6 +496,7 @@ const emitUiPackageJson = (workspace: Workspace): string =>
     devDependencies: {
       "@nuxt/eslint": "^1.0.0",
       eslint: "^9.0.0",
+      "vue-tsc": workspace.pin("vue-tsc"),
     },
   });
 
@@ -544,7 +547,7 @@ const emitRivetClientPlugin = (workspace: Workspace): string => {
     "// app.request. When you promote it to a real server (task api:run), swap",
     '// the fetch dispatch for { baseUrl: "http://localhost:5180" }.',
     "export default defineNuxtPlugin(() => {",
-    "  configureRivet({ fetch: (request) => app.request(request) });",
+    "  configureRivet({ fetch: async (request) => app.request(request) });",
     "});",
     "",
   ].join("\n");

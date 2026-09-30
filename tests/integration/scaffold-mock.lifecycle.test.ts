@@ -10,7 +10,6 @@ import { AUTHORING_TYPES, linkPackage, PACKAGE_NAME, PROJECT_ROOT } from "../sup
 import {
   PLUMB_EXECUTABLE,
   PLUMB_NOT_FOUND,
-  RECORDED_UI_PLUMB_FINDINGS,
   plumbFindings,
   typecheckScaffoldedWorkspace,
 } from "../support/scaffold-oracles.js";
@@ -275,7 +274,7 @@ describe("scaffold-mock lifecycle", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(await plumbFindings(plumb, outputDirectory)).toEqual(RECORDED_UI_PLUMB_FINDINGS);
+    expect(await plumbFindings(plumb, outputDirectory)).toEqual([]);
   });
 
   it("scaffolds one module per contract when contracts share endpoint names", async () => {

@@ -5,6 +5,11 @@
 - The package is published to npm as `@maxanstey-meridian/rivet-ts` and installs with `pnpm add -D @maxanstey-meridian/rivet-ts` instead of from a `github:maxanstey-meridian/rivet-ts#v<version>` Git tag. Imports change with it: `rivet-ts`, `rivet-ts/vite`, `rivet-ts/hono` and `rivet-ts/package.json` become `@maxanstey-meridian/rivet-ts`, `@maxanstey-meridian/rivet-ts/vite`, `@maxanstey-meridian/rivet-ts/hono` and `@maxanstey-meridian/rivet-ts/package.json`. The `rivet-ts` and `rivet-reflect-ts` commands keep their names. A contract lowered without a tsconfig resolves `@maxanstey-meridian/rivet-ts` (no longer `rivet-ts`) to the package's own types.
 - Scaffolds (`scaffold`, `scaffold-mock`) depend on `"@maxanstey-meridian/rivet-ts": "^<version>"` from the registry instead of `"rivet-ts": "github:maxanstey-meridian/rivet-ts#v<version>"`, and their emitted routes, handlers and example contract import the scoped name.
 
+## Unreleased — fixes
+
+- Scaffolded Nuxt apps (`scaffold`, `scaffold --no-api`, `scaffold-mock`) have a `typecheck` script (`nuxt typecheck`) and a `vue-tsc` devDependency pinned to the version in rivet-ts's own `package.json` (Plumb MER-TO-004 on every fresh scaffold).
+- The scaffolded `apps/ui/app/plugins/rivet.client.ts` (`scaffold`, `scaffold-mock`) wraps the in-browser dispatch in an `async` function: `app.request` returns `Response | Promise<Response>`, which is not the client's `(request) => Promise<Response>` fetch type, so `nuxt typecheck` failed on it.
+
 ## 0.15.0 — breaking
 
 - The default Rivet pin moves from `v0.44.1` to `v0.45.0`. Its `--from` is stricter about the contract JSON, a nullable property is no longer implicitly optional (rivet-ts already writes explicit optionality, so its output is unaffected), the `FileRouteDefinition.ContentType` alias is gone, and duplicate response header names per status are refused (RIV1109). The contract JSON schema is unchanged. Set `RIVET_VERSION` or `rivet.version` to stay on an older release.
