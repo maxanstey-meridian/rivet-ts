@@ -9,6 +9,13 @@ Build a contract-first workspace from scratch:
 
 ## 1. Create a contract
 
+In a new directory, create a package and install rivet-ts:
+
+```bash
+pnpm init
+pnpm add -D @maxanstey-meridian/rivet-ts
+```
+
 Create `contracts.ts`:
 
 ```ts
@@ -103,16 +110,20 @@ The UI consumes `@myapp/contracts` only; feature code never imports `apps/api/sr
 
 ## 3. Inspect a scaffolded handler
 
-`scaffold-mock` synthesizes mock values from the contract (preferring authored examples when present):
+`scaffold-mock` synthesizes mock values from the contract (preferring authored examples when present). `apps/api/src/modules/todo/application/get-todo.ts`, as emitted (shown formatted):
 
 ```ts
-import type { RivetHandlerInput, RivetHandlerResult } from "@maxanstey-meridian/rivet-ts";
-import type { TodoContract } from "#contract";
-
-type GetTodoInput = RivetHandlerInput<TodoContract, "GetTodo">;
-type GetTodoOutput = RivetHandlerResult<TodoContract, "GetTodo">;
-
-export const getTodo = async (_input: GetTodoInput): Promise<GetTodoOutput> => {
+export const getTodo = async (
+  _input: import("@maxanstey-meridian/rivet-ts").RivetHandlerInput<
+    import("#contract").TodoContract,
+    "GetTodo"
+  >,
+): Promise<
+  import("@maxanstey-meridian/rivet-ts").RivetHandlerResult<
+    import("#contract").TodoContract,
+    "GetTodo"
+  >
+> => {
   return {
     id: "example",
     title: "example",
@@ -120,6 +131,8 @@ export const getTodo = async (_input: GetTodoInput): Promise<GetTodoOutput> => {
   };
 };
 ```
+
+The handler's input and result types come from the contract (`RivetHandlerInput` and `RivetHandlerResult` for `TodoContract`'s `GetTodo`), so a mock that drifts from the contract fails `task api:test`.
 
 Replace those stubs with application logic as needed. Shapes the generator cannot synthesize get a TODO stub that throws rather than fabricating an invalid response.
 
@@ -155,7 +168,7 @@ import { configureRivet } from "@myapp/contracts";
 // app.request. When you promote it to a real server (task api:run), swap
 // the fetch dispatch for { baseUrl: "http://localhost:5180" }.
 export default defineNuxtPlugin(() => {
-  configureRivet({ fetch: (request) => app.request(request) });
+  configureRivet({ fetch: async (request) => app.request(request) });
 });
 ```
 

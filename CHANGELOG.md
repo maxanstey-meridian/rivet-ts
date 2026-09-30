@@ -8,6 +8,7 @@
 - The scaffolded `pnpm-workspace.yaml` (`scaffold`, `scaffold --no-api`, `scaffold-mock`) approves the install scripts of esbuild, unrs-resolver and vue-demi (`onlyBuiltDependencies`), so `task install` no longer ends with pnpm's "Ignored build scripts: esbuild, unrs-resolver, vue-demi" warning and its `pnpm approve-builds` prompt.
 - `rivet-ts scaffold-mock` reports success as `scaffold` does (`Scaffolded <name> into <dir>.` and `Next: task install && task dev (see README.md).`); it printed nothing.
 - The first Rivet download says so: `rivet-ts rivet` (and so `task generate`) prints `Downloading Rivet v<version> for <rid>...` to stderr, and the Vite plugin logs it through Vite's logger. The download was silent, so a first `task generate` paused with no output. A cached binary is still used silently. The README gives the cache location per OS.
+- The tutorial installs rivet-ts before its first `rivet-ts` command, shows the `get-todo.ts` handler `scaffold-mock` actually emits (inline `import(...)` types, not the named `GetTodoInput`/`GetTodoOutput` aliases it showed), and shows the plugin's `async` fetch dispatch as emitted.
 
 ## 0.16.1 — breaking
 
