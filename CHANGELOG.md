@@ -9,6 +9,7 @@
 
 ## Unreleased — fixes
 
+- `registerRivetHonoRoutes` binds a route placeholder to the contract param it matches case-insensitively, as the lowerer does: `route: "/teams/{TeamId}"` with `input: { teamId }` answered 400 `MISSING_REQUIRED_PARAMETER` on `GET`/`DELETE`/multipart endpoints.
 - The scaffolded `Taskfile.yml`'s `plumb` task runs `${PLUMB:-plumb} .` (the `PLUMB` executable, else `plumb` on `PATH`) instead of the nonexistent `~/.meridian/plumb/plumb`.
 - `scaffold-mock` no longer reports a generic nested in itself with other arguments (`Nested<T> = { outer: Box<Box<T>> }`) as recursive: the mock is synthesized instead of a TODO stub, and the body schema is exact instead of `z.unknown()`. Recursion is detected per instantiation, and a generic whose instantiations keep nesting (`Tree<T> = { child: Tree<Box<T>> }`) is still treated as recursive.
 

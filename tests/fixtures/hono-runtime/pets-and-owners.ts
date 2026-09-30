@@ -10,4 +10,10 @@ export interface OwnersContract extends Contract<"Owners"> {
     route: "/api/owners";
     response: { readonly kind: "owners" };
   }>;
+  GetOwner: Endpoint<{
+    method: "GET";
+    route: "/api/owners/{OwnerId}";
+    input: { ownerId: number };
+    response: { readonly id: number };
+  }>;
 }

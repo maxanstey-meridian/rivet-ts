@@ -214,6 +214,7 @@ describe("groups", () => {
       handlers: {
         ListPets: async () => ({ kind: "pets" as const }),
         ListOwners: async () => ({ kind: "owners" as const }),
+        GetOwner: async ({ params }) => ({ id: params.ownerId }),
       },
     });
 
@@ -239,6 +240,21 @@ describe("groups", () => {
 });
 
 describe("request binding", () => {
+  it("binds a route placeholder to the input key it matches case-insensitively", async () => {
+    const app = new Hono();
+    registerRivetHonoRoutes<PetsContract & OwnersContract>(app, petsAndOwners, {
+      handlers: {
+        ListPets: async () => ({ kind: "pets" as const }),
+        ListOwners: async () => ({ kind: "owners" as const }),
+        GetOwner: async ({ params }) => ({ id: params.ownerId }),
+      },
+    });
+
+    const response = await app.request("/api/owners/42");
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ id: 42 });
+  });
+
   it("parses form-encoded bodies into handler input", async () => {
     const app = new Hono();
     registerRivetHonoRoutes<DirectoryContract>(app, directory, {

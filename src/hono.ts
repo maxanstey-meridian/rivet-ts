@@ -98,7 +98,21 @@ type RuntimeHandler = (input?: Record<string, unknown>) => Promise<unknown>;
 const isBodylessStatus = (status: number): boolean =>
   status === 204 || status === 205 || status === 304;
 
-const toHonoRoute = (routeTemplate: string): string => routeTemplate.replace(/\{([^}]+)\}/g, ":$1");
+/**
+ * Route placeholders bind to params case-insensitively (as in ASP.NET), so each
+ * Hono segment is named after the contract param it binds to.
+ */
+const toHonoRoute = (endpoint: ContractEndpointJson): string => {
+  const routeParamNames = new Map(
+    endpoint.params
+      .filter((param) => param.source === "route")
+      .map((param) => [param.name.toLowerCase(), param.name]),
+  );
+  return endpoint.routeTemplate.replace(
+    /\{([^}]+)\}/g,
+    (_, placeholder: string) => `:${routeParamNames.get(placeholder.toLowerCase()) ?? placeholder}`,
+  );
+};
 
 const isHandlerClassToken = <TContract, TKey extends ContractEndpointKey<TContract>>(
   value: HonoHandlerEntry<TContract, TKey>,
@@ -508,7 +522,7 @@ export const registerRivetHonoRoutes = <TContract, TApp extends HonoRouteTarget 
     }
 
     const status = getSuccessStatus(endpoint);
-    const honoRoute = toHonoRoute(endpoint.routeTemplate);
+    const honoRoute = toHonoRoute(endpoint);
 
     const routeKey = `${endpoint.httpMethod.toUpperCase()} ${honoRoute}`;
     if (registeredRouteKeys.has(routeKey)) {
