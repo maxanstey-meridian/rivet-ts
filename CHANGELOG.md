@@ -7,6 +7,7 @@
 
 ## Unreleased — fixes
 
+- The npm tarball ships a `LICENSE` file (MIT, as `package.json` already declared).
 - Scaffolded Nuxt apps (`scaffold`, `scaffold --no-api`, `scaffold-mock`) have a `typecheck` script (`nuxt typecheck`) and a `vue-tsc` devDependency pinned to the version in rivet-ts's own `package.json` (Plumb MER-TO-004 on every fresh scaffold).
 - The scaffolded `apps/ui/app/plugins/rivet.client.ts` (`scaffold`, `scaffold-mock`) wraps the in-browser dispatch in an `async` function: `app.request` returns `Response | Promise<Response>`, which is not the client's `(request) => Promise<Response>` fetch type, so `nuxt typecheck` failed on it.
 

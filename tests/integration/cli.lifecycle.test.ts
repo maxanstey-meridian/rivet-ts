@@ -88,9 +88,11 @@ export interface TempContract extends Contract<"TempContract"> {
         (packed) =>
           !/^package\/(?:dist|templates\/example|templates\/shared)\//u.test(packed) &&
           packed !== "package/package.json" &&
-          packed !== "package/README.md",
+          packed !== "package/README.md" &&
+          packed !== "package/LICENSE",
       ),
     ).toEqual([]);
+    expect(packedPaths).toContain("package/LICENSE");
 
     await fs.writeFile(
       path.join(consumerDirectory, "package.json"),

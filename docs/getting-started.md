@@ -121,6 +121,9 @@ unless you pass `--force`.
 - `task api:run` — promote the API to a real server; point the UI at it by
   swapping the plugin's fetch dispatch for `{ baseUrl }`.
 - `task api:test` — typecheck + vitest.
+- `pnpm -C apps/ui typecheck` — `nuxt typecheck` for the frontend. Run `task generate`
+  first: the scaffold's starter `openapi.json` carries routes but no body schemas,
+  so request and response types only exist once Rivet has generated them.
 - `task plumb` — Meridian doctrine check, running `$PLUMB` or else `plumb` on `PATH`.
 
 ## 4. Consuming the client
