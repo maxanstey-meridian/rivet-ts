@@ -7,6 +7,7 @@ import {
   emitClientSchemaSource,
 } from "../codegen/client-package-emitter.js";
 import { toKebabCase } from "../codegen/kebab-case.js";
+import { bearerSecurityArguments } from "../rivet/security-arguments.js";
 
 /**
  * Shared golden-shape workspace skeleton for both scaffold commands:
@@ -244,16 +245,6 @@ const PLUMB_TASK = [
   "      - ${PLUMB:-plumb} .",
   "",
 ];
-
-/**
- * `--security <scheme>=bearer` for each scheme the contract's endpoints use:
- * Rivet refuses a secured endpoint whose scheme the command line does not
- * define (RIV2002), and a contract names its schemes but not their kind.
- */
-export const bearerSecurityArguments = (document: RivetContractDocument): readonly string[] =>
-  [...new Set(document.endpoints.flatMap(({ security }) => security?.scheme ?? []))].flatMap(
-    (scheme) => ["--security", `${scheme}=bearer`],
-  );
 
 const emitTaskfile = (workspace: Workspace): string => {
   const scope = workspace.packageScope;

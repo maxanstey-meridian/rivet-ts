@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { build, createServer } from "vite";
-import { linkPackage, PROJECT_ROOT } from "../support/paths.js";
+import { fixturePath, linkPackage, PROJECT_ROOT } from "../support/paths.js";
 import { installFakeRivet } from "../support/rivet-cache.js";
 import { tempDir } from "../support/temp.js";
 
@@ -537,6 +537,28 @@ fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify(${JSON.str
         timeoutMs: 300,
       }),
     ).rejects.toThrow("rivet-ts/vite: the Rivet binary did not finish within 300ms.");
+  });
+
+  it("builds a contract whose endpoints are secured with the pinned Rivet release", async () => {
+    const tempDirectory = await tempDir("rivet-ts-vite-plugin-secured-");
+    const uiRoot = path.join(tempDirectory, "ui");
+    await fs.mkdir(uiRoot, { recursive: true });
+    await fs.writeFile(path.join(uiRoot, "index.html"), "<!DOCTYPE html><html></html>\n");
+    const { rivetTs } = await import("../../src/vite.js");
+
+    await build({
+      configFile: false,
+      root: uiRoot,
+      logLevel: "silent",
+      plugins: [
+        rivetTs({ entry: fixturePath("members-contract", "contracts.ts"), apiRoot: tempDirectory }),
+      ],
+    });
+
+    const spec = JSON.parse(
+      await fs.readFile(path.join(tempDirectory, "generated", "openapi.json"), "utf8"),
+    ) as { readonly components: { readonly securitySchemes: Record<string, unknown> } };
+    expect(spec.components.securitySchemes).toHaveProperty("admin");
   });
 
   it("resolves the Rivet binary pinned by RIVET_VERSION, as the CLI does", async () => {

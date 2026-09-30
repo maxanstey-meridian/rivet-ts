@@ -9,7 +9,7 @@ The scaffolded workspace does not use it — its `task generate` runs the same p
 Given a contract entrypoint, each regeneration:
 
 - reflects the contract to contract JSON (the internal IR)
-- runs the Rivet binary (`--from <contract.json> --output <clientOutDir>`), which writes `<clientOutDir>/openapi.json` and nothing else
+- runs the Rivet binary (`--from <contract.json> --output <clientOutDir>`, plus `--security <scheme>=bearer` for each scheme the contract's endpoints declare), which writes `<clientOutDir>/openapi.json` and nothing else
 - runs `openapi-typescript` over that spec to emit `<clientOutDir>/schema.d.ts`
 
 It does not:

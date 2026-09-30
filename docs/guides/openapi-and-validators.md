@@ -22,10 +22,10 @@ The `rivet-ts rivet --` passthrough resolves the cached binary (auto-installing 
 pnpm exec rivet-ts rivet -- --from ./contract.json --output ./generated
 ```
 
-`--openapi <path>` overrides the spec path (relative paths resolve against `--output`), and `--security <spec>` sets a default security scheme (e.g. `bearer`, `bearer:jwt`, `cookie:name`, `apikey:in:name`):
+`--openapi <path>` overrides the spec path (relative paths resolve against `--output`), and `--security [name=]<spec>` defines a security scheme (`<spec>` is e.g. `bearer`, `bearer:jwt`, `cookie:name`, `apikey:in:name`). A contract whose endpoints declare `security: { scheme: "admin" }` needs `--security admin=<spec>`, or Rivet refuses it (RIV2002):
 
 ```bash
-pnpm exec rivet-ts rivet -- --from ./contract.json --output ./generated --security admin:bearer
+pnpm exec rivet-ts rivet -- --from ./contract.json --output ./generated --security admin=bearer
 ```
 
 ## Generate the typed client

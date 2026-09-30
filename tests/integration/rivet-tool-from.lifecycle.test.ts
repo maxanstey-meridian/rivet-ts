@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { resolveRivetBinaryConfig } from "../../src/config/rivet-binary.js";
-import { bearerSecurityArguments } from "../../src/infrastructure/scaffold/workspace-emitter.js";
+import { bearerSecurityArguments } from "../../src/infrastructure/rivet/security-arguments.js";
 import { ensureRivetBinary } from "../../src/infrastructure/vite/rivet-binary.js";
 import { type ContractJson, lowerFixture } from "../support/lower.js";
 import { PROJECT_ROOT, fixturePath } from "../support/paths.js";

@@ -10,6 +10,7 @@ import {
 } from "./config/rivet-binary.js";
 import { emitClientPackage } from "./infrastructure/codegen/client-package-emitter.js";
 import { toKebabCase } from "./infrastructure/codegen/kebab-case.js";
+import { bearerSecurityArguments } from "./infrastructure/rivet/security-arguments.js";
 import { lowerContracts } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { ensureRivetBinary } from "./infrastructure/vite/rivet-binary.js";
 import { formatDiagnostic } from "./interfaces/diagnostics.js";
@@ -119,7 +120,13 @@ const generateArtifacts = async (
   try {
     await execFileAsync(
       executablePath,
-      ["--from", options.runtimeContractPath, "--output", options.clientOutDir],
+      [
+        "--from",
+        options.runtimeContractPath,
+        "--output",
+        options.clientOutDir,
+        ...bearerSecurityArguments(lowered.document),
+      ],
       {
         cwd: options.apiRoot,
         maxBuffer: Infinity,
