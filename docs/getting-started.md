@@ -8,7 +8,7 @@
 ## 1. Install
 
 ```bash
-pnpm add -D github:maxanstey-meridian/rivet-ts#v0.14.0
+pnpm add -D github:maxanstey-meridian/rivet-ts#v0.15.0
 ```
 
 `rivet-ts` is installed from the versioned Git tag; it is not published to the

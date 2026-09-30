@@ -15,7 +15,7 @@ at runtime. `rivet-ts` lowers it to Rivet contract JSON; the downloaded
 install builds the package through its `prepare` script.
 
 ```bash
-pnpm add -D github:maxanstey-meridian/rivet-ts#v0.14.0
+pnpm add -D github:maxanstey-meridian/rivet-ts#v0.15.0
 ```
 
 ## Write a contract

@@ -1,13 +1,13 @@
 # Changelog
 
-## Unreleased — breaking
+## 0.15.0 — breaking
 
 - The default Rivet pin moves from `v0.44.1` to `v0.45.0`. Its `--from` is stricter about the contract JSON, a nullable property is no longer implicitly optional (rivet-ts already writes explicit optionality, so its output is unaffected), the `FileRouteDefinition.ContentType` alias is gone, and duplicate response header names per status are refused (RIV1109). The contract JSON schema is unchanged. Set `RIVET_VERSION` or `rivet.version` to stay on an older release.
 - `RivetHandlerInput` (and so `RivetHandler`) now matches what `rivet-ts/hono` delivers, following the params the endpoint lowers to. Every route `{placeholder}` is under `params` (typed from the `params`/`input` key naming it, else `string`): a multipart endpoint's `body` no longer lists its route keys, a `GET`/`DELETE` input's route keys moved from `query` to `params` (and `query` is absent when nothing is left), a body method gains `params` for its placeholders, and a route with placeholders but no `input` now takes `{ params }` instead of no argument. With explicit `params`/`query`, `input` is `body` on every method, as the lowerer emits it. Handlers that read a route value from `body` or `query` got `undefined` at runtime; read it from `params`.
 - `DiscoveredEndpoint` drops `hasInput`, `hasParams` and `hasQuery`; `scaffold-mock` now derives the handler input from the lowered params, so a scaffolded route with only placeholders (`DELETE /members/{id}`) forwards `{ params }` to its use case instead of `{}`.
 - Scaffolds (`scaffold`, `scaffold-mock`) no longer emit `apps/api/src/contract.ts`, which only re-exported the contract interfaces (Plumb MER-FE-030): the api package's `#contract` import alias points at the contract entry itself (`./src/contracts.ts`, or the copied entry's path). A copied contract source named `contract.ts` no longer collides with an emitted file.
 
-## Unreleased — fixes
+## 0.15.0 — fixes
 
 - `registerRivetHonoRoutes` binds a route placeholder to the contract param it matches case-insensitively, as the lowerer does: `route: "/teams/{TeamId}"` with `input: { teamId }` answered 400 `MISSING_REQUIRED_PARAMETER` on `GET`/`DELETE`/multipart endpoints.
 - The scaffolded `Taskfile.yml`'s `plumb` task runs `${PLUMB:-plumb} .` (the `PLUMB` executable, else `plumb` on `PATH`) instead of the nonexistent `~/.meridian/plumb/plumb`.
