@@ -151,12 +151,16 @@ const readJson = async <T>(filePath: string): Promise<T> =>
 
 describe("scaffold-mock lifecycle", () => {
   it("scaffolds a golden-shape workspace whose app serves a mock for every endpoint", async () => {
-    const { exitCode, stderr, outputDirectory } = await scaffoldMock(
+    const { exitCode, stdout, stderr, outputDirectory } = await scaffoldMock(
       { "models.ts": MEMBERS_MODELS, "contracts.ts": MEMBERS_CONTRACTS },
       ["--name", "members-mock"],
     );
 
-    expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+    expect({ exitCode, stdout, stderr }).toEqual({
+      exitCode: 0,
+      stdout: `Scaffolded members-mock into ${outputDirectory}.\nNext: task install && task dev (see README.md).\n`,
+      stderr: "",
+    });
     // Golden workspace shape, suffix-free file names, and an artifact dir that
     // holds exactly openapi.json + schema.d.ts.
     await expect(`${(await listFiles(outputDirectory)).join("\n")}\n`).toMatchFileSnapshot(

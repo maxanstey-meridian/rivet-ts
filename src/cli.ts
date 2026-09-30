@@ -183,9 +183,10 @@ const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<numb
       return 1;
     }
 
+    const name = projectName ?? path.basename(outDir);
     await emitMockProject({
       outDir,
-      projectName: projectName ?? path.basename(outDir),
+      projectName: name,
       entryPath,
       force: values.force,
       contracts: lowered.contracts,
@@ -197,6 +198,9 @@ const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<numb
           ? lowered.document
           : enrichDocumentWithConstraints(lowered.document, readOpenApiConstraints(spec)),
     });
+
+    io.stdout(`Scaffolded ${name} into ${outDir}.\n`);
+    io.stdout("Next: task install && task dev (see README.md).\n");
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
