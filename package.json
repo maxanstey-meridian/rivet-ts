@@ -1,6 +1,6 @@
 {
   "name": "@maxanstey-meridian/rivet-ts",
-  "version": "0.16.0",
+  "version": "0.16.1",
   "description": "TypeScript contract extractor for Rivet",
   "keywords": [
     "codegen",
