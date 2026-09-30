@@ -551,6 +551,50 @@ export interface MembersContract extends Contract<"Members"> {
     ]);
   });
 
+  it("carries the project's tsconfig paths aliases to the copied contract sources", async () => {
+    const projectDirectory = await tempDir("rivet-ts-scaffold-mock-paths-");
+    const files: Readonly<Record<string, string>> = {
+      "package.json": '{ "type": "module" }\n',
+      // The library alias maps outside the project and is left to node_modules.
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          strict: true,
+          paths: {
+            [PACKAGE_NAME]: [path.join(PROJECT_ROOT, "src", "domain", "authoring-types.ts")],
+            "@models/*": ["./src/models/*"],
+            "@shared": ["./src/shared/index.ts"],
+          },
+        },
+      }),
+      "src/models/member.ts": "export interface MemberDto { id: string; }\n",
+      "src/shared/index.ts": "export interface PageDto<T> { items: T[]; }\n",
+      "src/app/contracts.ts": `import type { Contract, Endpoint } from "${PACKAGE_NAME}";
+import type { MemberDto } from "@models/member";
+import type { PageDto } from "@shared";
+
+export interface MembersContract extends Contract<"Members"> {
+  List: Endpoint<{ method: "GET"; route: "/api/members"; response: PageDto<MemberDto> }>;
+}
+`,
+    };
+    for (const [relativePath, content] of Object.entries(files)) {
+      await fs.mkdir(path.dirname(path.join(projectDirectory, relativePath)), { recursive: true });
+      await fs.writeFile(path.join(projectDirectory, relativePath), content);
+    }
+    const outputDirectory = path.join(projectDirectory, "mock-app");
+
+    const { exitCode, stderr } = await runCliCaptured([
+      "scaffold-mock",
+      "--entry",
+      path.join(projectDirectory, "src", "app", "contracts.ts"),
+      "--out",
+      outputDirectory,
+    ]);
+
+    expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+    await typecheckScaffoldedWorkspace(outputDirectory);
+  });
+
   it("scaffolds from a bare contract file without tsconfig or node_modules", async () => {
     const sourceDirectory = await tempDir("rivet-ts-scaffold-mock-bare-");
     const entryPath = path.join(sourceDirectory, "contracts.ts");
@@ -758,6 +802,7 @@ export interface ThingsContract extends Contract<"Things"> {
         force: false,
         contracts: lowered.contracts,
         sourceFiles: lowered.sourceFiles,
+        sourcePathAliases: lowered.sourcePathAliases,
         document: new RivetContractDocument({
           ...lowered.document,
           endpoints: lowered.document.endpoints.filter(

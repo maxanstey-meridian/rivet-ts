@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ContractSourcePathAliases } from "../../domain/rivet-contract-lowering-result.js";
 import type { RivetContractDocument } from "../../domain/rivet-contract.js";
 import {
   emitClientFacadeSource,
@@ -147,6 +148,8 @@ export type WorkspaceConfig = {
       readonly demoCall?: { readonly httpMethod: string; readonly routeTemplate: string };
       /** extra runtime dependencies for the api package */
       readonly extraApiDependencies?: readonly PinnedPackage[];
+      /** tsconfig `paths` for the api package, targets relative to `apps/api/src` */
+      readonly apiPathAliases?: ContractSourcePathAliases;
     }
 );
 
@@ -464,20 +467,33 @@ const emitApiPackageJson = (workspace: Workspace<FullWorkspaceConfig>): string =
     },
   });
 
-const API_TSCONFIG = jsonFile({
-  compilerOptions: {
-    target: "ES2022",
-    module: "ESNext",
-    moduleResolution: "bundler",
-    strict: true,
-    noEmit: true,
-    skipLibCheck: true,
-    resolveJsonModule: true,
-    forceConsistentCasingInFileNames: true,
-    types: ["node"],
-  },
-  include: ["src", "test"],
-});
+const emitApiTsconfig = (workspace: Workspace<FullWorkspaceConfig>): string => {
+  const aliases = Object.entries(workspace.apiPathAliases ?? {});
+  return jsonFile({
+    compilerOptions: {
+      target: "ES2022",
+      module: "ESNext",
+      moduleResolution: "bundler",
+      strict: true,
+      noEmit: true,
+      skipLibCheck: true,
+      resolveJsonModule: true,
+      forceConsistentCasingInFileNames: true,
+      types: ["node"],
+      ...(aliases.length > 0
+        ? {
+            paths: Object.fromEntries(
+              aliases.map(([pattern, targets]) => [
+                pattern,
+                targets.map((target) => `./src/${target}`),
+              ]),
+            ),
+          }
+        : {}),
+    },
+    include: ["src", "test"],
+  });
+};
 
 /* ─── ui app ───────────────────────────────────────────────────────────────── */
 
@@ -625,7 +641,7 @@ const skeletonFiles = (workspace: Workspace): FileTree => ({
   ...(workspace.variant === "full"
     ? {
         "apps/api/package.json": emitApiPackageJson(workspace),
-        "apps/api/tsconfig.json": API_TSCONFIG,
+        "apps/api/tsconfig.json": emitApiTsconfig(workspace),
         "apps/api/generated/api.contract.json": jsonFile(workspace.document),
       }
     : {}),

@@ -3,6 +3,7 @@ import path from "node:path";
 import ts from "typescript";
 import type {
   ContractSourceFile,
+  ContractSourcePathAliases,
   DiscoveredContract,
   DiscoveredEndpoint,
 } from "../../domain/rivet-contract-lowering-result.js";
@@ -36,6 +37,7 @@ export type MockProjectConfig = {
   readonly force: boolean;
   readonly contracts: readonly DiscoveredContract[];
   readonly sourceFiles: readonly ContractSourceFile[];
+  readonly sourcePathAliases: ContractSourcePathAliases;
   readonly document: RivetContractDocument;
 };
 
@@ -524,6 +526,7 @@ export const emitMockProject = async (config: MockProjectConfig): Promise<void> 
     document: config.document,
     contractEntryRelativePath: entryDependency.relativePath,
     demoCall: selectDemoClientCall(groups),
+    apiPathAliases: config.sourcePathAliases,
   };
 
   await emitWorkspace(workspaceConfig, {

@@ -40,22 +40,32 @@ export type ContractSourceFile = Readonly<{
   relativePath: string;
 }>;
 
+/**
+ * The tsconfig `paths` entries whose targets lie among the contract source
+ * files, each target a POSIX path relative to the same directory as
+ * `ContractSourceFile.relativePath` (`{ "@models/*": ["models/*"] }`).
+ */
+export type ContractSourcePathAliases = Readonly<Record<string, readonly string[]>>;
+
 export class RivetContractLoweringResult {
   public readonly document: RivetContractDocument;
   public readonly diagnostics: readonly ExtractionDiagnostic[];
   public readonly contracts: readonly DiscoveredContract[];
   public readonly sourceFiles: readonly ContractSourceFile[];
+  public readonly sourcePathAliases: ContractSourcePathAliases;
 
   public constructor(input: {
     document: RivetContractDocument;
     diagnostics?: readonly ExtractionDiagnostic[];
     contracts?: readonly DiscoveredContract[];
     sourceFiles?: readonly ContractSourceFile[];
+    sourcePathAliases?: ContractSourcePathAliases;
   }) {
     this.document = input.document;
     this.diagnostics = input.diagnostics ?? [];
     this.contracts = input.contracts ?? [];
     this.sourceFiles = input.sourceFiles ?? [];
+    this.sourcePathAliases = input.sourcePathAliases ?? {};
   }
 
   public get hasErrors(): boolean {

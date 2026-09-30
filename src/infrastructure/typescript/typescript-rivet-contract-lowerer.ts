@@ -3,7 +3,7 @@ import ts from "typescript";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import {
   RivetContractLoweringResult,
-  type ContractSourceFile,
+  type ContractSourcePathAliases,
 } from "../../domain/rivet-contract-lowering-result.js";
 import {
   RivetContractDocument,
@@ -123,17 +123,22 @@ export const lowerContracts = (
     endpoints,
   });
 
+  const sourceFilePaths = program
+    .getSourceFiles()
+    .filter((file) => !file.isDeclarationFile && !program.isSourceFileFromExternalLibrary(file))
+    .map((file) => path.resolve(file.fileName))
+    .filter((filePath) => isProjectFile(project.projectDirectory, filePath));
+  const sourceRoot = commonDirectory(sourceFilePaths);
+
   return new RivetContractLoweringResult({
     document,
     diagnostics,
     contracts: contracts.map(toDiscoveredContract),
-    sourceFiles: toContractSourceFiles(
-      program
-        .getSourceFiles()
-        .filter((file) => !file.isDeclarationFile && !program.isSourceFileFromExternalLibrary(file))
-        .map((file) => path.resolve(file.fileName))
-        .filter((filePath) => isProjectFile(project.projectDirectory, filePath)),
-    ),
+    sourceFiles: [...sourceFilePaths].sort().map((absolutePath) => ({
+      absolutePath,
+      relativePath: toPosixRelativePath(sourceRoot, absolutePath),
+    })),
+    sourcePathAliases: toSourcePathAliases(project.compilerOptions, sourceRoot),
   });
 };
 
@@ -151,16 +156,42 @@ const isWithin = (directory: string, candidate: string): boolean => {
 const isProjectFile = (projectDirectory: string | undefined, filePath: string): boolean =>
   projectDirectory === undefined || isWithin(projectDirectory, filePath);
 
-const toContractSourceFiles = (filePaths: readonly string[]): ContractSourceFile[] => {
+const commonDirectory = (filePaths: readonly string[]): string => {
   let root = filePaths.length > 0 ? path.dirname(filePaths[0]) : "";
   for (const filePath of filePaths) {
     while (!isWithin(root, filePath) && path.dirname(root) !== root) {
       root = path.dirname(root);
     }
   }
+  return root;
+};
 
-  return [...filePaths].sort().map((absolutePath) => ({
-    absolutePath,
-    relativePath: path.relative(root, absolutePath).split(path.sep).join("/"),
-  }));
+const toPosixRelativePath = (root: string, absolutePath: string): string =>
+  path.relative(root, absolutePath).split(path.sep).join("/");
+
+/**
+ * Rebases the `paths` targets that lie under the source root, so a copy of the
+ * contract sources can resolve the same aliases. `paths` resolve against
+ * `baseUrl`, else against the directory of the tsconfig that declared them,
+ * which TypeScript records as `pathsBasePath` when it follows `extends`.
+ */
+const toSourcePathAliases = (
+  options: ts.CompilerOptions,
+  sourceRoot: string,
+): ContractSourcePathAliases => {
+  const { baseUrl, paths, pathsBasePath } = options;
+  const base = baseUrl ?? (typeof pathsBasePath === "string" ? pathsBasePath : undefined);
+  if (paths === undefined || base === undefined || sourceRoot === "") {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(paths).flatMap(([pattern, targets]) => {
+      const rebased = targets
+        .map((target) => path.resolve(base, target))
+        .filter((target) => isWithin(sourceRoot, target))
+        .map((target) => toPosixRelativePath(sourceRoot, target));
+      return rebased.length > 0 ? [[pattern, rebased] as const] : [];
+    }),
+  );
 };
