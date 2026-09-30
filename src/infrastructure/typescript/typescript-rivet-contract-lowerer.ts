@@ -131,7 +131,8 @@ export const lowerContracts = (
       program
         .getSourceFiles()
         .filter((file) => !file.isDeclarationFile && !program.isSourceFileFromExternalLibrary(file))
-        .map((file) => path.resolve(file.fileName)),
+        .map((file) => path.resolve(file.fileName))
+        .filter((filePath) => isProjectFile(project.projectDirectory, filePath)),
     ),
   });
 };
@@ -140,6 +141,15 @@ const isWithin = (directory: string, candidate: string): boolean => {
   const relative = path.relative(directory, candidate);
   return !(relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative));
 };
+
+/**
+ * A tsconfig's `paths` can map a package to its source outside the project
+ * (as `templates/tsconfig.json` maps rivet-ts to `src/`); those files are the
+ * library's, not the contract's. Without a tsconfig there are no `paths`, so
+ * every compiled source file was reached by the contract's own relative imports.
+ */
+const isProjectFile = (projectDirectory: string | undefined, filePath: string): boolean =>
+  projectDirectory === undefined || isWithin(projectDirectory, filePath);
 
 const toContractSourceFiles = (filePaths: readonly string[]): ContractSourceFile[] => {
   let root = filePaths.length > 0 ? path.dirname(filePaths[0]) : "";

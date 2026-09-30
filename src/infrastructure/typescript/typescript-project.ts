@@ -39,6 +39,8 @@ const createSyntheticCompilerOptions = (absoluteEntryPath: string): ts.CompilerO
 
 export type ResolvedTypeScriptProject = Readonly<{
   absoluteEntryPath: string;
+  /** The tsconfig's directory; absent when the entry has no tsconfig. */
+  projectDirectory?: string;
   compilerOptions: ts.CompilerOptions;
   configDiagnostics: readonly ts.Diagnostic[];
 }>;
@@ -83,9 +85,12 @@ export const resolveTypeScriptProject = (
 
   const readConfigResult = ts.readConfigFile(resolvedTsconfigPath, ts.sys.readFile);
 
+  const projectDirectory = path.dirname(resolvedTsconfigPath);
+
   if (readConfigResult.error) {
     return {
       absoluteEntryPath,
+      projectDirectory,
       compilerOptions: DEFAULT_COMPILER_OPTIONS,
       configDiagnostics: [readConfigResult.error],
     };
@@ -94,13 +99,14 @@ export const resolveTypeScriptProject = (
   const parsedConfig = ts.parseJsonConfigFileContent(
     readConfigResult.config,
     ts.sys,
-    path.dirname(resolvedTsconfigPath),
+    projectDirectory,
     {},
     resolvedTsconfigPath,
   );
 
   return {
     absoluteEntryPath,
+    projectDirectory,
     compilerOptions: {
       ...DEFAULT_COMPILER_OPTIONS,
       ...parsedConfig.options,

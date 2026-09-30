@@ -5,6 +5,7 @@
 - The scaffolded `Taskfile.yml` (`scaffold-mock`) passes `--security <scheme>=bearer` to Rivet for every scheme the contract's endpoints secure with, so `task generate` on a contract using `security: { scheme: "admin" }` no longer fails with RIV2002.
 - Scaffolded Nuxt apps (`scaffold`, `scaffold --no-api`, `scaffold-mock`) pin `eslint` to the version in rivet-ts's own `package.json` (`^10.11.0`) instead of `^9.0.0`: `@nuxt/eslint`'s config pulls in `@eslint/js` 10 and `eslint-plugin-unicorn` 73, which peer on eslint 10, so `pnpm install` warned about unmet peers.
 - Scaffolded Nuxt apps have a `typescript` devDependency (pinned like the other packages' `typescript`). Without it `@nuxt/eslint` did not enable its TypeScript parser, so eslint failed on the TypeScript in `<script setup lang="ts">` (the full scaffold's `app.vue`: `Parsing error: Unexpected token ;`).
+- `lowerContracts(...).sourceFiles` (the modules the Vite plugin watches and `scaffold-mock` copies) keeps only files under the directory of the tsconfig the contract compiles with. A tsconfig `paths` entry mapping a package to its source outside the project (`"@acme/lib": ["../lib/src/index.ts"]`) pulled that package's files in, so `scaffold-mock` copied them and every copied path was taken relative to their common root. Modules inside the project, including those imported through a `paths` alias, are unaffected; a contract without a tsconfig keeps every compiled source file, since only its own relative imports can reach one.
 
 ## 0.16.0 — breaking
 

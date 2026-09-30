@@ -502,6 +502,55 @@ export interface FilesContract extends Contract<"Files"> {
     ).resolves.toBeUndefined();
   });
 
+  it("copies the project's own modules but not a library its tsconfig maps to source outside it", async () => {
+    // As templates/tsconfig.json does: the package resolves to its source, outside the project.
+    const entryPath = await writeContractProject({
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          strict: true,
+          paths: {
+            [PACKAGE_NAME]: [path.join(PROJECT_ROOT, "src", "domain", "authoring-types.ts")],
+            "@models/*": ["./models/*"],
+          },
+        },
+      }),
+      "models/member.ts": "export interface MemberDto { id: string; }\n",
+      "contracts.ts": `import type { Contract, Endpoint } from "${PACKAGE_NAME}";
+import type { MemberDto } from "@models/member";
+
+export interface MembersContract extends Contract<"Members"> {
+  List: Endpoint<{ method: "GET"; route: "/api/members"; response: MemberDto[] }>;
+}
+`,
+    });
+
+    expect(lowerContracts(entryPath).sourceFiles.map(({ relativePath }) => relativePath)).toEqual([
+      "contracts.ts",
+      "models/member.ts",
+    ]);
+
+    const outputDirectory = path.join(path.dirname(entryPath), "mock-app");
+    const { exitCode, stderr } = await runCliCaptured([
+      "scaffold-mock",
+      "--entry",
+      entryPath,
+      "--out",
+      outputDirectory,
+    ]);
+    expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+    const apiSource = apiSourcePath(outputDirectory);
+    const copied = (await listFiles(apiSource)).filter((file) => !file.startsWith("modules"));
+    expect(copied).toEqual([
+      "app.ts",
+      "contracts.ts",
+      "http-errors.ts",
+      "local.ts",
+      "main.ts",
+      path.join("models", "member.ts"),
+      "validation.ts",
+    ]);
+  });
+
   it("scaffolds from a bare contract file without tsconfig or node_modules", async () => {
     const sourceDirectory = await tempDir("rivet-ts-scaffold-mock-bare-");
     const entryPath = path.join(sourceDirectory, "contracts.ts");
