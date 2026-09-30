@@ -40,6 +40,8 @@ registerRivetHonoRoutes(app, contract, {
 });
 ```
 
+`registerRivetHonoRoutes` returns the app it was given. Naming only the contract (`registerRivetHonoRoutes<MembersContract>(...)`) types that result as the narrow route target; pass the app type as well (`registerRivetHonoRoutes<MembersContract, typeof app>(...)`) to get the exact app type back.
+
 ## Request-aware services
 
 If your application services need ambient access to the current Hono request, install `contextStorage()` in the app and keep that concern in an app-owned abstraction such as `RequestContext`.
