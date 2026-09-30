@@ -17,6 +17,7 @@ at runtime. `rivet-ts` lowers it to Rivet contract JSON; the downloaded
   scaffolded workspaces.
 - Network access the first time Rivet runs: the binary is downloaded from
   GitHub Releases, then cached.
+- Optional: [Plumb](https://github.com/maxanstey-meridian/plumb#requirements) for the scaffolded `task plumb` doctrine check.
 
 ## Install
 

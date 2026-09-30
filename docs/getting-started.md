@@ -129,7 +129,8 @@ unless you pass `--force`.
   first: the scaffold's starter `openapi.json` carries routes but no body schemas,
   so request and response types only exist once Rivet has generated them.
 - `task lint` — eslint on the Nuxt frontend (`pnpm -C apps/ui lint`).
-- `task plumb` — Meridian doctrine check, running `$PLUMB` or else `plumb` on `PATH`.
+- `task plumb` — optional Meridian doctrine check, running `$PLUMB` or else
+  `plumb` on `PATH`. Install [Plumb](https://github.com/maxanstey-meridian/plumb#requirements) to use it.
 
 ## 4. Consuming the client
 

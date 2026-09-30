@@ -168,7 +168,11 @@ task dev        # Nuxt frontend; the API runs in the browser
 task generate   # after contract changes: entry → contract JSON → openapi.json → schema.d.ts
 task api:run    # promote the API to a real server (port 5180)
 task api:test   # typecheck + vitest
+task plumb      # optional: Meridian doctrine check
 ```
+
+`task plumb` needs [Plumb](https://github.com/maxanstey-meridian/plumb#requirements), which is optional: set `PLUMB` to its
+`plumb` executable or put it on `PATH`.
 
 ## Next
 

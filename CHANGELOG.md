@@ -4,6 +4,7 @@
 
 - The README's install line adds `openapi-fetch` and `typescript`, and the Consume section says the snippet needs an ES module project (`"type": "module"`) for its top-level `await`. Following the README as written, the snippet failed: under pnpm's strict layout `openapi-fetch` (a dependency of rivet-ts) is not importable from the project, `tsc` was not installed, and top-level `await` is not allowed in CommonJS. It also says pnpm's `openapi-typescript` peer warning (it declares `typescript@^5`) is harmless.
 - `package.json` declares `engines.node` `>=20.19.0`, and the README opens with its prerequisites: Node.js 20.19 or later, pnpm 10 or later, go-task for the scaffolded workspaces' `task` commands, and network access for the first Rivet download. None were stated, and on Node 20.11 `rivet-ts scaffold` failed with `The "path" argument must be of type string` (it reads `Dirent.parentPath`). The README's Development section runs `pnpm install` before the other commands.
+- The scaffolded `Taskfile.yml` (`scaffold`, `scaffold --no-api`, `scaffold-mock`) gives its `plumb` task a precondition: when neither `$PLUMB` nor `plumb` on `PATH` resolves, `task plumb` says Plumb is optional and links its install instructions instead of failing with `"plumb": executable file not found in $PATH`. The scaffolded README, Getting Started, the tutorial and the rivet-ts README mark `task plumb` optional and link [Plumb](https://github.com/maxanstey-meridian/plumb#requirements); nothing said where to get it.
 
 ## 0.16.1 — breaking
 

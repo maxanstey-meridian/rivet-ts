@@ -306,6 +306,18 @@ describe("scaffold lifecycle", () => {
     await expect(fs.readFile(argsFile, "utf8")).resolves.toBe(".");
   });
 
+  it("says where to get Plumb when the Taskfile's plumb task cannot find it", async (context) => {
+    const task = TASK_EXECUTABLE ?? context.skip(TASK_NOT_FOUND);
+    const emptyDirectory = await makeTempDir("rivet-ts-no-plumb-");
+    context.onTestFinished(() => removeDir(emptyDirectory));
+
+    await expect(
+      runTask(task, outputDirectory, "plumb", { PLUMB: "", PATH: emptyDirectory }),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("https://github.com/maxanstey-meridian/plumb"),
+    });
+  });
+
   it("lints the ui through the Taskfile's lint task", async (context) => {
     const task = TASK_EXECUTABLE ?? context.skip(TASK_NOT_FOUND);
 
