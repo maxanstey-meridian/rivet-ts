@@ -14,6 +14,7 @@ import {
   readLiteral,
   readNumericLiteral,
   readStringLiteral,
+  resolveSymbol,
   type LoweringContext,
   type SupportedDeclaration,
 } from "./authoring-syntax.js";
@@ -73,6 +74,36 @@ const getContractHeritageType = (
   }
 
   return null;
+};
+
+const IMPORT_AUTHORING_TYPES = 'import Contract and Endpoint from "@maxanstey-meridian/rivet-ts"';
+
+/**
+ * A reference named like a rivet-ts authoring type that resolves elsewhere
+ * (a vendored copy, a local look-alike): the DSL would silently not apply.
+ */
+const isForeignAuthoringType = (checker: ts.TypeChecker, node: ts.Node, name: string): boolean =>
+  resolveSymbol(checker, node)?.getName() === name && !isRivetSymbol(checker, node, name);
+
+/** An interface extending a foreign `Contract` that has `Endpoint<…>` members, so meant one. */
+const getForeignContractHeritageType = (
+  node: ts.InterfaceDeclaration,
+  checker: ts.TypeChecker,
+): ts.ExpressionWithTypeArguments | undefined => {
+  const hasEndpointMember = node.members.some(
+    (member) =>
+      ts.isPropertySignature(member) &&
+      member.type !== undefined &&
+      ts.isTypeReferenceNode(member.type) &&
+      resolveSymbol(checker, member.type.typeName)?.getName() === "Endpoint",
+  );
+
+  return hasEndpointMember
+    ? (node.heritageClauses ?? [])
+        .filter((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
+        .flatMap((clause) => clause.types)
+        .find((type) => isForeignAuthoringType(checker, type.expression, "Contract"))
+    : undefined;
 };
 
 const isContractInterface = (node: ts.InterfaceDeclaration, checker: ts.TypeChecker): boolean =>
@@ -166,6 +197,16 @@ export const discoverContracts = (
 
     const contractHeritage = getContractHeritageType(statement, ctx.checker);
     if (!contractHeritage) {
+      const foreignHeritage = getForeignContractHeritageType(statement, ctx.checker);
+      if (foreignHeritage) {
+        ctx.diagnostics.push(
+          createNodeDiagnostic(
+            foreignHeritage,
+            "FOREIGN_AUTHORING_TYPE",
+            `Interface "${statement.name.text}" extends a Contract that is not rivet-ts's, so it is not lowered; ${IMPORT_AUTHORING_TYPES}.`,
+          ),
+        );
+      }
       continue;
     }
 
@@ -222,6 +263,20 @@ const discoverEndpoint = (
   endpointName: string,
   contractName: string,
 ): DiscoveredEndpointSpec | null => {
+  if (
+    ts.isTypeReferenceNode(typeNode) &&
+    isForeignAuthoringType(ctx.checker, typeNode.typeName, "Endpoint")
+  ) {
+    ctx.diagnostics.push(
+      createNodeDiagnostic(
+        typeNode,
+        "FOREIGN_AUTHORING_TYPE",
+        `Endpoint "${endpointName}" uses an Endpoint that is not rivet-ts's; ${IMPORT_AUTHORING_TYPES}.`,
+      ),
+    );
+    return null;
+  }
+
   if (
     !ts.isTypeReferenceNode(typeNode) ||
     !isRivetSymbol(ctx.checker, typeNode.typeName, "Endpoint")

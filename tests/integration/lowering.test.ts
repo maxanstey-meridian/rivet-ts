@@ -1,7 +1,8 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { expectValidContractDocument } from "../contract-schema.js";
 import { type ContractJson, lowerFixture, lowerSource } from "../support/lower.js";
-import { AUTHORING_TYPES, fixturePath } from "../support/paths.js";
+import { AUTHORING_TYPES, fixturePath, PROJECT_ROOT } from "../support/paths.js";
 
 type EndpointJson = ContractJson["endpoints"][number];
 
@@ -110,7 +111,7 @@ export interface UsersContract extends C<Name> {
   });
 
   it("does not treat a local type named Contract as the rivet-ts Contract", async () => {
-    const { lowered } = await lowerSource(`
+    const { entryPath, lowered } = await lowerSource(`
 import type { Endpoint } from "${AUTHORING_TYPES}";
 
 type Contract<TName extends string> = { readonly label?: TName };
@@ -118,10 +119,74 @@ type Contract<TName extends string> = { readonly label?: TName };
 export interface UsersContract extends Contract<"Users"> {
   Ping: Endpoint<{ method: "GET"; route: "/api/ping"; response: void }>;
 }
+
+export interface LeaseContract extends Contract<"Lease"> {
+  id: string;
+}
 `);
 
-    expect(lowered.diagnostics).toEqual([]);
     expect(lowered.contracts).toEqual([]);
+    // Endpoint members mean a contract was intended; a plain domain type is left alone.
+    expect(lowered.diagnostics).toEqual([
+      errorDiagnostic({ code: "FOREIGN_AUTHORING_TYPE", filePath: entryPath, line: 6 }),
+    ]);
+  });
+
+  it("reports Contract and Endpoint imported from a vendored copy instead of lowering nothing", async () => {
+    const vendored = await fs.readFile(
+      path.join(PROJECT_ROOT, "src", "domain", "authoring-types.ts"),
+      "utf8",
+    );
+    const { entryPath, lowered } = await lowerSource(
+      `
+import type { Contract, Endpoint } from "./vendor/rivet.js";
+
+export interface UsersContract extends Contract<"Users"> {
+  Ping: Endpoint<{ method: "GET"; route: "/api/ping"; response: void }>;
+}
+`,
+      { "vendor/rivet.ts": vendored },
+    );
+
+    expect(lowered.contracts).toEqual([]);
+    expect(lowered.hasErrors).toBe(true);
+    expect(lowered.diagnostics).toEqual([
+      errorDiagnostic({
+        code: "FOREIGN_AUTHORING_TYPE",
+        filePath: entryPath,
+        line: 4,
+        message: expect.stringContaining(
+          'import Contract and Endpoint from "@maxanstey-meridian/rivet-ts"',
+        ),
+      }),
+    ]);
+  });
+
+  it("reports an Endpoint imported from elsewhere inside a rivet-ts Contract", async () => {
+    const { entryPath, lowered } = await lowerSource(
+      `
+import type { Contract } from "${AUTHORING_TYPES}";
+import type { Endpoint } from "./vendor/endpoint.js";
+
+export interface UsersContract extends Contract<"Users"> {
+  Ping: Endpoint<{ method: "GET"; route: "/api/ping"; response: void }>;
+}
+`,
+      { "vendor/endpoint.ts": "export type Endpoint<TSpec> = { readonly spec?: TSpec };\n" },
+    );
+
+    // The source authoring types also declare an `Endpoint` (DUPLICATE_TYPE_NAME); the
+    // published package ships them as declarations, which are not indexed.
+    expect(lowered.diagnostics).toContainEqual(
+      errorDiagnostic({
+        code: "FOREIGN_AUTHORING_TYPE",
+        filePath: entryPath,
+        line: 6,
+        message: expect.stringContaining(
+          'import Contract and Endpoint from "@maxanstey-meridian/rivet-ts"',
+        ),
+      }),
+    );
   });
 
   it.each([
