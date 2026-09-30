@@ -96,6 +96,7 @@ const PINNED_PACKAGE_SECTIONS = {
   dexie: "devDependencies",
   "typed-inject": "devDependencies",
   "vue-tsc": "devDependencies",
+  eslint: "devDependencies",
 } as const satisfies Record<string, ManifestSection>;
 
 export type PinnedPackage = keyof typeof PINNED_PACKAGE_SECTIONS;
@@ -509,7 +510,9 @@ const emitUiPackageJson = (workspace: Workspace): string =>
     },
     devDependencies: {
       "@nuxt/eslint": "^1.0.0",
-      eslint: "^9.0.0",
+      eslint: workspace.pin("eslint"),
+      // @nuxt/eslint only parses `<script lang="ts">` when `typescript` resolves from the app.
+      typescript: workspace.pin("typescript"),
       "vue-tsc": workspace.pin("vue-tsc"),
     },
   });

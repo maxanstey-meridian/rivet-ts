@@ -376,8 +376,12 @@ describe("scaffold --no-api lifecycle", () => {
     expect(uiPackage.scripts.typecheck).toBe("nuxt typecheck");
     const manifest = JSON.parse(
       await fs.readFile(path.join(PROJECT_ROOT, "package.json"), "utf8"),
-    ) as { devDependencies: Record<string, string> };
+    ) as { dependencies: Record<string, string>; devDependencies: Record<string, string> };
     expect(uiPackage.devDependencies["vue-tsc"]).toBe(manifest.devDependencies["vue-tsc"]);
+    // @nuxt/eslint's config pulls in plugins that peer on eslint 10.
+    expect(uiPackage.devDependencies["eslint"]).toBe(manifest.devDependencies["eslint"]);
+    // @nuxt/eslint parses `<script lang="ts">` as TypeScript only when the app resolves `typescript`.
+    expect(uiPackage.devDependencies["typescript"]).toBe(manifest.dependencies["typescript"]);
 
     const pluginSource = await fs.readFile(
       path.join(outputDirectory, "apps", "ui", "app", "plugins", "rivet.client.ts"),

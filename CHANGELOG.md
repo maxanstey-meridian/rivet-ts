@@ -3,6 +3,8 @@
 ## Unreleased — fixes
 
 - The scaffolded `Taskfile.yml` (`scaffold-mock`) passes `--security <scheme>=bearer` to Rivet for every scheme the contract's endpoints secure with, so `task generate` on a contract using `security: { scheme: "admin" }` no longer fails with RIV2002.
+- Scaffolded Nuxt apps (`scaffold`, `scaffold --no-api`, `scaffold-mock`) pin `eslint` to the version in rivet-ts's own `package.json` (`^10.11.0`) instead of `^9.0.0`: `@nuxt/eslint`'s config pulls in `@eslint/js` 10 and `eslint-plugin-unicorn` 73, which peer on eslint 10, so `pnpm install` warned about unmet peers.
+- Scaffolded Nuxt apps have a `typescript` devDependency (pinned like the other packages' `typescript`). Without it `@nuxt/eslint` did not enable its TypeScript parser, so eslint failed on the TypeScript in `<script setup lang="ts">` (the full scaffold's `app.vue`: `Parsing error: Unexpected token ;`).
 
 ## 0.16.0 — breaking
 
