@@ -98,7 +98,7 @@ const generateArtifacts = async (
   // writes <dir>/openapi.json. The TypeScript types are generated locally
   // from that spec.
   const executablePath = await ensureRivetBinary(options.binaryConfig, (line) =>
-    config.logger.info(line),
+    config.logger.info(`[rivet-ts] ${line}`),
   );
 
   // Freshness guard: the spec on disk may be the scaffold-time bootstrap

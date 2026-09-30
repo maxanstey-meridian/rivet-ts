@@ -255,7 +255,7 @@ const PLUMB_TASK = [
   '      - sh: command -v "${PLUMB:-plumb}"',
   "        msg: plumb not found. Plumb is optional; to install it see https://github.com/maxanstey-meridian/plumb#requirements, then set PLUMB to its plumb executable or put it on PATH.",
   "    cmds:",
-  "      - ${PLUMB:-plumb} .",
+  "      - '\"${PLUMB:-plumb}\" .'",
   "",
 ];
 

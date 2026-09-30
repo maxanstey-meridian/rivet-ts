@@ -11,7 +11,8 @@ at runtime. `rivet-ts` lowers it to Rivet contract JSON; the downloaded
 
 ## Prerequisites
 
-- Node.js 20.19 or later (CI runs Node 24).
+- Node.js 20.19+ or 22.12+ for the `rivet-ts` CLI and library. Scaffolded
+  workspaces use Nuxt, which needs Node.js 22.19+ or 24.11+ (CI runs Node 24).
 - pnpm 10 or later. Scaffolded workspaces pin pnpm 10.24.0 in `packageManager`.
 - [go-task](https://taskfile.dev/installation/) for the `task` commands of
   scaffolded workspaces.

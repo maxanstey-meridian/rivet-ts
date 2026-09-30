@@ -7,7 +7,8 @@
 
 ## 1. Install
 
-You need Node.js 20.19 or later, pnpm 10 or later, and
+You need Node.js 22.19+ or 24.11+ (the scaffolded Nuxt app's floor), pnpm 10
+or later, and
 [go-task](https://taskfile.dev/installation/) for the scaffolded workspace's
 `task` commands.
 

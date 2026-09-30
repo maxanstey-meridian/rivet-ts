@@ -647,6 +647,8 @@ fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify(${JSON.str
       vi.unstubAllGlobals();
     }
 
-    expect(info).toContain(`Downloading Rivet v${FAKE_RIVET_VERSION} for ${currentRid()}...`);
+    expect(info).toContain(
+      `[rivet-ts] Downloading Rivet v${FAKE_RIVET_VERSION} for ${currentRid()}...`,
+    );
   });
 });
