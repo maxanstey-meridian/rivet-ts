@@ -12,10 +12,15 @@ at runtime. `rivet-ts` lowers it to Rivet contract JSON; the downloaded
 ## Install
 
 ```bash
-pnpm add -D @maxanstey-meridian/rivet-ts
+pnpm add openapi-fetch
+pnpm add -D @maxanstey-meridian/rivet-ts typescript
 ```
 
-The package installs the `rivet-ts` command.
+The package installs the `rivet-ts` command. `openapi-fetch` is the client the
+generated types are for, and `typescript` type-checks your code against them.
+pnpm may warn that `openapi-typescript` (used by `rivet-ts generate`) wants
+`typescript@^5`; it runs on the TypeScript 6 that rivet-ts brings, so the
+warning is harmless.
 
 ## Write a contract
 
@@ -74,6 +79,9 @@ to select another version or binary.
 
 ## Consume
 
+The snippet assumes an ES module project (`"type": "module"` in
+`package.json`), which top-level `await` needs.
+
 ```ts
 import createClient from "openapi-fetch";
 import type { paths } from "./generated/schema";
@@ -85,6 +93,9 @@ const { data, error } = await api.POST("/api/members", {
   body: { email: "ada@example.com" },
 });
 ```
+
+`pnpm exec tsc --noEmit consume.ts` type-checks it (with the snippet saved as
+`consume.ts`).
 
 The package also provides:
 

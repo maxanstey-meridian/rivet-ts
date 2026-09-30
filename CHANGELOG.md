@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — fixes
+
+- The README's install line adds `openapi-fetch` and `typescript`, and the Consume section says the snippet needs an ES module project (`"type": "module"`) for its top-level `await`. Following the README as written, the snippet failed: under pnpm's strict layout `openapi-fetch` (a dependency of rivet-ts) is not importable from the project, `tsc` was not installed, and top-level `await` is not allowed in CommonJS. It also says pnpm's `openapi-typescript` peer warning (it declares `typescript@^5`) is harmless.
+
 ## 0.16.1 — breaking
 
 - The package root no longer re-exports the Vite plugin: import `rivetTs` and `RivetTsVitePluginOptions` from `@maxanstey-meridian/rivet-ts/vite`. The root's declarations pulled in `vite`'s types, so a consumer without the optional `vite` peer and without `skipLibCheck` failed `tsc` (TS2307 in `dist/vite.d.ts`) just by importing `Contract` from the root.
