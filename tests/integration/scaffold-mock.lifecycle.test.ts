@@ -497,9 +497,13 @@ export interface FilesContract extends Contract<"Files"> {
     // The step's own arguments, run by the pinned release as `task generate` runs them.
     const rivetArguments = String(rivetStep).split(" ");
     await expect(
-      execFileAsync(await ensureRivetBinary(resolveRivetBinaryConfig()), rivetArguments, {
-        cwd: path.join(outputDirectory, "apps", "api"),
-      }),
+      execFileAsync(
+        await ensureRivetBinary(resolveRivetBinaryConfig(), (line) => console.error(line)),
+        rivetArguments,
+        {
+          cwd: path.join(outputDirectory, "apps", "api"),
+        },
+      ),
     ).resolves.toBeDefined();
     await expect(
       fs.access(path.join(outputDirectory, "packages", "contracts", "generated", "openapi.json")),

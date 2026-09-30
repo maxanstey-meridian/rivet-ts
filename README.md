@@ -83,7 +83,10 @@ That pipeline has explicit ownership:
 
 rivet-ts pins Rivet `0.45.0` by default. On macOS arm64/x64, Linux x64, and
 Windows x64, the binary is downloaded from GitHub Releases and cached
-automatically; it does not need to be on `PATH`. Set `RIVET_VERSION` (honoured
+automatically; it does not need to be on `PATH`. The first run prints
+`Downloading Rivet v0.45.0 for <platform>...`; the cache is
+`~/Library/Caches/rivet-ts` on macOS (`$XDG_CACHE_HOME/rivet-ts` or
+`~/.cache/rivet-ts` on Linux, `%LOCALAPPDATA%\rivet-ts` on Windows). Set `RIVET_VERSION` (honoured
 by both the CLI passthrough and the Vite plugin), or use the [Vite plugin options](https://maxanstey-meridian.github.io/rivet-ts/guides/vite-plugin)
 to select another version or binary.
 

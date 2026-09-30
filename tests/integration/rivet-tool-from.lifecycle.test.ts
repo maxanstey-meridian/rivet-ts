@@ -18,7 +18,7 @@ const rivetConfig = resolveRivetBinaryConfig();
 let rivetBinary: string;
 
 beforeAll(async () => {
-  rivetBinary = await ensureRivetBinary(rivetConfig);
+  rivetBinary = await ensureRivetBinary(rivetConfig, (line) => console.error(line));
 });
 
 // These fixtures exist to fail lowering; every other fixture must lower cleanly

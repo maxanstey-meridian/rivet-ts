@@ -337,7 +337,9 @@ const runGenerate = async (args: readonly string[], io: CliIO): Promise<number> 
 };
 
 const runRivet = async (args: readonly string[], io: CliIO): Promise<number> => {
-  const executablePath = await ensureRivetBinary(resolveRivetBinaryConfig());
+  const executablePath = await ensureRivetBinary(resolveRivetBinaryConfig(), (line) =>
+    io.stderr(`${line}\n`),
+  );
 
   return new Promise<number>((resolve) => {
     const child = spawn(executablePath, args, { stdio: ["inherit", "pipe", "pipe"] });

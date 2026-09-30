@@ -97,7 +97,9 @@ const generateArtifacts = async (
   // The binary is the sole OpenAPI emitter: contract JSON in, `--output <dir>`
   // writes <dir>/openapi.json. The TypeScript types are generated locally
   // from that spec.
-  const executablePath = await ensureRivetBinary(options.binaryConfig);
+  const executablePath = await ensureRivetBinary(options.binaryConfig, (line) =>
+    config.logger.info(line),
+  );
 
   // Freshness guard: the spec on disk may be the scaffold-time bootstrap
   // placeholder (or a previous run's output), so it is moved aside before the

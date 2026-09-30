@@ -2,7 +2,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { build, createServer } from "vite";
 import { fixturePath, linkPackage, PROJECT_ROOT } from "../support/paths.js";
-import { installFakeRivet } from "../support/rivet-cache.js";
+import {
+  FAKE_RIVET_VERSION,
+  currentRid,
+  installFakeRivet,
+  serveFakeRivetRelease,
+} from "../support/rivet-cache.js";
 import { tempDir } from "../support/temp.js";
 
 const EMPTY_SPEC = { openapi: "3.1.0", info: { title: "t", version: "1" }, paths: {} };
@@ -605,5 +610,43 @@ fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify(${JSON.str
       readonly info: { readonly title: string };
     };
     expect(spec.info.title).toBe("pinned");
+  });
+
+  it("logs that it is downloading the Rivet release on first use", async () => {
+    const fixture = await createSpecDropoutFixture("rivet-ts-vite-plugin-download-");
+    await serveFakeRivetRelease(
+      `const fs = require("node:fs");
+const path = require("node:path");
+const outputDir = process.argv[process.argv.indexOf("--output") + 1];
+fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify(${JSON.stringify(EMPTY_SPEC)}));`,
+      "matching",
+    );
+    const info: string[] = [];
+    const logger = {
+      info: (message: string) => {
+        info.push(message);
+      },
+      warn: () => undefined,
+      warnOnce: () => undefined,
+      error: () => undefined,
+      clearScreen: () => undefined,
+      hasErrorLogged: () => false,
+      hasWarned: false,
+    };
+    const { rivetTs } = await import("../../src/vite.js");
+
+    try {
+      await build({
+        configFile: false,
+        root: fixture.uiRoot,
+        customLogger: logger,
+        plugins: [rivetTs({ entry: fixture.entryPath, apiRoot: fixture.tempDirectory })],
+      });
+    } finally {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    }
+
+    expect(info).toContain(`Downloading Rivet v${FAKE_RIVET_VERSION} for ${currentRid()}...`);
   });
 });

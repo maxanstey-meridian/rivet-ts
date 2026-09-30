@@ -101,7 +101,14 @@ const resolveReleaseAsset = async (
   return { downloadUrl: asset.browser_download_url, sha256 };
 };
 
-export const ensureRivetBinary = async (config: ResolvedRivetBinaryConfig): Promise<string> => {
+/**
+ * `announce` receives one line (no trailing newline) before a download, which
+ * can take a while on first use; a cached binary is returned silently.
+ */
+export const ensureRivetBinary = async (
+  config: ResolvedRivetBinaryConfig,
+  announce: (line: string) => void,
+): Promise<string> => {
   // An explicit binary skips rid resolution, so self-built binaries work on
   // platforms outside the release matrix.
   if (config.binaryPath) {
@@ -130,6 +137,7 @@ export const ensureRivetBinary = async (config: ResolvedRivetBinaryConfig): Prom
   // into place: a process dying mid-extraction must not leave a
   // truncated-but-present executable that passes the access() check forever,
   // and concurrent vite processes must not race each other's extraction.
+  announce(`Downloading Rivet ${tagName} for ${rid}...`);
   const stagingDirectory = `${installDirectory}.tmp-${process.pid}`;
   await fs.rm(stagingDirectory, { recursive: true, force: true });
   await fs.mkdir(stagingDirectory, { recursive: true });

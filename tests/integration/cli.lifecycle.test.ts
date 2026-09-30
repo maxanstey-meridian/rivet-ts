@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -12,7 +11,13 @@ import { runCliCaptured } from "../support/cli.js";
 import { writeContractProject } from "../support/contract-project.js";
 import { parseContractJson } from "../support/lower.js";
 import { AUTHORING_TYPES, PACKAGE_NAME, PROJECT_ROOT, fixturePath } from "../support/paths.js";
-import { currentRid, installFakeRivet, useThrowawayRivetCache } from "../support/rivet-cache.js";
+import {
+  FAKE_RIVET_VERSION,
+  type FakeReleaseDigest,
+  currentRid,
+  installFakeRivet,
+  serveFakeRivetRelease,
+} from "../support/rivet-cache.js";
 import { tempDir } from "../support/temp.js";
 
 const execFileAsync = promisify(execFile);
@@ -453,41 +458,16 @@ describe("rivet passthrough", () => {
 
   // An empty cache makes the passthrough download the pinned release; the
   // GitHub API and asset download are the only faked boundary.
-  const serveFakeRelease = async (digest: "matching" | "wrong" | "missing"): Promise<string> => {
-    const executablePath = await useThrowawayRivetCache();
-    const rid = currentRid();
-    const staging = await tempDir("rivet-ts-release-");
-    await fs.writeFile(
-      path.join(staging, `rivet-${rid}`),
-      '#!/usr/bin/env node\nconsole.log("downloaded rivet");\n',
-    );
-    const archivePath = path.join(staging, `rivet-${rid}.tar.gz`);
-    await tar.c({ gzip: true, file: archivePath, cwd: staging }, [`rivet-${rid}`]);
-    const archive = await fs.readFile(archivePath);
-    const sha256 = createHash("sha256").update(archive).digest("hex");
+  const serveFakeRelease = (digest: FakeReleaseDigest) =>
+    serveFakeRivetRelease('console.log("downloaded rivet");', digest);
 
-    const asset = {
-      name: `rivet-${rid}.tar.gz`,
-      browser_download_url: `https://downloads.invalid/rivet-${rid}.tar.gz`,
-      ...(digest === "missing"
-        ? {}
-        : { digest: `sha256:${digest === "matching" ? sha256 : "0".repeat(64)}` }),
-    };
-    vi.stubGlobal("fetch", async (url: string) =>
-      url.startsWith("https://api.github.com/")
-        ? Response.json({ assets: [asset] })
-        : new Response(archive),
-    );
-    return executablePath;
-  };
-
-  it("downloads, verifies and runs the pinned release on first use", async () => {
+  it("downloads, verifies and runs the pinned release on first use, saying so", async () => {
     const executablePath = await serveFakeRelease("matching");
 
     expect(await runCliCaptured(["rivet"])).toEqual({
       exitCode: 0,
       stdout: "downloaded rivet\n",
-      stderr: "",
+      stderr: `Downloading Rivet v${FAKE_RIVET_VERSION} for ${currentRid()}...\n`,
     });
     await expect(fs.access(executablePath)).resolves.toBeUndefined();
   });
