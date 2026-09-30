@@ -251,6 +251,13 @@ const PLUMB_TASK = [
 
 const emitTaskfile = (workspace: Workspace): string => {
   const scope = workspace.packageScope;
+  const lintTask = [
+    "  lint:",
+    "    desc: Lint the Nuxt frontend (eslint)",
+    "    cmds:",
+    `      - pnpm --filter ${scope}/ui lint`,
+    "",
+  ];
 
   if (workspace.variant === "frontend-only") {
     return [
@@ -274,6 +281,7 @@ const emitTaskfile = (workspace: Workspace): string => {
       "      # e.g. dotnet run --project <api.csproj path via Rivet.Tool> --output ./packages/contracts/generated",
       `      - pnpm --filter ${scope}/contracts exec openapi-typescript ./generated/openapi.json -o ./generated/schema.d.ts`,
       "",
+      ...lintTask,
       ...PLUMB_TASK,
     ].join("\n");
   }
@@ -318,6 +326,7 @@ const emitTaskfile = (workspace: Workspace): string => {
     "    cmds:",
     "      - task: api:test",
     "",
+    ...lintTask,
     ...PLUMB_TASK,
   ].join("\n");
 };
@@ -337,6 +346,7 @@ const emitReadme = (workspace: Workspace): string => {
       "| `task dev` | Nuxt frontend |",
       "| `task generate` | openapi.json → schema.d.ts |",
       "| `pnpm -C apps/ui typecheck` | `nuxt typecheck`; run `task generate` first |",
+      "| `task lint` | eslint on the Nuxt frontend |",
       "| `task plumb` | Meridian doctrine check |",
       "",
       "The typed client base URL is configured in",
@@ -360,6 +370,7 @@ const emitReadme = (workspace: Workspace): string => {
     "| `task generate` | contract entry → openapi.json → schema.d.ts |",
     "| `task api:test` | typecheck + tests |",
     "| `pnpm -C apps/ui typecheck` | `nuxt typecheck`; run `task generate` first (the starter `openapi.json` has no body schemas) |",
+    "| `task lint` | eslint on the Nuxt frontend |",
     "| `task plumb` | Meridian doctrine check |",
     "",
     "To point the UI at a real server instead of the in-browser API, edit",
@@ -506,6 +517,7 @@ const emitUiPackageJson = (workspace: Workspace): string =>
       dev: "nuxt dev",
       build: "nuxt build",
       typecheck: "nuxt typecheck",
+      lint: "eslint .",
       postinstall: "nuxt prepare",
     },
     dependencies: {

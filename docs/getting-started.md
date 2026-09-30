@@ -124,6 +124,7 @@ unless you pass `--force`.
 - `pnpm -C apps/ui typecheck` — `nuxt typecheck` for the frontend. Run `task generate`
   first: the scaffold's starter `openapi.json` carries routes but no body schemas,
   so request and response types only exist once Rivet has generated them.
+- `task lint` — eslint on the Nuxt frontend (`pnpm -C apps/ui lint`).
 - `task plumb` — Meridian doctrine check, running `$PLUMB` or else `plumb` on `PATH`.
 
 ## 4. Consuming the client

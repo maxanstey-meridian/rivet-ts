@@ -14,7 +14,7 @@ import {
   runTask,
   typecheckScaffoldedWorkspace,
 } from "../support/scaffold-oracles.js";
-import { makeTempDir, removeDir } from "../support/temp.js";
+import { makeTempDir, removeDir, tempDir } from "../support/temp.js";
 
 /**
  * The `scaffold` command is the engine behind `plumb init --ts-backend`:
@@ -22,6 +22,36 @@ import { makeTempDir, removeDir } from "../support/temp.js";
  * Gates, in order of strictness: shape → tsc → runtime behavior → plumb
  * (no findings beyond the recorded ones — the generator/doctrine coupling).
  */
+
+/**
+ * Runs the scaffold's `task lint` with a `pnpm` on PATH that records its
+ * arguments, and returns them with the ui package's `lint` script: the task
+ * must reach the ui's eslint (installing @nuxt/eslint needs the network).
+ */
+const lintThroughTaskfile = async (
+  task: string,
+  outputDirectory: string,
+): Promise<{ readonly pnpmArguments: string; readonly uiLintScript: string | undefined }> => {
+  const fakeDirectory = await tempDir("rivet-ts-fake-pnpm-");
+  const argsFile = path.join(fakeDirectory, "args");
+  await fs.writeFile(
+    path.join(fakeDirectory, "pnpm"),
+    `#!/bin/sh\nprintf '%s ' "$@" > ${JSON.stringify(argsFile)}\n`,
+    { mode: 0o755 },
+  );
+
+  await runTask(task, outputDirectory, "lint", {
+    PATH: `${fakeDirectory}${path.delimiter}${process.env["PATH"] ?? ""}`,
+  });
+
+  const uiPackage = JSON.parse(
+    await fs.readFile(path.join(outputDirectory, "apps", "ui", "package.json"), "utf8"),
+  ) as { readonly scripts: Readonly<Record<string, string>> };
+  return {
+    pnpmArguments: (await fs.readFile(argsFile, "utf8")).trim(),
+    uiLintScript: uiPackage.scripts["lint"],
+  };
+};
 
 describe("scaffold lifecycle", () => {
   let outputDirectory: string;
@@ -276,6 +306,15 @@ describe("scaffold lifecycle", () => {
     await expect(fs.readFile(argsFile, "utf8")).resolves.toBe(".");
   });
 
+  it("lints the ui through the Taskfile's lint task", async (context) => {
+    const task = TASK_EXECUTABLE ?? context.skip(TASK_NOT_FOUND);
+
+    await expect(lintThroughTaskfile(task, outputDirectory)).resolves.toEqual({
+      pnpmArguments: "--filter @demo/ui lint",
+      uiLintScript: "eslint .",
+    });
+  });
+
   it("keeps the embedded golden configs in sync with plumb's configs/", async (context) => {
     const plumb = PLUMB_EXECUTABLE ?? context.skip(PLUMB_NOT_FOUND);
 
@@ -394,6 +433,15 @@ describe("scaffold --no-api lifecycle", () => {
     expect(taskfileSource).not.toContain("api:run");
     expect(taskfileSource).toContain("openapi-typescript ./generated/openapi.json");
     expect(taskfileSource).toContain("plumb");
+  });
+
+  it("lints the ui through the Taskfile's lint task", async (context) => {
+    const task = TASK_EXECUTABLE ?? context.skip(TASK_NOT_FOUND);
+
+    await expect(lintThroughTaskfile(task, outputDirectory)).resolves.toEqual({
+      pnpmArguments: "--filter @fe-demo/ui lint",
+      uiLintScript: "eslint .",
+    });
   });
 
   it("typechecks the contracts package", async () => {
