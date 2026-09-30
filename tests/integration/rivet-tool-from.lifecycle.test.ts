@@ -38,8 +38,15 @@ const lowerableFixtures = (await fs.readdir(fixturePath())).filter(
 // so Rivet builds the multipart schema inline and says so (RIV2004).
 const MULTIPART_INLINE_WARNING = /^warning RIV2004: multipart input type /u;
 
+type OpenApiOperation = {
+  readonly responses?: Record<
+    string,
+    { readonly content?: Record<string, { readonly schema?: { readonly $ref?: string } }> }
+  >;
+};
+
 type OpenApiDocument = {
-  readonly paths: Record<string, Record<string, unknown>>;
+  readonly paths: Record<string, Record<string, OpenApiOperation>>;
   readonly components?: {
     readonly schemas?: Record<string, unknown>;
     readonly examples?: Record<string, unknown>;
@@ -134,7 +141,12 @@ describe(`pinned Rivet release (v${rivetConfig.version})`, () => {
     });
 
     // Optionality is independent of nullability for inline response properties.
-    expect(openApi.components?.schemas?.["OpenApiSmokeInlineShapeDto"]).toMatchObject({
+    const schemaRef =
+      openApi.paths["/api/inline-shape"]?.["get"]?.responses?.["200"]?.content?.["application/json"]
+        ?.schema?.$ref ?? "";
+    const schemaPrefix = "#/components/schemas/";
+    expect(schemaRef).toMatch(new RegExp(`^${schemaPrefix}`, "u"));
+    expect(openApi.components?.schemas?.[schemaRef.slice(schemaPrefix.length)]).toMatchObject({
       required: ["required", "requiredNullable"],
       properties: {
         optional: expect.anything(),
