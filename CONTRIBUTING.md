@@ -3,11 +3,11 @@
 ## Setup and the gate
 
 ```bash
-pnpm install        # also builds dist/ (prepare)
+pnpm install
 pnpm build && pnpm check && pnpm lint && pnpm fmt:check && pnpm test
 ```
 
-`pnpm test` builds first: the scaffold, scaffold-mock, Vite and pack tests resolve the bare `rivet-ts` import to this repo's `dist/`. `pnpm test:watch` builds once, then keeps `dist/` current with `tsc --watch` while Vitest watches.
+`pnpm test` builds first: the scaffold, scaffold-mock, Vite and pack tests resolve the `@maxanstey-meridian/rivet-ts` import to this repo's `dist/`. `pnpm test:watch` builds once, then keeps `dist/` current with `tsc --watch` while Vitest watches.
 
 `*.test-d.ts` files are type tests: Vitest runs them through `tsc` (`typecheck` in `vitest.config.ts`), and `pnpm check` compiles them too.
 
@@ -23,6 +23,10 @@ pnpm build && pnpm check && pnpm lint && pnpm fmt:check && pnpm test
 
 1. The scaffolds pin these packages to the versions in this `package.json` (`PINNED_PACKAGE_SECTIONS` in `src/infrastructure/scaffold/workspace-emitter.ts`, which fails if a pin is missing). Bumping one here bumps what `rivet-ts scaffold` and `scaffold-mock` emit.
 2. The scaffold tests type-check and run the emitted workspace offline by linking this repo's `node_modules` into it (`tests/support/scaffold-oracles.ts`). So every package a scaffold imports must be installed here.
+
+## Releasing
+
+The package publishes to npm as `@maxanstey-meridian/rivet-ts`. Bump `version` in `package.json` (scaffolds depend on `^<version>`, so the new version must be published before its scaffolds install), move the `Unreleased` CHANGELOG entries under it, tag `v<version>`, and run `pnpm publish`. `prepack` rebuilds `dist/` from clean, so the tarball carries no modules left over from an older build.
 
 ## GitNexus
 

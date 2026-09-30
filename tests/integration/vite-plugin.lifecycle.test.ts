@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { build, createServer } from "vite";
-import { PROJECT_ROOT } from "../support/paths.js";
+import { linkPackage, PROJECT_ROOT } from "../support/paths.js";
 import { installFakeRivet } from "../support/rivet-cache.js";
 import { tempDir } from "../support/temp.js";
 
@@ -17,7 +17,7 @@ describe("vite plugin lifecycle", () => {
     const nodeModulesDirectory = path.join(sampleRoot, "node_modules");
 
     await fs.mkdir(nodeModulesDirectory, { recursive: true });
-    await fs.symlink(projectRoot, path.join(nodeModulesDirectory, "rivet-ts"), "dir");
+    await linkPackage(nodeModulesDirectory);
     await fs.symlink(
       path.join(projectRoot, "node_modules", "vite"),
       path.join(nodeModulesDirectory, "vite"),
@@ -47,7 +47,7 @@ describe("vite plugin lifecycle", () => {
 
     await fs.writeFile(
       path.join(apiRoot, "src", "app", "contracts.ts"),
-      `import type { Contract, Endpoint } from "rivet-ts";
+      `import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
 
 export interface MemberDto {
   id: string;
@@ -157,7 +157,7 @@ await fs.writeFile(openApiPath, JSON.stringify(spec, null, 2));
       // Vite resolves its own `root` against process.cwd(), so it is absolute. The
       // rivetTs() paths stay relative: they must resolve against this file's directory.
       `import { defineConfig } from "vite";
-import { rivetTs } from "rivet-ts/vite";
+import { rivetTs } from "@maxanstey-meridian/rivet-ts/vite";
 
 export default defineConfig({
   root: ${JSON.stringify(path.join(sampleRoot, "ui"))},
@@ -272,14 +272,12 @@ export default defineConfig({
     readonly bootstrapSpecSource: string;
     readonly lastGoodSchemaSource: string;
   }> => {
-    const projectRoot = PROJECT_ROOT;
     const tempDirectory = await tempDir(prefix);
     const uiRoot = path.join(tempDirectory, "ui");
     const generatedRoot = path.join(tempDirectory, "generated");
     await fs.mkdir(uiRoot, { recursive: true });
     await fs.mkdir(generatedRoot, { recursive: true });
-    await fs.mkdir(path.join(tempDirectory, "node_modules"), { recursive: true });
-    await fs.symlink(projectRoot, path.join(tempDirectory, "node_modules", "rivet-ts"), "dir");
+    await linkPackage(path.join(tempDirectory, "node_modules"));
     await fs.writeFile(
       path.join(uiRoot, "index.html"),
       '<!DOCTYPE html><html><body><script type="module"></script></body></html>\n',
@@ -288,7 +286,7 @@ export default defineConfig({
     const entryPath = path.join(tempDirectory, "contracts.ts");
     await fs.writeFile(
       entryPath,
-      `import type { Contract, Endpoint } from "rivet-ts";
+      `import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
 
 export interface MemberDto {
   id: string;
@@ -477,8 +475,7 @@ fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify(${JSON.str
     const uiRoot = path.join(tempDirectory, "ui");
     await fs.mkdir(uiRoot, { recursive: true });
     await fs.mkdir(path.join(tempDirectory, "models"), { recursive: true });
-    await fs.mkdir(path.join(tempDirectory, "node_modules"), { recursive: true });
-    await fs.symlink(PROJECT_ROOT, path.join(tempDirectory, "node_modules", "rivet-ts"), "dir");
+    await linkPackage(path.join(tempDirectory, "node_modules"));
     await fs.writeFile(path.join(uiRoot, "index.html"), "<!DOCTYPE html><html></html>\n");
     await fs.writeFile(
       path.join(tempDirectory, "tsconfig.json"),
@@ -489,7 +486,7 @@ fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify(${JSON.str
     const entryPath = path.join(tempDirectory, "contracts.ts");
     await fs.writeFile(
       entryPath,
-      `import type { Contract, Endpoint } from "rivet-ts";
+      `import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
 import type { MemberDto } from "@models/member";
 
 export interface MembersContract extends Contract<"MembersContract"> {

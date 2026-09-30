@@ -2,10 +2,10 @@
 
 The package exposes two identical binaries — `rivet-ts` and the legacy alias `rivet-reflect-ts` — plus these subpath exports:
 
-- `rivet-ts` — authoring types, handler types, the reflection pipeline
-- `rivet-ts/vite` — the Vite plugin
-- `rivet-ts/hono` — the Hono server runtime
-- `rivet-ts/package.json`
+- `@maxanstey-meridian/rivet-ts` — authoring types, handler types, the reflection pipeline
+- `@maxanstey-meridian/rivet-ts/vite` — the Vite plugin
+- `@maxanstey-meridian/rivet-ts/hono` — the Hono server runtime
+- `@maxanstey-meridian/rivet-ts/package.json`
 
 Usage (from `rivet-ts --help`):
 

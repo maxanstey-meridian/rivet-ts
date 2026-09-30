@@ -1,6 +1,6 @@
 # Vite Plugin
 
-`rivet-ts/vite` regenerates the contract artifacts on dev-server start, on build, and whenever the contract entry (or one of its local imports) changes.
+`@maxanstey-meridian/rivet-ts/vite` regenerates the contract artifacts on dev-server start, on build, and whenever the contract entry (or one of its local imports) changes.
 
 The scaffolded workspace does not use it — its `task generate` runs the same pipeline as explicit CLI steps. The plugin exists for Vite-based projects that want regeneration wired into the dev loop.
 
@@ -22,7 +22,7 @@ It does not:
 
 ```ts
 import { defineConfig } from "vite";
-import { rivetTs } from "rivet-ts/vite";
+import { rivetTs } from "@maxanstey-meridian/rivet-ts/vite";
 
 export default defineConfig({
   plugins: [

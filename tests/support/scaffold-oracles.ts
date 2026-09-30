@@ -3,7 +3,7 @@ import { accessSync, constants, existsSync, realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { PROJECT_ROOT } from "./paths.js";
+import { PROJECT_ROOT, linkPackage } from "./paths.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -11,7 +11,7 @@ const execFileAsync = promisify(execFile);
  * Makes a scaffolded workspace resolvable offline: every top-level entry of
  * this repo's node_modules is linked into the scaffold's node_modules, plus
  * rivet-ts itself → this repo (so the emitted code typechecks against the
- * CURRENT runtime, not the pinned GitHub tag).
+ * CURRENT runtime, not the published version the scaffold pins).
  */
 export const linkScaffoldDependencies = async (outputDirectory: string): Promise<void> => {
   const projectRoot = PROJECT_ROOT;
@@ -20,7 +20,7 @@ export const linkScaffoldDependencies = async (outputDirectory: string): Promise
   await fs.mkdir(targetModules, { recursive: true });
 
   for (const entry of await fs.readdir(sourceModules)) {
-    if (entry.startsWith(".") || entry === "rivet-ts") {
+    if (entry.startsWith(".")) {
       continue;
     }
     await fs
@@ -28,7 +28,7 @@ export const linkScaffoldDependencies = async (outputDirectory: string): Promise
       .catch(() => undefined);
   }
 
-  await fs.symlink(projectRoot, path.join(targetModules, "rivet-ts"), "dir").catch(() => undefined);
+  await linkPackage(targetModules).catch(() => undefined);
 };
 
 const runTsc = async (tsconfigPath: string): Promise<void> => {

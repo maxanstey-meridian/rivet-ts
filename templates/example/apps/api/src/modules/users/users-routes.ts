@@ -1,5 +1,5 @@
+import { type ContractJson, registerRivetHonoRoutes } from "@maxanstey-meridian/rivet-ts/hono";
 import type { Hono } from "hono";
-import { type ContractJson, registerRivetHonoRoutes } from "rivet-ts/hono";
 import type { UsersContract } from "#contract";
 import type { GetCurrentUser } from "./application/get-current-user.js";
 

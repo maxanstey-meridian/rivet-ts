@@ -40,7 +40,7 @@ features:
 ## Contract shape
 
 ```ts
-import type { Contract, Endpoint } from "rivet-ts";
+import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
 
 export interface UserDto {
   id: string;

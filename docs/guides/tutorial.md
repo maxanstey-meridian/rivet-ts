@@ -12,7 +12,7 @@ Build a contract-first workspace from scratch:
 Create `contracts.ts`:
 
 ```ts
-import type { Contract, Endpoint } from "rivet-ts";
+import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
 
 export interface TodoDto {
   id: string;
@@ -106,7 +106,7 @@ The UI consumes `@myapp/contracts` only; feature code never imports `apps/api/sr
 `scaffold-mock` synthesizes mock values from the contract (preferring authored examples when present):
 
 ```ts
-import type { RivetHandlerInput, RivetHandlerResult } from "rivet-ts";
+import type { RivetHandlerInput, RivetHandlerResult } from "@maxanstey-meridian/rivet-ts";
 import type { TodoContract } from "#contract";
 
 type GetTodoInput = RivetHandlerInput<TodoContract, "GetTodo">;

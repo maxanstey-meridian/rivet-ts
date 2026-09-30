@@ -32,7 +32,7 @@ const createSyntheticCompilerOptions = (absoluteEntryPath: string): ts.CompilerO
     ...DEFAULT_COMPILER_OPTIONS,
     baseUrl: entryDirectory,
     paths: {
-      "rivet-ts": [toPortableRelativePath(entryDirectory, rivetTypeEntryPath)],
+      "@maxanstey-meridian/rivet-ts": [toPortableRelativePath(entryDirectory, rivetTypeEntryPath)],
     },
   };
 };

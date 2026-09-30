@@ -7,7 +7,7 @@ One contract. One client. Start local, promote later.
 ### The contract
 
 ```ts
-import type { Contract, Endpoint } from "rivet-ts";
+import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
 
 export interface UserDto {
   id: string;
@@ -49,7 +49,7 @@ The client surface is the same the whole way through.
 ### 1. Scaffold locally
 
 ```ts
-import type { RivetHandler } from "rivet-ts";
+import type { RivetHandler } from "@maxanstey-meridian/rivet-ts";
 import type { UserContract } from "#contract";
 
 export const getUser: RivetHandler<UserContract, "GetUser"> = async ({ params }) => {
@@ -80,7 +80,7 @@ rivet-ts scaffold-mock --entry ./contracts.ts --out ./myapp
 ### 2. Promote to Bun later
 
 ```ts
-import type { RivetHandler } from "rivet-ts";
+import type { RivetHandler } from "@maxanstey-meridian/rivet-ts";
 import type { UserContract } from "#contract";
 
 export const getUser: RivetHandler<UserContract, "GetUser"> = async ({ params }) => {

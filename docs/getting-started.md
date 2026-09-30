@@ -1,6 +1,6 @@
 # Getting Started
 
-1. install `rivet-ts`
+1. install `@maxanstey-meridian/rivet-ts`
 2. scaffold a workspace (or write a contract first and scaffold mocks from it)
 3. run `task install && task dev`
 4. open `apps/ui/app/app.vue` and start consuming the typed client
@@ -8,11 +8,10 @@
 ## 1. Install
 
 ```bash
-pnpm add -D github:maxanstey-meridian/rivet-ts#v0.15.0
+pnpm add -D @maxanstey-meridian/rivet-ts
 ```
 
-`rivet-ts` is installed from the versioned Git tag; it is not published to the
-npm registry.
+The package installs the `rivet-ts` command.
 
 The Rivet binary (the OpenAPI emitter) is downloaded and cached automatically
 on first use — both by the Vite plugin and by the `rivet-ts rivet --` CLI
@@ -74,7 +73,7 @@ bounds, patterns, item counts) onto them at scaffold time.
 Write `contracts.ts`:
 
 ```ts
-import type { Contract, Endpoint } from "rivet-ts";
+import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
 
 export interface MemberDto {
   id: string;

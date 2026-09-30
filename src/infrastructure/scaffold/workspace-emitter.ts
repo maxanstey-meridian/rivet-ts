@@ -99,8 +99,6 @@ const PINNED_PACKAGE_SECTIONS = {
 
 export type PinnedPackage = keyof typeof PINNED_PACKAGE_SECTIONS;
 
-const RIVET_TS_DEPENDENCY_REPOSITORY = "github:maxanstey-meridian/rivet-ts";
-
 /** rivet-ts's own `package.json`. */
 export const readPackageManifest = async (): Promise<PackageManifest> => {
   const manifestText = await fs.readFile(new URL("../../../package.json", import.meta.url), "utf8");
@@ -125,7 +123,7 @@ const toRivetTsDependency = (manifest: PackageManifest): string => {
     throw new Error("rivet-ts package.json is missing a version; cannot pin scaffold dependency.");
   }
 
-  return `${RIVET_TS_DEPENDENCY_REPOSITORY}#v${manifest.version}`;
+  return `^${manifest.version}`;
 };
 
 export type WorkspaceConfig = {
@@ -442,7 +440,7 @@ const emitApiPackageJson = (workspace: Workspace<FullWorkspaceConfig>): string =
     },
     dependencies: {
       hono: workspace.pin("hono"),
-      "rivet-ts": workspace.rivetTsDependency,
+      "@maxanstey-meridian/rivet-ts": workspace.rivetTsDependency,
       zod: workspace.pin("zod"),
       ...Object.fromEntries(
         (workspace.extraApiDependencies ?? []).map((name) => [name, workspace.pin(name)]),

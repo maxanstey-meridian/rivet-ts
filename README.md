@@ -11,17 +11,16 @@ at runtime. `rivet-ts` lowers it to Rivet contract JSON; the downloaded
 
 ## Install
 
-`rivet-ts` currently ships from versioned Git tags, not the npm registry. The
-install builds the package through its `prepare` script.
-
 ```bash
-pnpm add -D github:maxanstey-meridian/rivet-ts#v0.15.0
+pnpm add -D @maxanstey-meridian/rivet-ts
 ```
+
+The package installs the `rivet-ts` command.
 
 ## Write a contract
 
 ```ts
-import type { Contract, Endpoint } from "rivet-ts";
+import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
 
 export interface MemberDto {
   id: string;
@@ -89,10 +88,10 @@ const { data, error } = await api.POST("/api/members", {
 
 The package also provides:
 
-- [`rivet-ts/vite`](https://maxanstey-meridian.github.io/rivet-ts/guides/vite-plugin),
+- [`@maxanstey-meridian/rivet-ts/vite`](https://maxanstey-meridian.github.io/rivet-ts/guides/vite-plugin),
   which regenerates contract JSON, `openapi.json`, and `schema.d.ts` when the
   entry or its local imports change.
-- [`rivet-ts/hono`](https://maxanstey-meridian.github.io/rivet-ts/guides/hono),
+- [`@maxanstey-meridian/rivet-ts/hono`](https://maxanstey-meridian.github.io/rivet-ts/guides/hono),
   which registers typed handlers against lowered contract JSON.
 - [`scaffold` and `scaffold-mock`](https://maxanstey-meridian.github.io/rivet-ts/getting-started),
   which emit the Hono + Nuxt + contracts workspace or derive one from an

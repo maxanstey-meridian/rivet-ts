@@ -6,7 +6,7 @@ import { lowerContracts } from "../../src/infrastructure/typescript/typescript-r
 import { runCliCaptured } from "../support/cli.js";
 import { writeContractProject } from "../support/contract-project.js";
 import { parseContractJson } from "../support/lower.js";
-import { AUTHORING_TYPES, PROJECT_ROOT } from "../support/paths.js";
+import { AUTHORING_TYPES, linkPackage, PACKAGE_NAME, PROJECT_ROOT } from "../support/paths.js";
 import {
   PLUMB_EXECUTABLE,
   PLUMB_NOT_FOUND,
@@ -56,7 +56,7 @@ export const memberResponseExample = { id: "mem_001", email: "jane@example.com" 
 export const exportResponseExample = "not-a-blob";
 `;
 
-const MEMBERS_CONTRACTS = `import type { Contract, Endpoint } from "rivet-ts";
+const MEMBERS_CONTRACTS = `import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
 import type { CreateMemberRequest, MemberDto, Page, PagedResult, TreeDto } from "./models.js";
 import { exportResponseExample, memberResponseExample } from "./models.js";
 
@@ -97,8 +97,7 @@ const scaffoldMock = async (
 ) => {
   const root = await tempDir("rivet-ts-scaffold-mock-");
   const sourceDirectory = path.join(root, "source");
-  await fs.mkdir(path.join(sourceDirectory, "node_modules"), { recursive: true });
-  await fs.symlink(PROJECT_ROOT, path.join(sourceDirectory, "node_modules", "rivet-ts"), "dir");
+  await linkPackage(path.join(sourceDirectory, "node_modules"));
   for (const [name, content] of Object.entries({
     "package.json": '{ "type": "module" }\n',
     ...files,
@@ -173,7 +172,7 @@ describe("scaffold-mock lifecycle", () => {
     expect(
       await read("apps", "api", "src", "modules", "members", "members-validation.ts"),
     ).toContain(
-      'satisfies z.ZodType<import("rivet-ts").RivetHandlerInput<import("#contract").MembersContract, "Create">["body"]>',
+      'satisfies z.ZodType<import("@maxanstey-meridian/rivet-ts").RivetHandlerInput<import("#contract").MembersContract, "Create">["body"]>',
     );
 
     const { version } = await readJson<{ version: string }>(
@@ -190,9 +189,7 @@ describe("scaffold-mock lifecycle", () => {
       "./validation": "./src/validation.ts",
     });
     // The scaffolded rivet-ts pin tracks this package's version.
-    expect(apiPackage.dependencies["rivet-ts"]).toBe(
-      `github:maxanstey-meridian/rivet-ts#v${version}`,
-    );
+    expect(apiPackage.dependencies[PACKAGE_NAME]).toBe(`^${version}`);
     const contractsPackage = await readJson<{
       exports: Record<string, string>;
       dependencies: Record<string, string>;
@@ -285,7 +282,7 @@ describe("scaffold-mock lifecycle", () => {
     // A contract named like a rivet-ts type and two `Get`/`Create` pairs: per-module
     // routes files keep the handlers out of one import scope.
     const { exitCode, outputDirectory } = await scaffoldMock({
-      "contracts.ts": `import type { Contract, Endpoint } from "rivet-ts";
+      "contracts.ts": `import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
 
 export interface PetDto {
   id: string;
@@ -332,7 +329,7 @@ export interface SummaryContract extends Contract<"Summary"> {
   it("serves endpoints whose names are numeric, quoted or collide with rivet-ts types", async () => {
     const quotedName = 'Say "hello" \\ now';
     const { exitCode, outputDirectory } = await scaffoldMock({
-      "contracts.ts": `import type { Contract, Endpoint } from "rivet-ts";
+      "contracts.ts": `import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
 
 export interface NamesContract extends Contract<"Names"> {
   "123 Export": Endpoint<{ method: "GET"; route: "/api/numeric"; response: string }>;
@@ -377,7 +374,7 @@ export interface NamesContract extends Contract<"Names"> {
         : `  ${JSON.stringify(endpoint)}: Endpoint<{ method: "GET"; route: "/api/collision/${index}"; response: string }>;`,
     );
     const { exitCode, stderr, outputDirectory } = await scaffoldMock({
-      "contracts.ts": `import type { Contract, Endpoint } from "rivet-ts";
+      "contracts.ts": `import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
 
 export interface CollisionContract extends Contract<"Collision"> {
 ${members.join("\n")}
@@ -392,7 +389,7 @@ ${members.join("\n")}
 
   it("rejects normalized contract artifact collisions before writing files", async () => {
     const { exitCode, stderr, outputDirectory } = await scaffoldMock({
-      "contracts.ts": `import type { Contract, Endpoint } from "rivet-ts";
+      "contracts.ts": `import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
 
 export interface FooBarContract extends Contract<"FooBar"> {
   Create: Endpoint<{ method: "POST"; route: "/api/foo"; input: string; response: string }>;
@@ -413,7 +410,7 @@ export interface OtherContract extends Contract<"foo-bar"> {
 
   it("derives safe module paths from arbitrary contract brands and serves them all", async () => {
     const { exitCode, outputDirectory } = await scaffoldMock({
-      "contracts.ts": `import type { Contract, Endpoint } from "rivet-ts";
+      "contracts.ts": `import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
 
 export interface NumericBrandContract extends Contract<"123 Sales"> {
   List: Endpoint<{ method: "GET"; route: "/api/numeric"; response: string }>;
@@ -440,7 +437,7 @@ export interface RivetHonoBrandContract extends Contract<"RivetHono"> {
 
   it("serves a file endpoint as a typed placeholder and keeps it out of the UI demo", async () => {
     const { exitCode, outputDirectory } = await scaffoldMock({
-      "contracts.ts": `import type { Contract, Endpoint } from "rivet-ts";
+      "contracts.ts": `import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
 
 export interface FilesContract extends Contract<"Files"> {
   Download: Endpoint<{
@@ -473,7 +470,7 @@ export interface FilesContract extends Contract<"Files"> {
     const outputDirectory = path.join(sourceDirectory, "mock-app");
     await fs.writeFile(
       entryPath,
-      `import type { Contract, Endpoint } from "rivet-ts";
+      `import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
 
 export interface HelloContract extends Contract<"Hello"> {
   Ping: Endpoint<{ method: "GET"; route: "/api/ping"; response: { message: "pong" } }>;
@@ -531,7 +528,7 @@ export interface HelloContract extends Contract<"Hello"> {
     );
     const { exitCode, stderr, outputDirectory } = await scaffoldMock(
       {
-        "contracts.ts": `import type { Contract, Endpoint } from "rivet-ts";
+        "contracts.ts": `import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
 
 export interface CreateWidgetRequest {
   name: string;
@@ -581,13 +578,13 @@ export interface WidgetsContract extends Contract<"Widgets"> {
       "widgets-validation.ts",
     );
     expect(await fs.readFile(validationPath, "utf8")).toContain(
-      'satisfies z.ZodType<import("rivet-ts").RivetHandlerInput<import("#contract").WidgetsContract, "Create">["body"]>',
+      'satisfies z.ZodType<import("@maxanstey-meridian/rivet-ts").RivetHandlerInput<import("#contract").WidgetsContract, "Create">["body"]>',
     );
     // A use case that reports the body keys it received shows it gets the
     // parsed body (unknown keys stripped), not the raw wire body.
     await fs.writeFile(
       apiSourcePath(outputDirectory, "modules", "widgets", "application", "create.ts"),
-      `export const create = async (input: import("rivet-ts").RivetHandlerInput<import("#contract").WidgetsContract, "Create">): Promise<import("rivet-ts").RivetHandlerResult<import("#contract").WidgetsContract, "Create">> => ({
+      `export const create = async (input: import("@maxanstey-meridian/rivet-ts").RivetHandlerInput<import("#contract").WidgetsContract, "Create">): Promise<import("@maxanstey-meridian/rivet-ts").RivetHandlerResult<import("#contract").WidgetsContract, "Create">> => ({
   id: Object.keys(input.body).sort().join(","),
 });
 `,

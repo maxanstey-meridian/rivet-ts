@@ -1,5 +1,5 @@
+import { rivetHttpError } from "@maxanstey-meridian/rivet-ts/hono";
 import type { ErrorHandler } from "hono";
-import { rivetHttpError } from "rivet-ts/hono";
 import { z } from "zod";
 
 // The wire is untrusted: parse a request body before any use case sees it.

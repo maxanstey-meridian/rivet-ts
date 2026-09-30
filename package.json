@@ -1,7 +1,6 @@
 {
-  "name": "rivet-ts",
+  "name": "@maxanstey-meridian/rivet-ts",
   "version": "0.15.0",
-  "private": true,
   "description": "TypeScript contract extractor for Rivet",
   "keywords": [
     "codegen",
@@ -10,7 +9,12 @@
     "rivet",
     "typescript"
   ],
+  "homepage": "https://maxanstey-meridian.github.io/rivet-ts/",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maxanstey-meridian/rivet-ts.git"
+  },
   "bin": {
     "rivet-reflect-ts": "./dist/interfaces/cli/main.js",
     "rivet-ts": "./dist/interfaces/cli/main.js"
@@ -39,9 +43,12 @@
     },
     "./package.json": "./package.json"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "prepare": "pnpm build",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "prepack": "pnpm build",
     "lint": "oxlint src/ tests/ templates/",
     "lint:fix": "oxlint --fix src/ tests/ templates/",
     "fmt": "oxfmt --write .",

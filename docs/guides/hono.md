@@ -1,10 +1,10 @@
 # Hono
 
-Use `rivet-ts/hono` when you want to mount contract-typed handlers onto a Hono app yourself instead of relying on the scaffolded `apps/api/src/app.ts`.
+Use `@maxanstey-meridian/rivet-ts/hono` when you want to mount contract-typed handlers onto a Hono app yourself instead of relying on the scaffolded `apps/api/src/app.ts`.
 
 ## What it does
 
-`rivet-ts/hono` is the lower-level Hono integration.
+`@maxanstey-meridian/rivet-ts/hono` is the lower-level Hono integration.
 
 You provide:
 
@@ -21,7 +21,7 @@ Routes are selected from the supplied contract. If `group` is provided, an endpo
 ```ts
 import { Hono } from "hono";
 import { contextStorage } from "hono/context-storage";
-import { registerRivetHonoRoutes } from "rivet-ts/hono";
+import { registerRivetHonoRoutes } from "@maxanstey-meridian/rivet-ts/hono";
 import contract from "../generated/api.contract.json";
 import { composeApi } from "./composition.js";
 import { CreateMemberHandler } from "./handlers/create-member.js";
@@ -44,14 +44,14 @@ registerRivetHonoRoutes(app, contract, {
 
 If your application services need ambient access to the current Hono request, install `contextStorage()` in the app and keep that concern in an app-owned abstraction such as `RequestContext`.
 
-`rivet-ts/hono` does not provide request-scoped DI or its own request lifecycle.
+`@maxanstey-meridian/rivet-ts/hono` does not provide request-scoped DI or its own request lifecycle.
 
 ## Handler typing
 
 Handlers can still be typed directly against the contract:
 
 ```ts
-import type { RivetHandler } from "rivet-ts";
+import type { RivetHandler } from "@maxanstey-meridian/rivet-ts";
 import type { MembersContract } from "./contracts.js";
 
 export const listMembers: RivetHandler<MembersContract, "List"> = async () => {
@@ -90,7 +90,7 @@ Array-typed query params collect repeated values (a single value arrives as a on
 
 Not enforced by the adapter:
 
-- **Request body shape.** The body is parsed, not schema-validated; a parseable body with missing, extra, or wrongly-typed fields reaches the handler as-is. (Scaffolded apps layer their own Zod body validation on top of this adapter — schemas beside each module's routes, returning `422 { code: "validation_failed" }` — but that is user-owned app code, not part of `rivet-ts/hono`.)
+- **Request body shape.** The body is parsed, not schema-validated; a parseable body with missing, extra, or wrongly-typed fields reaches the handler as-is. (Scaffolded apps layer their own Zod body validation on top of this adapter — schemas beside each module's routes, returning `422 { code: "validation_failed" }` — but that is user-owned app code, not part of `@maxanstey-meridian/rivet-ts/hono`.)
 - **Response bodies.** The runtime serializes whatever the handler returns — extra fields on returned objects go to the wire. `RivetHandler` types are the only guard.
 - String parameters beyond number/boolean coercion (e.g. enum-typed query params) pass through as raw strings.
 
@@ -157,7 +157,7 @@ registerRivetHonoRoutes<MembersContract>(app, contract, {
 Throw `rivetHttpError(status, data, options)` from a handler to return an explicit non-2xx response:
 
 ```ts
-import { rivetHttpError } from "rivet-ts/hono";
+import { rivetHttpError } from "@maxanstey-meridian/rivet-ts/hono";
 
 throw rivetHttpError(409, { code: "conflict" });
 ```
@@ -168,7 +168,7 @@ For file responses, set `fileResponse: true` and `fileContentType` in the contra
 
 ## When to use it
 
-Use `rivet-ts/hono` when:
+Use `@maxanstey-meridian/rivet-ts/hono` when:
 
 - you already have your own app structure
 - you want to own `app.ts` yourself

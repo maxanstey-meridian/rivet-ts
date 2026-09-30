@@ -10,7 +10,7 @@ import { expectValidContractDocument } from "../contract-schema.js";
 import { runCliCaptured } from "../support/cli.js";
 import { writeContractProject } from "../support/contract-project.js";
 import { parseContractJson } from "../support/lower.js";
-import { AUTHORING_TYPES, PROJECT_ROOT, fixturePath } from "../support/paths.js";
+import { AUTHORING_TYPES, PACKAGE_NAME, PROJECT_ROOT, fixturePath } from "../support/paths.js";
 import { currentRid, installFakeRivet, useThrowawayRivetCache } from "../support/rivet-cache.js";
 import { tempDir } from "../support/temp.js";
 
@@ -66,10 +66,12 @@ export interface TempContract extends Contract<"TempContract"> {
   it("supports the documented installed-consumer package import and CLI bins", async () => {
     const packDirectory = await tempDir("rivet-ts-pack-");
     const consumerDirectory = await tempDir("rivet-ts-consumer-");
+    // `pnpm test` has just built dist/; skip prepack's clean rebuild, which
+    // would delete dist/ under the suites running alongside this one.
     const { stdout: packStdout } = await execFileAsync(
       "pnpm",
       ["pack", "--pack-destination", packDirectory],
-      { cwd: PROJECT_ROOT },
+      { cwd: PROJECT_ROOT, env: { ...process.env, npm_config_ignore_scripts: "true" } },
     );
     const tarballName = packStdout.trim().split("\n").at(-1);
     if (!tarballName) {
@@ -79,9 +81,24 @@ export interface TempContract extends Contract<"TempContract"> {
       ? tarballName
       : path.join(packDirectory, tarballName);
 
+    const packedPaths: string[] = [];
+    await tar.list({ file: tarballPath, onReadEntry: (entry) => packedPaths.push(entry.path) });
+    expect(
+      packedPaths.filter(
+        (packed) =>
+          !/^package\/(?:dist|templates\/example|templates\/shared)\//u.test(packed) &&
+          packed !== "package/package.json" &&
+          packed !== "package/README.md",
+      ),
+    ).toEqual([]);
+
     await fs.writeFile(
       path.join(consumerDirectory, "package.json"),
-      JSON.stringify({ private: true, type: "module", dependencies: { "rivet-ts": tarballPath } }),
+      JSON.stringify({
+        private: true,
+        type: "module",
+        dependencies: { [PACKAGE_NAME]: tarballPath },
+      }),
     );
     // pnpm >= 11 reads overrides from pnpm-workspace.yaml, not the package.json
     // "pnpm" field. Link the heavyweight deps from this repo's node_modules so
@@ -97,16 +114,44 @@ export interface TempContract extends Contract<"TempContract"> {
     const run = (command: string, args: readonly string[]) =>
       execFileAsync(command, args, { cwd: consumerDirectory });
 
-    // hono is an optional peer the consumer lacks: the root entry must not import it.
-    const { stdout: bareImport } = await run("node", [
-      "-e",
-      'import("rivet-ts").then((mod) => console.log(typeof mod.runCli))',
-    ]);
-    expect(bareImport.trim()).toBe("function");
+    // hono is an optional peer the consumer lacks: the root and vite entries must not import it.
+    const typeofExports = async (exports: Readonly<Record<string, string>>) => {
+      const script = Object.entries(exports)
+        .map(([entry, name]) => `console.log(typeof (await import("${entry}")).${name});`)
+        .join("\n");
+      const { stdout } = await run("node", ["--input-type=module", "-e", script]);
+      return stdout.trim().split("\n");
+    };
+    expect(
+      await typeofExports({ [PACKAGE_NAME]: "runCli", [`${PACKAGE_NAME}/vite`]: "rivetTs" }),
+    ).toEqual(["function", "function"]);
 
+    await fs.symlink(
+      path.join(PROJECT_ROOT, "node_modules", "hono"),
+      path.join(consumerDirectory, "node_modules", "hono"),
+      "dir",
+    );
+    expect(await typeofExports({ [`${PACKAGE_NAME}/hono`]: "registerRivetHonoRoutes" })).toEqual([
+      "function",
+    ]);
+
+    const { stdout: cliVersion } = await run("pnpm", ["exec", "rivet-ts", "--version"]);
+    const { version } = JSON.parse(
+      await fs.readFile(path.join(PROJECT_ROOT, "package.json"), "utf8"),
+    ) as { version: string };
+    expect(cliVersion.trim()).toBe(version);
+
+    // Resolved through node_modules, as a consumer's tsconfig resolves it.
+    await fs.writeFile(
+      path.join(consumerDirectory, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: { module: "ESNext", moduleResolution: "bundler", strict: true },
+        include: ["contracts.ts"],
+      }),
+    );
     await fs.writeFile(
       path.join(consumerDirectory, "contracts.ts"),
-      `import type { Contract, Endpoint } from "rivet-ts";
+      `import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
 
 export interface HealthContract extends Contract<"HealthContract"> {
   Ping: Endpoint<{ method: "GET"; route: "/api/ping"; response: void }>;

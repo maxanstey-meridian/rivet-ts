@@ -1,6 +1,6 @@
 {
   // Type-checks the scaffold templates as one api package. The scaffold
-  // resolves "rivet-ts" from npm, "#contract" through the emitted package.json
+  // resolves "@maxanstey-meridian/rivet-ts" from npm, "#contract" through the emitted package.json
   // `imports`, and the generated contract JSON at scaffold time; here they map
   // onto this repo's sources and a checked-in stub.
   "compilerOptions": {
@@ -16,8 +16,8 @@
     "types": ["node"],
     "rootDirs": ["example/apps/api", "shared/apps/api", "typecheck/apps/api"],
     "paths": {
-      "rivet-ts": ["../src/index.ts"],
-      "rivet-ts/hono": ["../src/hono.ts"],
+      "@maxanstey-meridian/rivet-ts": ["../src/index.ts"],
+      "@maxanstey-meridian/rivet-ts/hono": ["../src/hono.ts"],
       "#contract": ["./example/apps/api/src/contracts.ts"]
     }
   },

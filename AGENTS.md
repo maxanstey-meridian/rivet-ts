@@ -2,7 +2,7 @@
 
 TypeScript contract extractor + Hono runtime + scaffolder for Rivet. The .NET
 binary (`Rivet.Tool --from`) is the sole OpenAPI emitter; this package lowers
-TS contracts to contract JSON, serves them via `rivet-ts/hono`, and scaffolds
+TS contracts to contract JSON, serves them via `@maxanstey-meridian/rivet-ts/hono`, and scaffolds
 golden-shape workspaces (`rivet-ts scaffold` / `scaffold-mock`).
 
 - Build before testing: `pnpm test` (= `pnpm build && vitest run`). Tests
@@ -17,8 +17,9 @@ golden-shape workspaces (`rivet-ts scaffold` / `scaffold-mock`).
   capability register, audit snapshot) and `~/Sites/medway/rivet/HANDOVER.md`
   (current state: done/decided/deferred). The 2026-06-10 code review and the
   scaffolder plan shipped in full — git history keeps the retired docs.
-- The version in package.json pins the scaffolded `rivet-ts` dependency
-  (tested); bump it as part of every release tag.
+- The package publishes to npm as `@maxanstey-meridian/rivet-ts`; the version
+  in package.json pins the scaffolded dependency (`^<version>`, tested); bump
+  it as part of every release tag.
 - Accepted TS idiom — routes catch domain errors (decided 2026-06-12): a route
   handler catches its module's domain errors with `instanceof` and maps each
   to its DECLARED contract status (`throw rivetHttpError(409, ...)`); only

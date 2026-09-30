@@ -120,13 +120,13 @@ const indent = (value: string, spaces: number): string => {
     .join("\n");
 };
 
-/** `import("rivet-ts").RivetHandler<Part><Contract, "Endpoint">`, resolvable in any scaffold module. */
+/** `import("@maxanstey-meridian/rivet-ts").RivetHandler<Part><Contract, "Endpoint">`, resolvable in any scaffold module. */
 const handlerType = (
   part: "Input" | "Result",
   contractExportName: string,
   endpointName: string,
 ): string =>
-  `import("rivet-ts").RivetHandler${part}<import("#contract").${contractExportName}, ${JSON.stringify(endpointName)}>`;
+  `import("@maxanstey-meridian/rivet-ts").RivetHandler${part}<import("#contract").${contractExportName}, ${JSON.stringify(endpointName)}>`;
 
 const isSupportedParamSource = (source: string): boolean =>
   source === "body" || source === "route" || source === "query";
@@ -426,7 +426,7 @@ const emitRoutesSource = (group: ContractGroup): string => {
   const bodyHandlers = bodyHandlersOf(group);
   const imports = [
     'import type { Hono } from "hono";',
-    'import { type ContractJson, registerRivetHonoRoutes } from "rivet-ts/hono";',
+    'import { type ContractJson, registerRivetHonoRoutes } from "@maxanstey-meridian/rivet-ts/hono";',
     `import type { ${group.contractExportName} } from "#contract";`,
     ...(bodyHandlers.length > 0 ? ['import { parseBody } from "../../http-errors.js";'] : []),
     ...group.handlers.map(

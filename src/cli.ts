@@ -206,8 +206,9 @@ const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<numb
 
 /**
  * Stages the example contract entry in a temp project whose tsconfig maps
- * "rivet-ts" onto this package's own type surface, so the entry lowers through
- * the REAL pipeline before rivet-ts is installed anywhere. The scaffolded
+ * "@maxanstey-meridian/rivet-ts" onto this package's own type surface, so the
+ * entry lowers through the REAL pipeline before rivet-ts is installed
+ * anywhere. The scaffolded
  * bootstrap artifacts therefore can never drift from what the emitted
  * contracts.ts actually declares.
  */
@@ -234,7 +235,7 @@ const lowerExampleEntry = async () => {
             noEmit: true,
             skipLibCheck: true,
             baseUrl: ".",
-            paths: { "rivet-ts": [packageTypesPath] },
+            paths: { "@maxanstey-meridian/rivet-ts": [packageTypesPath] },
           },
           include: ["contracts.ts"],
         },

@@ -1,5 +1,9 @@
+import {
+  type ContractJson,
+  registerRivetHonoRoutes,
+  rivetHttpError,
+} from "@maxanstey-meridian/rivet-ts/hono";
 import type { Hono } from "hono";
-import { type ContractJson, registerRivetHonoRoutes, rivetHttpError } from "rivet-ts/hono";
 import type { QuotesContract } from "#contract";
 import { parseBody } from "../../http-errors.js";
 import type { AddQuote } from "./application/add-quote.js";
