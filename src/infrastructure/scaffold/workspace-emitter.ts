@@ -239,6 +239,13 @@ const emitPnpmWorkspace = (): string =>
     "  allowedVersions:",
     '    "openapi-typescript>typescript": "6"',
     "",
+    "# Nuxt's toolchain needs these install scripts (esbuild's binary, eslint's",
+    "# resolver, vue-demi's Vue switch); pnpm skips unapproved ones.",
+    "onlyBuiltDependencies:",
+    "  - esbuild",
+    "  - unrs-resolver",
+    "  - vue-demi",
+    "",
   ].join("\n");
 
 const PLUMB_TASK = [

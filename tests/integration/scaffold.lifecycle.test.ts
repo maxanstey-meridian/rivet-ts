@@ -195,6 +195,19 @@ describe("scaffold lifecycle", () => {
     expect(apiPackageJsonSource).toContain('"dexie"');
   });
 
+  // pnpm 10 skips dependency build scripts it has not been told to run, and
+  // says so ("Ignored build scripts") on every install.
+  it("approves the build scripts of the ui's dependencies", async () => {
+    const workspaceSource = await fs.readFile(
+      path.join(outputDirectory, "pnpm-workspace.yaml"),
+      "utf8",
+    );
+
+    expect(workspaceSource).toContain(
+      "onlyBuiltDependencies:\n  - esbuild\n  - unrs-resolver\n  - vue-demi\n",
+    );
+  });
+
   it("typechecks (api + contracts) against the current runtime", async () => {
     await typecheckScaffoldedWorkspace(outputDirectory);
   });
