@@ -164,7 +164,9 @@ export interface TempContract extends Contract<"TempContract"> {
     ) as { version: string };
     expect(cliVersion.trim()).toBe(version);
 
-    // Resolved through node_modules, as a consumer's tsconfig resolves it.
+    // Resolved through node_modules, as a consumer's tsconfig resolves it. No
+    // skipLibCheck, and the optional vite peer is not installed: the root entry's
+    // declarations must not reach vite's types.
     await fs.writeFile(
       path.join(consumerDirectory, "tsconfig.json"),
       JSON.stringify({
@@ -174,8 +176,6 @@ export interface TempContract extends Contract<"TempContract"> {
           strict: true,
           noEmit: true,
           noUnusedLocals: true,
-          // As consumers (and the scaffolds) run it: dist/vite.d.ts imports the optional vite peer.
-          skipLibCheck: true,
         },
         include: ["contracts.ts", "authoring.ts"],
       }),

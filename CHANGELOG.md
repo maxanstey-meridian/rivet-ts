@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — breaking
+
+- The package root no longer re-exports the Vite plugin: import `rivetTs` and `RivetTsVitePluginOptions` from `@maxanstey-meridian/rivet-ts/vite`. The root's declarations pulled in `vite`'s types, so a consumer without the optional `vite` peer and without `skipLibCheck` failed `tsc` (TS2307 in `dist/vite.d.ts`) just by importing `Contract` from the root.
+
 ## Unreleased — fixes
 
 - The scaffolded `Taskfile.yml` (`scaffold-mock`) passes `--security <scheme>=bearer` to Rivet for every scheme the contract's endpoints secure with, so `task generate` on a contract using `security: { scheme: "admin" }` no longer fails with RIV2002.
