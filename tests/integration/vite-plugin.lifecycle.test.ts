@@ -8,6 +8,19 @@ import { tempDir } from "../support/temp.js";
 const EMPTY_SPEC = { openapi: "3.1.0", info: { title: "t", version: "1" }, paths: {} };
 
 describe("vite plugin lifecycle", () => {
+  it("runs against a vite major that the package's vite peer range admits", async () => {
+    const readManifest = async (directory: string) =>
+      JSON.parse(await fs.readFile(path.join(directory, "package.json"), "utf8")) as {
+        readonly version: string;
+        readonly peerDependencies: Readonly<Record<string, string>>;
+      };
+    const { peerDependencies } = await readManifest(PROJECT_ROOT);
+    const { version } = await readManifest(path.join(PROJECT_ROOT, "node_modules", "vite"));
+    const [major] = version.split(".");
+
+    expect(peerDependencies["vite"]?.split(" || ")).toContain(`^${major}.0.0`);
+  });
+
   it("generates contract artifacts and local transport for a scaffolded api package", async () => {
     const projectRoot = PROJECT_ROOT;
     // realpath: macOS tmpdir lives behind the /var -> /private/var symlink,
