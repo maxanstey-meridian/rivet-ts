@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import * as tar from "tar";
+import ts from "typescript";
 import { lowerContracts } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { expectValidContractDocument } from "../contract-schema.js";
 import { runCliCaptured } from "../support/cli.js";
@@ -15,6 +16,26 @@ import { currentRid, installFakeRivet, useThrowawayRivetCache } from "../support
 import { tempDir } from "../support/temp.js";
 
 const execFileAsync = promisify(execFile);
+
+/** The authoring type names `src/index.ts` re-exports, which users write contracts against. */
+const authoringTypeExports = async (): Promise<readonly string[]> => {
+  const indexPath = path.join(PROJECT_ROOT, "src", "index.ts");
+  const index = ts.createSourceFile(
+    indexPath,
+    await fs.readFile(indexPath, "utf8"),
+    ts.ScriptTarget.Latest,
+  );
+  return index.statements.flatMap((statement) =>
+    ts.isExportDeclaration(statement) &&
+    statement.moduleSpecifier !== undefined &&
+    ts.isStringLiteral(statement.moduleSpecifier) &&
+    statement.moduleSpecifier.text === "./domain/authoring-types.js" &&
+    statement.exportClause !== undefined &&
+    ts.isNamedExports(statement.exportClause)
+      ? statement.exportClause.elements.map((element) => element.name.text)
+      : [],
+  );
+};
 
 describe("CLI lowering", () => {
   it("writes the lowered contract JSON to --out, creating missing parent directories", async () => {
@@ -147,10 +168,79 @@ export interface TempContract extends Contract<"TempContract"> {
     await fs.writeFile(
       path.join(consumerDirectory, "tsconfig.json"),
       JSON.stringify({
-        compilerOptions: { module: "ESNext", moduleResolution: "bundler", strict: true },
-        include: ["contracts.ts"],
+        compilerOptions: {
+          module: "ESNext",
+          moduleResolution: "bundler",
+          strict: true,
+          noEmit: true,
+          noUnusedLocals: true,
+          // As consumers (and the scaffolds) run it: dist/vite.d.ts imports the optional vite peer.
+          skipLibCheck: true,
+        },
+        include: ["contracts.ts", "authoring.ts"],
       }),
     );
+    // Every authoring type the package exports, imported by name: `noUnusedLocals`
+    // fails the check until a new export gets a usage below.
+    const authoringExports = await authoringTypeExports();
+    await fs.writeFile(
+      path.join(consumerDirectory, "authoring.ts"),
+      `import type { ${authoringExports.join(", ")} } from "${PACKAGE_NAME}";
+
+type MemberId = Brand<string, "MemberId">;
+type Email = Format<string, "email">;
+type NewMember = { email: Email };
+
+const method: EndpointAuthoringHttpMethod = "POST";
+const notFound: EndpointErrorAuthoringSpec = { status: 404, description: "Not found" };
+const admin: EndpointSecurityAuthoringSpec = { scheme: "admin" };
+const scalar: EndpointExampleAuthoringScalar = "jane@example.com";
+const value: EndpointExampleAuthoringValue = { email: scalar, tags: ["a", 1, null] };
+const jane: EndpointExampleAuthoringReference<{ email: string }> = { email: "jane@example.com" };
+const descriptor: EndpointRequestExampleAuthoringDescriptor = { name: "jane", mediaType: "application/json" };
+const inline: InlineEndpointRequestExampleAuthoringSpec<{ email: string }> = { ...descriptor, json: jane };
+const ref: RefEndpointRequestExampleAuthoringSpec<{ email: string }> = {
+  componentExampleId: "Jane",
+  resolvedJson: jane,
+};
+const requestExamples: readonly EndpointRequestExampleAuthoringSpec<{ email: string }>[] = [inline, ref];
+const created: EndpointResponseExamplesAuthoringSpec<{ email: string }> = {
+  status: 201,
+  examples: [jane, inline],
+};
+const spec: EndpointAuthoringSpec = {
+  method,
+  route: "/api/members",
+  errors: [notFound],
+  security: admin,
+  requestExamples,
+  responseExamples: [created],
+};
+
+export interface MembersContract extends Contract<"Members"> {
+  Create: Endpoint<{
+    method: "POST";
+    route: "/api/members";
+    input: NewMember;
+    response: { id: MemberId; email: Email };
+    errors: [{ status: 404; description: "Not found" }];
+    security: { scheme: "admin" };
+  }>;
+}
+
+// @ts-expect-error a plain string is not a branded id
+const unbranded: MemberId = "mem_1";
+
+export const usages = [spec, value, unbranded];
+`,
+    );
+    // tsc reports on stdout; a failure surfaces it instead of a bare exit code.
+    await expect(
+      execFileAsync(path.join(PROJECT_ROOT, "node_modules", ".bin", "tsc"), [
+        "-p",
+        path.join(consumerDirectory, "tsconfig.json"),
+      ]).catch((error: { stdout: string }) => error.stdout),
+    ).resolves.toEqual({ stdout: "", stderr: "" });
     await fs.writeFile(
       path.join(consumerDirectory, "contracts.ts"),
       `import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
