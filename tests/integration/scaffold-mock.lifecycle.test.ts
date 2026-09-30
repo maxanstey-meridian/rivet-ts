@@ -1,12 +1,22 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
+import { resolveRivetBinaryConfig } from "../../src/config/rivet-binary.js";
 import { RivetContractDocument } from "../../src/domain/rivet-contract.js";
 import { emitMockProject } from "../../src/infrastructure/scaffold/mock-project-emitter.js";
 import { lowerContracts } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
+import { ensureRivetBinary } from "../../src/infrastructure/vite/rivet-binary.js";
 import { runCliCaptured } from "../support/cli.js";
 import { writeContractProject } from "../support/contract-project.js";
 import { parseContractJson } from "../support/lower.js";
-import { AUTHORING_TYPES, linkPackage, PACKAGE_NAME, PROJECT_ROOT } from "../support/paths.js";
+import {
+  AUTHORING_TYPES,
+  fixturePath,
+  linkPackage,
+  PACKAGE_NAME,
+  PROJECT_ROOT,
+} from "../support/paths.js";
 import {
   PLUMB_EXECUTABLE,
   PLUMB_NOT_FOUND,
@@ -14,6 +24,8 @@ import {
   typecheckScaffoldedWorkspace,
 } from "../support/scaffold-oracles.js";
 import { tempDir } from "../support/temp.js";
+
+const execFileAsync = promisify(execFile);
 
 type ScaffoldedApp = {
   request: (input: string, init?: RequestInit) => Promise<Response>;
@@ -461,6 +473,33 @@ export interface FilesContract extends Contract<"Files"> {
     const download = await app.request("/api/files/download");
     expect(download.headers.get("content-type")).toContain("application/pdf");
     await expect(download.text()).resolves.toBe("example");
+  });
+
+  it("passes every security scheme the contract uses to the Taskfile's Rivet step", async () => {
+    const outputDirectory = path.join(await tempDir("rivet-ts-scaffold-mock-secure-"), "mock-app");
+    const { exitCode } = await runCliCaptured([
+      "scaffold-mock",
+      "--entry",
+      fixturePath("members-contract", "contracts.ts"),
+      "--out",
+      outputDirectory,
+    ]);
+    expect(exitCode).toBe(0);
+
+    const taskfile = await fs.readFile(path.join(outputDirectory, "Taskfile.yml"), "utf8");
+    const rivetStep = /rivet-ts rivet -- (?<arguments>.+)$/mu.exec(taskfile)?.groups?.["arguments"];
+    expect(rivetStep).toContain("--security admin=bearer");
+
+    // The step's own arguments, run by the pinned release as `task generate` runs them.
+    const rivetArguments = String(rivetStep).split(" ");
+    await expect(
+      execFileAsync(await ensureRivetBinary(resolveRivetBinaryConfig()), rivetArguments, {
+        cwd: path.join(outputDirectory, "apps", "api"),
+      }),
+    ).resolves.toBeDefined();
+    await expect(
+      fs.access(path.join(outputDirectory, "packages", "contracts", "generated", "openapi.json")),
+    ).resolves.toBeUndefined();
   });
 
   it("scaffolds from a bare contract file without tsconfig or node_modules", async () => {

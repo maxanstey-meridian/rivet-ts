@@ -244,6 +244,16 @@ const PLUMB_TASK = [
   "",
 ];
 
+/**
+ * `--security <scheme>=bearer` for each scheme the contract's endpoints use:
+ * Rivet refuses a secured endpoint whose scheme the command line does not
+ * define (RIV2002), and a contract names its schemes but not their kind.
+ */
+export const bearerSecurityArguments = (document: RivetContractDocument): readonly string[] =>
+  [...new Set(document.endpoints.flatMap(({ security }) => security?.scheme ?? []))].flatMap(
+    (scheme) => ["--security", `${scheme}=bearer`],
+  );
+
 const emitTaskfile = (workspace: Workspace): string => {
   const scope = workspace.packageScope;
 
@@ -301,7 +311,11 @@ const emitTaskfile = (workspace: Workspace): string => {
     "    desc: Regenerate the contracts package from the API contract entry",
     "    cmds:",
     `      - pnpm --filter ${scope}/api exec rivet-ts --entry src/${workspace.contractEntryRelativePath} --out generated/api.contract.json`,
-    `      - pnpm --filter ${scope}/api exec rivet-ts rivet -- --from generated/api.contract.json --output ../../packages/contracts/generated`,
+    `      - ${[
+      `pnpm --filter ${scope}/api exec rivet-ts rivet --`,
+      "--from generated/api.contract.json --output ../../packages/contracts/generated",
+      ...bearerSecurityArguments(workspace.document),
+    ].join(" ")}`,
     `      - pnpm --filter ${scope}/api exec rivet-ts generate --generated-root ../../packages/contracts/generated`,
     "",
     "  test:",

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — fixes
+
+- The scaffolded `Taskfile.yml` (`scaffold-mock`) passes `--security <scheme>=bearer` to Rivet for every scheme the contract's endpoints secure with, so `task generate` on a contract using `security: { scheme: "admin" }` no longer fails with RIV2002.
+
 ## 0.16.0 — breaking
 
 - The package is published to npm as `@maxanstey-meridian/rivet-ts` and installs with `pnpm add -D @maxanstey-meridian/rivet-ts` instead of from a `github:maxanstey-meridian/rivet-ts#v<version>` Git tag. Imports change with it: `rivet-ts`, `rivet-ts/vite`, `rivet-ts/hono` and `rivet-ts/package.json` become `@maxanstey-meridian/rivet-ts`, `@maxanstey-meridian/rivet-ts/vite`, `@maxanstey-meridian/rivet-ts/hono` and `@maxanstey-meridian/rivet-ts/package.json`. The `rivet-ts` and `rivet-reflect-ts` commands keep their names. A contract lowered without a tsconfig resolves `@maxanstey-meridian/rivet-ts` (no longer `rivet-ts`) to the package's own types.

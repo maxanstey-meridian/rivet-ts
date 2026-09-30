@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { resolveRivetBinaryConfig } from "../../src/config/rivet-binary.js";
+import { bearerSecurityArguments } from "../../src/infrastructure/scaffold/workspace-emitter.js";
 import { ensureRivetBinary } from "../../src/infrastructure/vite/rivet-binary.js";
 import { type ContractJson, lowerFixture } from "../support/lower.js";
 import { PROJECT_ROOT, fixturePath } from "../support/paths.js";
@@ -54,8 +55,6 @@ const emitOpenApi = async (
   const outputDirectory = await tempDir("rivet-ts-rivet-from-");
   const contractPath = path.join(outputDirectory, "contract.json");
   await fs.writeFile(contractPath, `${lowered.toJson()}\n`);
-  // An endpoint's `.Secure(name)` needs a scheme definition on the command line (RIV2002).
-  const schemes = new Set(document.endpoints.flatMap(({ security }) => security?.scheme ?? []));
 
   const { stderr } = await execFileAsync(rivetBinary, [
     "--from",
@@ -64,7 +63,7 @@ const emitOpenApi = async (
     outputDirectory,
     "--openapi",
     "openapi.json",
-    ...[...schemes].flatMap((scheme) => ["--security", `${scheme}=bearer`]),
+    ...bearerSecurityArguments(lowered.document),
   ]);
 
   const unexpectedStderr = stderr
