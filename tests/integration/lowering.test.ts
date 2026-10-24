@@ -317,6 +317,7 @@ export interface EventsContract extends Contract<"Events"> {
       await lowerSource(`import type { Contract, Endpoint, Format } from "${AUTHORING_TYPES}";
 
 export interface EventsContract extends Contract<"Events"> {
+  // @ts-expect-error Format takes only a primitive; lowering refuses it too, for older copies
   Get: Endpoint<{ ${spec} }>;
 }
 `);
@@ -324,7 +325,7 @@ export interface EventsContract extends Contract<"Events"> {
     expect(lowered.diagnostics).toEqual([
       errorDiagnostic({
         code: "UNSUPPORTED_FORMAT_TARGET",
-        line: 4,
+        line: 5,
         message: expect.stringContaining("Format<Date"),
       }),
     ]);
@@ -378,6 +379,26 @@ export interface UsersContract extends Contract<"Users"> {
       expect(lowered.contracts[0]?.endpoints).toEqual([]);
     },
   );
+
+  it.each([200, 204, 299])("reports an error entry with success status %i", async (status) => {
+    const { lowered } = await lowerSource(`
+import type { Contract, Endpoint } from "${AUTHORING_TYPES}";
+
+export interface UsersContract extends Contract<"Users"> {
+  Create: Endpoint<{ method: "POST"; route: "/api/users"; response: { id: string }; errors: [{ status: ${status} }] }>;
+}
+`);
+
+    expect(lowered.diagnostics).toEqual([
+      errorDiagnostic({
+        code: "INVALID_ERROR_STATUS",
+        line: 5,
+        message: expect.stringContaining(
+          `declares an error with status ${status}, a success status`,
+        ),
+      }),
+    ]);
+  });
 
   it("reads an endpoint spec alias declared in another file", async () => {
     const { lowered, document } = await lowerSource(

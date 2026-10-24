@@ -562,6 +562,18 @@ const readErrorResponses = (
       );
       continue;
     }
+    // An endpoint has one success response, and the runtime and the mock take
+    // the first 2xx as it: a 2xx error would be served as the success.
+    if (status >= 200 && status < 300) {
+      ctx.diagnostics.push(
+        createNodeDiagnostic(
+          statusNode ?? element,
+          "INVALID_ERROR_STATUS",
+          `Endpoint "${endpoint.contractName}.${endpoint.name}" declares an error with status ${status}, a success status; declare it as successStatus, or give the error a non-2xx status.`,
+        ),
+      );
+      continue;
+    }
 
     const responseNode = propertyMap.get("response");
     const responseType = lowerOptionalTypeNode(ctx, responseNode);

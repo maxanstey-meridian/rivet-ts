@@ -21,4 +21,3 @@ export {
   type DiscoveredEndpoint,
 } from "./domain/rivet-contract-lowering-result.js";
 export { lowerContracts } from "./infrastructure/typescript/typescript-rivet-contract-lowerer.js";
-export { runCli } from "./cli.js";

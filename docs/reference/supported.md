@@ -8,27 +8,27 @@ Every endpoint is an `Endpoint<...>` whose spec is a type literal or a type alia
 
 Supported keys:
 
-| Key                | Description                                                      |
-| ------------------ | ---------------------------------------------------------------- |
-| `method`           | HTTP method                                                      |
-| `route`            | Route template, for example `"/api/members/{id}"`                |
-| `input`            | Request body type                                                |
-| `params`           | Explicit route params shape                                      |
-| `query`            | Explicit query params shape                                      |
-| `response`         | Success response type                                            |
-| `successStatus`    | Success status override: a registered 2xx (200–208, 226)         |
-| `errors`           | Error response array or tuple                                    |
-| `summary`          | Short summary                                                    |
-| `description`      | Long description                                                 |
-| `security`         | Security scheme reference                                        |
-| `anonymous`        | Public endpoint marker                                           |
-| `fileResponse`     | File download response metadata                                  |
-| `fileContentType`  | File MIME type                                                   |
-| `queryAuth`        | Query-string auth metadata, either `true` or a string token name |
-| `formEncoded`      | `application/x-www-form-urlencoded` input                        |
-| `acceptsFile`      | Multipart upload marker                                          |
-| `requestExamples`  | Request example array or tuple                                   |
-| `responseExamples` | Response example array or tuple                                  |
+| Key                | Description                                                           |
+| ------------------ | --------------------------------------------------------------------- |
+| `method`           | HTTP method                                                           |
+| `route`            | Route template, for example `"/api/members/{id}"`                     |
+| `input`            | Request body type                                                     |
+| `params`           | Explicit route params shape                                           |
+| `query`            | Explicit query params shape                                           |
+| `response`         | Success response type                                                 |
+| `successStatus`    | Success status override: a registered 2xx (200–208, 226)              |
+| `errors`           | Error response array or tuple; a 2xx status is `INVALID_ERROR_STATUS` |
+| `summary`          | Short summary                                                         |
+| `description`      | Long description                                                      |
+| `security`         | Security scheme reference                                             |
+| `anonymous`        | Public endpoint marker                                                |
+| `fileResponse`     | File download response metadata                                       |
+| `fileContentType`  | File MIME type                                                        |
+| `queryAuth`        | Query-string auth metadata, either `true` or a string token name      |
+| `formEncoded`      | `application/x-www-form-urlencoded` input                             |
+| `acceptsFile`      | Multipart upload marker                                               |
+| `requestExamples`  | Request example array or tuple                                        |
+| `responseExamples` | Response example array or tuple                                       |
 
 Legacy singular example keys also still exist:
 

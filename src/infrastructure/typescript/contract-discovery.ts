@@ -1,7 +1,12 @@
 // Finds the entry file's contracts and parses each endpoint spec once.
 import ts from "typescript";
 import type { EndpointAuthoringSuccessStatus } from "../../domain/authoring-types.js";
-import { isSuccessStatus, SUCCESS_STATUS_CODES, type HttpMethod } from "../../domain/contract.js";
+import {
+  isHttpMethod,
+  isSuccessStatus,
+  SUCCESS_STATUS_CODES,
+  type HttpMethod,
+} from "../../domain/contract.js";
 import type { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import { toLoweredEndpointName } from "../../domain/handler-types.js";
 import type { DiscoveredContract } from "../../domain/rivet-contract-lowering-result.js";
@@ -47,16 +52,6 @@ type DiscoveredContractSpec = {
   sourceFilePath: string;
   endpoints: readonly DiscoveredEndpointSpec[];
 };
-
-const HTTP_METHODS: ReadonlySet<string> = new Set<HttpMethod>([
-  "GET",
-  "POST",
-  "PUT",
-  "PATCH",
-  "DELETE",
-]);
-
-const isHttpMethod = (value: string): value is HttpMethod => HTTP_METHODS.has(value);
 
 const getContractHeritageType = (
   node: ts.InterfaceDeclaration,

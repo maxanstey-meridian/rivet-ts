@@ -238,7 +238,10 @@ export function brand(value: unknown): unknown {
   return value;
 }
 
-/** Format metadata on a primitive. Not nominal: any `TInner` value is assignable. */
-export type Format<TInner, TFormat extends string> = TInner & {
+/**
+ * Format metadata on a primitive. Not nominal: any `TInner` value is assignable.
+ * Only a primitive takes a format: a `Date` already lowers to a `date-time` string.
+ */
+export type Format<TInner extends string | number | boolean, TFormat extends string> = TInner & {
   readonly __format?: TFormat;
 };

@@ -2,7 +2,7 @@
 
 ## Unreleased — breaking
 
-- The reflection pipeline moves off the root entry to `@maxanstey-meridian/rivet-ts/tooling`: `lowerContracts`, `runCli`, `RivetContractLoweringResult`, `RivetContractDocument` and the other document classes, `ExtractionDiagnostic`. The root keeps the authoring types, `brand()` and the handler and runtime types, and now loads no other package at runtime. It used to load the TypeScript compiler, `tar` and the CLI, which a `scaffold-mock` API (run in the browser) pulled in the moment a mock imported `brand`.
+- The reflection pipeline moves off the root entry to `@maxanstey-meridian/rivet-ts/tooling`: `lowerContracts`, `RivetContractLoweringResult`, `RivetContractDocument` and the other document classes, `ExtractionDiagnostic`. `runCli` is no longer exported; the `rivet-ts` command is the CLI. The root keeps the authoring types, `brand()` and the handler and runtime types, and now loads no other package at runtime. It used to load the TypeScript compiler, `tar` and the CLI, which a `scaffold-mock` API (run in the browser) pulled in the moment a mock imported `brand`.
 
 - `Format<T, "name">` is no longer nominal: its phantom `__format` property is optional, so any `T` is assignable (`const id: Format<string, "uuid"> = "…"`). The docs called it "primitive plus format metadata", but nothing could construct one without an `as Format<…>` cast, which plumb's golden oxlint rules now reject. Existing casts still compile and can be deleted.
 
@@ -13,6 +13,12 @@
 - `successStatus` takes only a registered 2xx status (200–208, 226; the new `EndpointAuthoringSuccessStatus` type), and lowering reports any other as `INVALID_SUCCESS_STATUS`, as it does a union such as `201 | 204` (TypeScript accepts it; lowering used to drop it for the method's default, so the handler's typed status was not the one sent). A `successStatus: 299` lowered and Hono served it; a `successStatus: 404` lowered as the success response, and Hono served the method's default instead (200; 201 for POST; 204 for DELETE, dropping any body).
 
 - `RivetInvokable` is gone: it was `RivetHandlerOwner` under another name. Use `RivetHandlerOwner<Contract, "Endpoint">` (from the root or `/hono`). `/hono`'s `RivetInvokableClass` is renamed `RivetHandlerOwnerClass` to match.
+
+- An `errors` entry with a 2xx status is a lowering error, `INVALID_ERROR_STATUS`. An endpoint has one success response, and the Hono runtime and `scaffold-mock` took the first 2xx as it, so `errors: [{ status: 200 }]` on a POST was served, and mocked, as the success in place of the 201.
+
+- `Format<T, "name">` takes only a primitive `T` (`string`, `number` or `boolean`), so `Format<Date, "date">` or `Format<{ … }, "x">` is a TypeScript error where you write it. Lowering refused them already.
+
+- `registerRivetHonoRoutes` rejects, at registration, an endpoint whose HTTP method is not GET, POST, PUT, PATCH or DELETE. One such method list now backs the authoring type, lowering and the runtime.
 
 ## Unreleased — fixes
 

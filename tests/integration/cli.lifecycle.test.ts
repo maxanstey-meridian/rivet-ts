@@ -163,7 +163,7 @@ export interface TempContract extends Contract<"TempContract"> {
     expect(
       await typeofExports({
         [PACKAGE_NAME]: "brand",
-        [`${PACKAGE_NAME}/tooling`]: "runCli",
+        [`${PACKAGE_NAME}/tooling`]: "lowerContracts",
         [`${PACKAGE_NAME}/vite`]: "rivetTs",
       }),
     ).toEqual(["function", "function", "function"]);

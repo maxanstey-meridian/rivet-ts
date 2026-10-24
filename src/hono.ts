@@ -4,8 +4,10 @@ import type { ContentfulStatusCode, ContentlessStatusCode } from "hono/utils/htt
 import type { EndpointAuthoringSuccessStatus } from "./domain/authoring-types.js";
 import {
   getDefaultSuccessStatus,
+  isHttpMethod,
   isSuccessStatus,
   SUCCESS_STATUS_CODES,
+  type HttpMethod,
 } from "./domain/contract.js";
 import {
   asRivetHandler,
@@ -333,14 +335,15 @@ const buildHandlerInput = async (
   return input;
 };
 
-const getSuccessStatus = (endpoint: ContractEndpointJson): EndpointAuthoringSuccessStatus => {
+const getSuccessStatus = (
+  endpoint: ContractEndpointJson,
+  method: HttpMethod,
+): EndpointAuthoringSuccessStatus => {
   const successResponse = endpoint.responses.find(
     (response) => response.statusCode >= 200 && response.statusCode < 300,
   );
   // No 2xx entry means a void response, so DELETE falls back to 204.
-  const status =
-    successResponse?.statusCode ??
-    getDefaultSuccessStatus(endpoint.httpMethod.toUpperCase(), false);
+  const status = successResponse?.statusCode ?? getDefaultSuccessStatus(method, false);
   if (!isSuccessStatus(status)) {
     throw createHandlerResolutionError(
       `Endpoint "${endpoint.name}" declares success status ${status}, which is not a registered 2xx status (${SUCCESS_STATUS_CODES.join(", ")}).`,
@@ -530,18 +533,24 @@ export const registerRivetHonoRoutes = <TContract, TApp extends HonoRouteTarget 
       );
     }
 
-    const status = getSuccessStatus(endpoint);
+    const method = endpoint.httpMethod.toUpperCase();
+    if (!isHttpMethod(method)) {
+      throw createHandlerResolutionError(
+        `Endpoint "${endpoint.name}" declares HTTP method "${endpoint.httpMethod}", which is not one of GET, POST, PUT, PATCH, DELETE.`,
+      );
+    }
+    const status = getSuccessStatus(endpoint, method);
     const honoRoute = toHonoRoute(endpoint);
 
-    const routeKey = `${endpoint.httpMethod.toUpperCase()} ${honoRoute}`;
+    const routeKey = `${method} ${honoRoute}`;
     if (registeredRouteKeys.has(routeKey)) {
       throw createHandlerResolutionError(
-        `Duplicate route registration: ${endpoint.httpMethod.toUpperCase()} ${endpoint.routeTemplate} is declared by multiple selected endpoints.`,
+        `Duplicate route registration: ${method} ${endpoint.routeTemplate} is declared by multiple selected endpoints.`,
       );
     }
     registeredRouteKeys.add(routeKey);
 
-    app.on(endpoint.httpMethod.toUpperCase(), [honoRoute], ...middleware, async (context) => {
+    app.on(method, [honoRoute], ...middleware, async (context) => {
       try {
         const handler = resolveHandlerEntry(
           endpoint.name,

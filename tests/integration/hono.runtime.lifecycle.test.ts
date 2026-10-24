@@ -193,6 +193,22 @@ describe("handler resolution", () => {
     ).toThrow("Unused handlers were provided: Unknown.");
   });
 
+  it("fails fast on an HTTP method the contract cannot declare", () => {
+    const unknownMethod: ContractJson = {
+      ...directory,
+      endpoints: directory.endpoints.map((endpoint) =>
+        endpoint.name === "health" ? { ...endpoint, httpMethod: "OPTIONS" } : endpoint,
+      ),
+    };
+
+    expect(() =>
+      registerRivetHonoRoutes<DirectoryContract>(new Hono(), unknownMethod, {
+        group: "directory",
+        handlers: directoryHandlers,
+      }),
+    ).toThrow('Endpoint "health" declares HTTP method "OPTIONS"');
+  });
+
   it("fails fast on a success status Hono does not register", () => {
     const unregistered: ContractJson = {
       ...directory,

@@ -1,6 +1,21 @@
-import type { EndpointAuthoringSuccessStatus } from "./authoring-types.js";
+import type {
+  EndpointAuthoringHttpMethod,
+  EndpointAuthoringSuccessStatus,
+} from "./authoring-types.js";
 
-export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+export type HttpMethod = EndpointAuthoringHttpMethod;
+
+// Keyed by the authoring union, so the compiler rejects a missing or extra method.
+const HTTP_METHODS: Readonly<Record<HttpMethod, true>> = {
+  GET: true,
+  POST: true,
+  PUT: true,
+  PATCH: true,
+  DELETE: true,
+};
+
+export const isHttpMethod = (value: string): value is HttpMethod =>
+  Object.hasOwn(HTTP_METHODS, value);
 
 // Keyed by the authoring union, so the compiler rejects a missing or extra status.
 const SUCCESS_STATUSES: Readonly<Record<EndpointAuthoringSuccessStatus, true>> = {
@@ -29,7 +44,7 @@ export const isBodyForbiddenStatus = (status: number): boolean =>
 // DefaultSuccessStatus in runtime-types.ts and the .NET extractor:
 // POST -> 201; DELETE with a void response -> 204; everything else -> 200.
 export const getDefaultSuccessStatus = (
-  httpMethod: string,
+  httpMethod: HttpMethod,
   hasResponseBody: boolean,
 ): EndpointAuthoringSuccessStatus => {
   switch (httpMethod) {

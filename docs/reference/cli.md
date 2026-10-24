@@ -3,7 +3,7 @@
 The package exposes two identical binaries — `rivet-ts` and the legacy alias `rivet-reflect-ts` — plus these subpath exports:
 
 - `@maxanstey-meridian/rivet-ts` — authoring types, `brand()`, handler and runtime types. It loads no other package at runtime, so contracts, handlers and browser-run mocks can import it
-- `@maxanstey-meridian/rivet-ts/tooling` — the reflection pipeline (`lowerContracts`, `runCli`, the contract document classes), which loads the TypeScript compiler
+- `@maxanstey-meridian/rivet-ts/tooling` — the reflection pipeline (`lowerContracts`, the contract document classes), which loads the TypeScript compiler
 - `@maxanstey-meridian/rivet-ts/vite` — the Vite plugin (only here: the root does not re-export it, so importing the root needs no `vite`)
 - `@maxanstey-meridian/rivet-ts/hono` — the Hono server runtime
 - `@maxanstey-meridian/rivet-ts/package.json`
