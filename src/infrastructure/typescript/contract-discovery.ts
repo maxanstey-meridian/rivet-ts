@@ -352,7 +352,7 @@ const discoverEndpoint = (
         createNodeDiagnostic(
           successStatusNode,
           "INVALID_SUCCESS_STATUS",
-          `Endpoint "${endpointName}" declares successStatus ${successStatusNode.getText()}, which is not a single registered 2xx status (${SUCCESS_STATUS_CODES.join(", ")}).`,
+          `Endpoint "${endpointName}" declares successStatus ${status ?? successStatusNode.getText()}, which is not a single registered 2xx status (${SUCCESS_STATUS_CODES.join(", ")}).`,
         ),
       );
       return null;

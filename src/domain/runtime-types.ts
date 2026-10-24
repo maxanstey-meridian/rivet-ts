@@ -11,9 +11,9 @@ type SuccessResponseType<TSpec> = TSpec extends { readonly fileResponse: true }
     ? TResponse
     : void;
 
-// Default success-status table, the type-level twin of getDefaultSuccessStatus
-// in contract.ts (shared by the lowerer and the Hono adapter) and the .NET extractor: POST -> 201; DELETE with a void response -> 204;
-// everything else -> 200.
+// Type-level twin of getDefaultSuccessStatus in contract.ts (used by the
+// lowerer and the Hono adapter), matching the .NET extractor: POST -> 201;
+// DELETE with a void response -> 204; everything else -> 200.
 type DefaultSuccessStatus<TSpec> = TSpec extends { readonly method: "POST" }
   ? 201
   : TSpec extends { readonly method: "DELETE" }

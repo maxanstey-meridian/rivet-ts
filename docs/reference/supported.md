@@ -62,7 +62,7 @@ Parameter lowering has two modes:
 | inline object types                         | Supported as anonymous object shapes, including optional properties                                  |
 | `Brand<string, "Email">`                    | Branded primitives; `brand("jane@example.com")` brands a value without validating it (mocks, tests)  |
 | `Format<string, "uuid">`                    | Primitive plus format metadata; any value of the primitive is assignable, no cast needed             |
-| `Date`                                      | `date-time` string. Responses only; in a request, `DATE_IN_REQUEST`                                  |
+| `Date`                                      | `date-time` string on the wire. Responses only: a request reports `DATE_IN_REQUEST`                  |
 | generic types                               | Contract JSON preserves generic refs and type arguments                                              |
 | optional properties on named object shapes  | Preserved                                                                                            |
 | plain `readonly` properties                 | Preserved as property-level type information                                                         |

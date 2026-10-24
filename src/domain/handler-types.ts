@@ -129,13 +129,8 @@ export type RivetInvokableHandler<
   ? () => Promise<RivetHandlerResult<TContract, TKey>>
   : (input: TInput) => Promise<RivetHandlerResult<TContract, TKey>>;
 
+/** A handler object with a `handle` or `invoke` method for one endpoint. */
 export type RivetHandlerOwner<
-  TContract,
-  TKey extends ContractEndpointKey<TContract>,
-  TInput extends RivetHandlerInput<TContract, TKey> = RivetHandlerInput<TContract, TKey>,
-> = RivetHandlerOwnerWithInput<TContract, TKey, TInput>;
-
-export type RivetHandlerOwnerWithInput<
   TContract,
   TKey extends ContractEndpointKey<TContract>,
   TInput extends RivetHandlerInput<TContract, TKey> = RivetHandlerInput<TContract, TKey>,
@@ -144,18 +139,12 @@ export type RivetHandlerOwnerWithInput<
   invoke?: RivetInvokableHandler<TContract, TKey, TInput>;
 };
 
-/** A handler object with a `handle` or `invoke` method for one endpoint. */
-export type RivetInvokable<
-  TContract,
-  TKey extends ContractEndpointKey<TContract>,
-> = RivetHandlerOwnerWithInput<TContract, TKey>;
-
 export function asRivetHandler<
   TContract,
   TKey extends ContractEndpointKey<TContract>,
   TInput extends RivetHandlerInput<TContract, TKey> = RivetHandlerInput<TContract, TKey>,
 >(
-  handlerOwner: RivetHandlerOwnerWithInput<TContract, TKey, TInput>,
+  handlerOwner: RivetHandlerOwner<TContract, TKey, TInput>,
 ): RivetInvokableHandler<TContract, TKey, TInput>;
 // `bind` cannot see through the conditional `RivetInvokableHandler`, so the
 // overload above is the typed contract and this body works on what it checks.

@@ -503,10 +503,13 @@ export interface UploadsContract extends Contract<"Uploads"> {
     );
     expect(stderr).toContain(`warning: [SCAFFOLD_UNSUPPORTED_PARAM_SOURCE] ${useCasePath} `);
     expect(stderr).toContain('takes a file param "file"');
-    expect(stderr).toContain('takes a formField param "title"');
-    await expect(fs.readFile(useCasePath, "utf8")).resolves.toContain(
-      '// TODO: Endpoint "upload" takes a file param "file"',
-    );
+    expect(stderr).toContain('takes a form-field param "title"');
+    // The route param binds as usual.
+    expect(stderr).not.toContain('param "id"');
+    const useCase = await fs.readFile(useCasePath, "utf8");
+    expect(useCase).toContain('// TODO: Endpoint "upload" takes a file param "file"');
+    expect(useCase).toContain('// TODO: Endpoint "upload" takes a form-field param "title"');
+    expect(useCase).toContain("takes params scaffold-mock cannot mock (file, title)");
   });
 
   it.each(["expressive-contract", "response-examples-contract"])(

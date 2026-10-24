@@ -58,7 +58,6 @@ export const lowerEndpoint = (
       : queryAuthString
         ? { parameterName: queryAuthString }
         : undefined;
-  const inputType = lowerOptionalTypeNode(ctx, inputNode);
   const responseType = lowerOptionalTypeNode(ctx, propertyMap.get("response"));
 
   // buildExplicitEndpointParams has no multipart handling, so explicit
@@ -76,8 +75,8 @@ export const lowerEndpoint = (
 
   const params =
     paramsNode || queryNode
-      ? buildExplicitEndpointParams(ctx, endpoint, inputType, paramsNode, queryNode)
-      : buildEndpointParams(ctx, endpoint, inputType);
+      ? buildExplicitEndpointParams(ctx, endpoint, paramsNode, queryNode)
+      : buildEndpointParams(ctx, endpoint);
   const responses = mergeResponseExamples(
     ctx,
     buildResponses(ctx, endpoint, responseType),
@@ -131,7 +130,6 @@ export const lowerEndpoint = (
 const buildExplicitEndpointParams = (
   ctx: LoweringContext,
   endpoint: DiscoveredEndpointSpec,
-  inputType: RivetType | null,
   paramsNode: ts.TypeNode | undefined,
   queryNode: ts.TypeNode | undefined,
 ): RivetEndpointParam[] => {
@@ -146,6 +144,7 @@ const buildExplicitEndpointParams = (
     pushObjectParams(ctx, params, queryNode, "query", endpoint);
   }
 
+  const inputType = lowerOptionalTypeNode(ctx, endpoint.propertyMap.get("input"));
   if (inputType) {
     params.push(
       new RivetEndpointParam({
@@ -226,7 +225,6 @@ const appendRouteParams = (
 const buildEndpointParams = (
   ctx: LoweringContext,
   endpoint: DiscoveredEndpointSpec,
-  inputType: RivetType | null,
 ): RivetEndpointParam[] => {
   const inputNode = endpoint.propertyMap.get("input");
   const params: RivetEndpointParam[] = [];
@@ -239,8 +237,11 @@ const buildEndpointParams = (
     appendRouteParams(
       params,
       endpoint.route,
-      inputNode ? getNamedPropertyTypes(ctx, inputNode) : undefined,
+      inputNode ? getRouteParamTypes(ctx, inputNode, endpoint.route) : undefined,
     );
+    // Only here does the input become one value; the other paths lower it
+    // property by property, and lowering it whole too reported each error twice.
+    const inputType = lowerOptionalTypeNode(ctx, inputNode);
     if (inputType) {
       params.push(
         new RivetEndpointParam({
@@ -400,28 +401,37 @@ const isFileTypeNode = (ctx: LoweringContext, typeNode: ts.TypeNode): boolean =>
   return name === "Blob" || name === "File";
 };
 
-const getNamedPropertyTypes = (
+/**
+ * The input's types for the route's placeholders, by lower-cased name. The body
+ * lowers the whole input and reports what is wrong in it, so these are lowered
+ * for their type only: their diagnostics would repeat the body's.
+ */
+const getRouteParamTypes = (
   ctx: LoweringContext,
   inputNode: ts.TypeNode,
+  route: string,
 ): Map<string, RivetType> => {
-  const properties = getObjectProperties(ctx, inputNode);
+  const placeholders = new Set(parseRouteParamNames(route).map((name) => name.toLowerCase()));
   const propertyTypes = new Map<string, RivetType>();
-
-  if (!properties) {
+  if (placeholders.size === 0) {
     return propertyTypes;
   }
 
-  for (const property of properties) {
-    const loweredType = lowerTypeNode(
-      ctx,
-      property.typeNode,
-      getTypeParameterScope(ctx, inputNode),
-    );
-    if (!loweredType) {
+  // Shares dateTypes, so a Date placeholder is still known to be one.
+  const typeOnly: LoweringContext = { ...ctx, diagnostics: [] };
+  for (const property of getObjectProperties(typeOnly, inputNode) ?? []) {
+    const key = property.name.toLowerCase();
+    if (!placeholders.has(key)) {
       continue;
     }
-
-    propertyTypes.set(property.name.toLowerCase(), loweredType);
+    const loweredType = lowerTypeNode(
+      typeOnly,
+      property.typeNode,
+      getTypeParameterScope(typeOnly, inputNode),
+    );
+    if (loweredType) {
+      propertyTypes.set(key, loweredType);
+    }
   }
 
   return propertyTypes;

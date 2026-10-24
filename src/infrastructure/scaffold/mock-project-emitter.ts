@@ -11,6 +11,7 @@ import type {
 import type {
   RivetContractDocument,
   RivetEndpointDefinition,
+  RivetEndpointParam,
 } from "../../domain/rivet-contract.js";
 import { toKebabCase } from "../codegen/kebab-case.js";
 import type { ContractSourceTypes, MockSourceImports } from "./mock-source-renderer.js";
@@ -137,6 +138,15 @@ const handlerType = (
 ): string =>
   `import("@maxanstey-meridian/rivet-ts").RivetHandler${part}<import("#contract").${contractExportName}, ${JSON.stringify(endpointName)}>`;
 
+/** How an author would name each param source; `formField` is the lowered name. */
+const PARAM_SOURCE_LABELS: Readonly<Record<RivetEndpointParam["source"], string>> = {
+  body: "body",
+  file: "file",
+  formField: "form-field",
+  query: "query",
+  route: "route",
+};
+
 const isSupportedParamSource = (source: string): boolean =>
   source === "body" || source === "route" || source === "query";
 
@@ -161,28 +171,30 @@ const buildHandlerDescriptor = (
         new ExtractionDiagnostic({
           severity: "warning",
           code: "SCAFFOLD_UNSUPPORTED_PARAM_SOURCE",
-          message: `Endpoint "${endpoint.name}" takes a ${param.source} param "${param.name}", which scaffold-mock cannot mock; its handler throws until you write it.`,
+          message: `Endpoint "${endpoint.name}" takes a ${PARAM_SOURCE_LABELS[param.source]} param "${param.name}", which scaffold-mock cannot mock; its handler throws until you write it.`,
         }),
     ),
   ];
   const todoLines = diagnostics.map((diagnostic) => `  // TODO: ${diagnostic.message}`);
 
-  let body: string;
+  let statement: string;
   if (mock.result.kind === "todo" || unsupportedParams.length > 0) {
     const message =
       mock.result.kind === "todo"
         ? mock.result.message
-        : `Endpoint "${endpoint.name}" uses unsupported parameter sources in scaffold-mock.`;
-    body = [...todoLines, `  throw new Error(${JSON.stringify(message)});`].join("\n");
+        : `Endpoint "${endpoint.name}" takes params scaffold-mock cannot mock (${unsupportedParams.map((param) => param.name).join(", ")}); write this handler.`;
+    statement = `  throw new Error(${JSON.stringify(message)});`;
   } else if (mock.result.kind === "void") {
-    body = "  return undefined;";
+    statement = "  return undefined;";
   } else if (mock.result.kind === "source") {
-    body = `  return ${mock.result.source};`;
+    statement = `  return ${mock.result.source};`;
   } else {
-    // A value the contract type rejects (an example that drifted from it)
-    // was replaced by a synthesized one; say so where the user will look.
-    body = [...todoLines, `  return ${indent(mock.result.source, 2).trimStart()};`].join("\n");
+    // A typed value: the response example, or a synthesized one (with a TODO
+    // when the example drifted from the type).
+    statement = `  return ${indent(mock.result.source, 2).trimStart()};`;
   }
+  // Every warning is a TODO in the body, so stderr never names one the file lacks.
+  const body = [...todoLines, statement].join("\n");
 
   const bodyParam = endpoint.params.find((param) => param.source === "body");
   return {
@@ -524,9 +536,13 @@ serve({ fetch: app.fetch, port: 5180 }, (info) => {
 });
 `;
 
+/** Where a contract's module lands, relative to the workspace root. */
+const moduleRoot = (group: ContractGroup): string =>
+  `apps/api/src/modules/${group.moduleDirectoryName}`;
+
 /** Where a handler's use case lands, relative to the workspace root. */
 const useCasePath = (group: ContractGroup, handler: HandlerDescriptor): string =>
-  `apps/api/src/modules/${group.moduleDirectoryName}/application/${handler.fileBaseName}.ts`;
+  `${moduleRoot(group)}/application/${handler.fileBaseName}.ts`;
 
 /** Emitted files at the root of `apps/api/src`; copied contract sources must not land on them. */
 const API_SOURCE_FILES = ["local.ts", "main.ts", "app.ts", "validation.ts", "http-errors.ts"];
@@ -588,17 +604,12 @@ export const emitMockProject = async (
     "apps/api/src/validation.ts": emitValidationBarrelSource(groups),
     ...Object.fromEntries(
       groups.flatMap((group) => {
-        const moduleRoot = `apps/api/src/modules/${group.moduleDirectoryName}`;
+        const root = moduleRoot(group);
         return [
           ...(bodyHandlersOf(group).length > 0
-            ? [
-                [
-                  `${moduleRoot}/${group.moduleDirectoryName}-validation.ts`,
-                  emitValidationSource(group),
-                ],
-              ]
+            ? [[`${root}/${group.moduleDirectoryName}-validation.ts`, emitValidationSource(group)]]
             : []),
-          [`${moduleRoot}/${group.moduleDirectoryName}-routes.ts`, emitRoutesSource(group)],
+          [`${root}/${group.moduleDirectoryName}-routes.ts`, emitRoutesSource(group)],
           ...group.handlers.map((handler) => [
             useCasePath(group, handler),
             emitUseCaseSource(group, handler),

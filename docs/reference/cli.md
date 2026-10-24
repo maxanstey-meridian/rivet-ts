@@ -101,4 +101,4 @@ Diagnostics are written to stderr as `severity: [CODE] file:line:col message`.
 
 - unsupported constructs produce explicit errors or warnings
 - the reflector does not silently widen unsupported TS types into fake JSON shapes
-- scaffold generation prefers visible TODO stubs over lying handlers; `scaffold-mock` reports each one as a `SCAFFOLD_*` warning naming the use case that carries it, and still exits 0
+- scaffold generation prefers visible TODO stubs over lying handlers; `scaffold-mock` reports each `// TODO:` in a use case as a `SCAFFOLD_*` warning naming that file, and still exits 0

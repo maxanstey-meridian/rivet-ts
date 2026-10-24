@@ -2,6 +2,12 @@
 
 Use `@maxanstey-meridian/rivet-ts/hono` when you want to mount contract-typed handlers onto a Hono app yourself instead of relying on the scaffolded `apps/api/src/app.ts`.
 
+The server loads rivet-ts at runtime, so add it as a production dependency along with `hono`:
+
+```bash
+pnpm add -P hono @maxanstey-meridian/rivet-ts
+```
+
 ## What it does
 
 `@maxanstey-meridian/rivet-ts/hono` is the lower-level Hono integration.

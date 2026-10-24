@@ -631,7 +631,7 @@ const lowerTypeReferenceNode = (
         createNodeDiagnostic(
           node,
           "UNSUPPORTED_FORMAT_TARGET",
-          'Format<Date, "name"> is not supported: a Date already lowers to a date-time string. Use Date, or Format<string, "name">.',
+          'Format<Date, "name"> is not supported: a Date lowers to a "date-time" string, which the format would replace. Write Date for a date-time in a response, or Format<string, "name"> for any other format or for a request.',
         ),
       );
       return null;

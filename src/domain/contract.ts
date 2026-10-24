@@ -26,7 +26,7 @@ export const isBodyForbiddenStatus = (status: number): boolean =>
   (status >= 100 && status < 200) || status === 204 || status === 205 || status === 304;
 
 // The success status when a contract names none, shared with the type-level
-// SuccessStatus in runtime-types.ts and the .NET extractor:
+// DefaultSuccessStatus in runtime-types.ts and the .NET extractor:
 // POST -> 201; DELETE with a void response -> 204; everything else -> 200.
 export const getDefaultSuccessStatus = (
   httpMethod: string,

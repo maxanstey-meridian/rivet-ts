@@ -82,7 +82,8 @@ export class RivetContractLoweringResult {
    * Every node of `document` that was a TS `Date`, by object identity: the
    * contract JSON writes them as `date-time` strings, like
    * `Format<string, "date-time">`, but code typed by the contract holds a
-   * `Date`. Valid only for this result's own `document` objects.
+   * `Date`. Valid for this result's `document`, and for a document built from it
+   * that keeps its type objects, as `enrichDocumentWithConstraints` does.
    */
   public readonly dateTypes: ReadonlySet<RivetType>;
 

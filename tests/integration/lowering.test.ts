@@ -251,6 +251,13 @@ export interface UsersContract extends Contract<"Users"> {
     ["a generic argument", 'method: "POST"; input: Box<Date[]>', "body[]", 9],
     ["an alias of Date", 'method: "POST"; input: { at: When }', "body.at", 5],
     ["a recursive DTO", 'method: "POST"; input: Thread', "body.at", 6],
+    // Type arguments are checked at every use, even of a definition already walked.
+    [
+      "a second use of a generic",
+      'method: "POST"; input: { a: Box<string>; b: Box<Date> }',
+      "body.b",
+      9,
+    ],
   ])("reports a Date in %s, which reaches the handler as a string", async (_, spec, path, line) => {
     const { entryPath, lowered } =
       await lowerSource(`import type { Contract, Endpoint } from "${AUTHORING_TYPES}";
@@ -287,23 +294,40 @@ export interface EventsContract extends Contract<"Events"> {
     expect(lowered.diagnostics).toEqual([errorDiagnostic({ code: "DATE_IN_REQUEST", line: 4 })]);
   });
 
-  it("refuses Format over a Date, which already lowers to a date-time string", async () => {
+  it.each([
+    ["a response", 'method: "GET"; route: "/api/event"; response: { day: Format<Date, "date"> }'],
+    [
+      "a request body",
+      'method: "POST"; route: "/api/event"; input: { day: Format<Date, "date"> }; response: void',
+    ],
+    [
+      "a route placeholder",
+      'method: "PUT"; route: "/api/event/{day}"; input: { day: Format<Date, "date"> }; response: void',
+    ],
+    [
+      "a query param",
+      'method: "GET"; route: "/api/event"; input: { day: Format<Date, "date"> }; response: void',
+    ],
+    [
+      "a multipart form field",
+      'method: "PUT"; route: "/api/event"; input: { doc: Blob; day: Format<Date, "date"> }; response: void; acceptsFile: true',
+    ],
+  ])("refuses Format over a Date in %s, once", async (_, spec) => {
     const { lowered } =
       await lowerSource(`import type { Contract, Endpoint, Format } from "${AUTHORING_TYPES}";
 
-export interface EventDto { day: Format<Date, "date"> }
-
 export interface EventsContract extends Contract<"Events"> {
-  Get: Endpoint<{ method: "GET"; route: "/api/event"; response: EventDto }>;
+  Get: Endpoint<{ ${spec} }>;
 }
 `);
 
-    expect(lowered.diagnostics).toContainEqual(
+    expect(lowered.diagnostics).toEqual([
       errorDiagnostic({
         code: "UNSUPPORTED_FORMAT_TARGET",
+        line: 4,
         message: expect.stringContaining("Format<Date"),
       }),
-    );
+    ]);
   });
 
   it("lowers a Date in a response, which the handler returns as a Date", async () => {
@@ -327,11 +351,15 @@ export interface EventsContract extends Contract<"Events"> {
     ["404", true],
     // Each member is a 2xx, so TS accepts it; lowering needs one status.
     ["201 | 204", false],
+    // An alias is reported by the status it names.
+    ["Unregistered", true, "299"],
   ])(
     "reports a successStatus of %s, which is not a registered 2xx status",
-    async (status, rejectedByTs) => {
+    async (status, rejectedByTs, reported = status) => {
       const { lowered } = await lowerSource(`
 import type { Contract, Endpoint } from "${AUTHORING_TYPES}";
+
+type Unregistered = 299;
 
 export interface UsersContract extends Contract<"Users"> {
   ${rejectedByTs ? "// @ts-expect-error not a registered 2xx status" : ""}
@@ -343,7 +371,7 @@ export interface UsersContract extends Contract<"Users"> {
         errorDiagnostic({
           code: "INVALID_SUCCESS_STATUS",
           message: expect.stringContaining(
-            `Endpoint "Ping" declares successStatus ${status}, which is not a single registered 2xx status`,
+            `Endpoint "Ping" declares successStatus ${reported}, which is not a single registered 2xx status`,
           ),
         }),
       ]);

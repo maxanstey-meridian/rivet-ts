@@ -26,7 +26,6 @@ export {
   type RivetHandlerInput,
   type RivetHandlerResult,
   type RivetHandlerOwner,
-  type RivetInvokable,
 } from "./domain/handler-types.js";
 export {
   RivetError,

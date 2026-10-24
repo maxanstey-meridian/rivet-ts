@@ -12,12 +12,9 @@ import {
   type ContractEndpointKey,
   type RivetHandler,
   type RivetHandlerOwner,
-  type RivetInvokable,
   toLoweredEndpointName,
 } from "./domain/handler-types.js";
 import type { RivetEndpointDefinition } from "./domain/rivet-contract.js";
-
-export type { RivetInvokable };
 
 /**
  * A domain type as TypeScript infers it for an imported `.json` module: string
@@ -63,14 +60,14 @@ type RivetHeadersInit = Record<string, string | string[]>;
  */
 type HandlerClass<TInstance> = new (...args: any[]) => TInstance;
 
-export type RivetInvokableClass<
+export type RivetHandlerOwnerClass<
   TContract,
   TKey extends ContractEndpointKey<TContract>,
-> = HandlerClass<RivetInvokable<TContract, TKey>>;
+> = HandlerClass<RivetHandlerOwner<TContract, TKey>>;
 
 type HonoHandlerEntry<TContract, TKey extends ContractEndpointKey<TContract>> =
   | RivetHandler<TContract, TKey>
-  | RivetInvokableClass<TContract, TKey>;
+  | RivetHandlerOwnerClass<TContract, TKey>;
 
 type HonoRichHandlerEntry<TContract, TKey extends ContractEndpointKey<TContract>> = {
   readonly handler: HonoHandlerEntry<TContract, TKey>;
@@ -97,7 +94,10 @@ type RegisterRivetHonoRoutesOptions<TContract> = {
 /** The shape every handler entry is called through once the endpoint is resolved at runtime. */
 type RuntimeHandler = (input?: Record<string, unknown>) => Promise<unknown>;
 
-/** Hono's statuses that forbid a response body (204/205/304; 101 never reaches a handler). */
+/**
+ * Exactly Hono's `ContentlessStatusCode` (101/204/205/304), so the narrowing is
+ * sound; HTTP's wider rule is `isBodyForbiddenStatus` in domain/contract.ts.
+ */
 const isBodylessStatus = (status: number): status is ContentlessStatusCode =>
   status === 101 || status === 204 || status === 205 || status === 304;
 
@@ -119,7 +119,7 @@ const toHonoRoute = (endpoint: ContractEndpointJson): string => {
 
 const isHandlerClassToken = <TContract, TKey extends ContractEndpointKey<TContract>>(
   value: HonoHandlerEntry<TContract, TKey>,
-): value is RivetInvokableClass<TContract, TKey> => {
+): value is RivetHandlerOwnerClass<TContract, TKey> => {
   if (typeof value !== "function") {
     return false;
   }
@@ -416,7 +416,7 @@ export class RivetHttpError<TData = unknown> extends HTTPException {
     headers?: RivetHeadersInit;
     message?: string;
   }) {
-    // The type excludes 204/205/304, but a widened status can still reach here.
+    // The type excludes the contentless statuses, but a widened one can still reach here.
     if (input.data !== undefined && isBodylessStatus(input.status)) {
       throw new TypeError(`RivetHttpError status ${input.status} must not carry a body.`);
     }

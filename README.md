@@ -13,9 +13,10 @@ from it, and the OpenAPI ecosystem does the rest: `openapi-typescript` types an
 `openapi-fetch` client, and the Hono runtime serves handlers typed against the same contract.
 
 The contract is types and nothing else. There are no decorators and no router object; the
-contract module has nothing to run. Rivet gives a .NET server this DX; rivet-ts is the same
-pipeline when your server is TypeScript. Both emit the same OpenAPI, so the backend can move to
-.NET later and the client's call sites stay as they are.
+contract module has nothing to run. Rivet does the same for a .NET server; rivet-ts is that
+pipeline when your server is TypeScript. Either way the Rivet binary writes the OpenAPI, so you
+can rewrite the contract in C# later, move the backend to .NET, and keep the client's call sites
+as they are.
 
 ## Prerequisites
 
@@ -99,10 +100,11 @@ const { data, error } = await api.POST("/api/members", {
 
 ## Serve it
 
-The server loads rivet-ts at runtime, so install it as a dependency along with `hono`:
+The server loads rivet-ts at runtime, so add it as a production dependency along with `hono`
+(`-P` moves it out of `devDependencies`):
 
 ```bash
-pnpm add hono @maxanstey-meridian/rivet-ts
+pnpm add -P hono @maxanstey-meridian/rivet-ts
 ```
 
 Then register handlers against the contract JSON:
@@ -124,10 +126,10 @@ registerRivetHonoRoutes<MembersContract>(app, contract, {
 });
 ```
 
-`POST /api/members` answers `201` with the new member. Change `MemberDto` and every handler
-checks against the new shape at once, and the spec and client follow once you regenerate: a
-handler that returns the old shape stops compiling. A missing handler, an unused one or a duplicate route fails at registration, not
-on the first request.
+`POST /api/members` answers `201` with the new member. Change `MemberDto` and a handler that
+returns the old shape stops compiling straight away; regenerate, and the spec and client follow.
+A missing handler, an unused one or a duplicate route fails at registration, not on the first
+request.
 
 ## Also in the box
 
@@ -148,7 +150,7 @@ on the first request.
   you can grep for them
 - [Plumb](https://github.com/maxanstey-meridian/plumb#requirements) (installed separately)
   checks scaffolds against Meridian's house rules: a fresh one starts with zero findings, and
-  `task plumb` keeps it there
+  `task plumb` checks it stays there
 - [`@maxanstey-meridian/rivet-ts/tooling`](https://maxanstey-meridian.github.io/rivet-ts/reference/cli):
   the contract-to-JSON pipeline as a library, for build tools that convert contracts themselves
 

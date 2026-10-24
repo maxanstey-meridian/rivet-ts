@@ -40,7 +40,7 @@ Plain property-level `readonly` modifiers are supported. What is not supported i
 
 The scaffold does not infer domain behavior such as “create echoes the body” or “toggle mutates state”.
 
-Multipart and form-encoded endpoints are reflected and supported by the Hono runtime, but the scaffold still generates success-first handler stubs. You own the actual domain behavior.
+Multipart and form-encoded endpoints are reflected and supported by the Hono runtime. `scaffold-mock` cannot mock a multipart (`acceptsFile: true`) endpoint's file and form-field params: its handler throws, and it prints one `SCAFFOLD_UNSUPPORTED_PARAM_SOURCE` warning per such param, as described below. You own the actual domain behavior.
 
 ## What happens on unsupported scaffold shapes
 

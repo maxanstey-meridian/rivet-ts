@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { registerRivetHonoRoutes, rivetHttpError, type RivetInvokable } from "../../src/hono.js";
+import { registerRivetHonoRoutes, rivetHttpError, type RivetHandlerOwner } from "../../src/hono.js";
 import type { Contract, Endpoint, RivetHandler, RivetHandlerInput } from "../../src/index.js";
 import type {
   CatalogContract,
@@ -78,7 +78,7 @@ describe("handler resolution", () => {
 
   it("instantiates zero-arg class handlers once per request", async () => {
     let constructorCalls = 0;
-    class HealthHandler implements RivetInvokable<DirectoryContract, "Health"> {
+    class HealthHandler implements RivetHandlerOwner<DirectoryContract, "Health"> {
       public constructor() {
         constructorCalls += 1;
       }
@@ -101,7 +101,7 @@ describe("handler resolution", () => {
     expect(constructorCalls).toBe(2);
   });
 
-  class PrefixedSearchHandler implements RivetInvokable<DirectoryContract, "Search"> {
+  class PrefixedSearchHandler implements RivetHandlerOwner<DirectoryContract, "Search"> {
     public constructor(private readonly prefix: string) {}
 
     public async handle({
@@ -521,7 +521,7 @@ const sharedConflict = rivetHttpError(409, { code: "conflict" } satisfies Confli
 
 describe("RivetHttpError", () => {
   it("serializes an explicit non-2xx status thrown by a handler", async () => {
-    class ConflictingSearchHandler implements RivetInvokable<DirectoryContract, "Search"> {
+    class ConflictingSearchHandler implements RivetHandlerOwner<DirectoryContract, "Search"> {
       public async handle(): Promise<DirectorySearchResponse> {
         throw rivetHttpError(409, { code: "conflict" } satisfies ConflictDto);
       }
@@ -538,8 +538,8 @@ describe("RivetHttpError", () => {
     await expect(response.json()).resolves.toEqual({ code: "conflict" });
   });
 
-  it("refuses body-forbidding statuses (204/205/304)", () => {
-    for (const status of [204, 205, 304] as const) {
+  it("refuses body-forbidding statuses (101/204/205/304)", () => {
+    for (const status of [101, 204, 205, 304] as const) {
       // @ts-expect-error — an HTTPException status always carries content.
       expect(() => rivetHttpError(status, { detail: "must not exist" })).toThrow(TypeError);
     }

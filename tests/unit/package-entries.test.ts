@@ -22,7 +22,7 @@ const moduleSpecifiers = (filePath: string): readonly string[] => {
       const [argument] = node.arguments;
       if (!argument || !ts.isStringLiteralLike(argument)) {
         throw new Error(
-          `${filePath} imports a module it names at runtime: ${node.getText(source)}`,
+          `${filePath} imports a module whose name is only known at runtime, so its packages can't be checked: ${node.getText(source)}`,
         );
       }
       specifiers.push(argument.text);
