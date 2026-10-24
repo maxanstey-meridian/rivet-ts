@@ -88,10 +88,6 @@ describe("mock-value-generator typed source", () => {
             name: "Status",
             // Relative to the root the contract sources share, as they are copied.
             relativePath: expect.stringMatching(/(?:^|\/)contracts\.ts$/u),
-            members: [
-              { name: "Active", value: "active" },
-              { name: "On Hold", value: "on-hold" },
-            ],
           },
         ],
       },
@@ -158,11 +154,17 @@ export const drifted = { id: "t1", status: "retired" };`,
     });
   });
 
-  it("leaves a TODO for a TS enum the mock cannot import", async () => {
+  it("leaves a TODO for a TS enum declared outside the contract sources", async () => {
     const { result } = await mockEndpoint(
       `${STATUS}\nexport interface ThingDto { status: Status }`,
       "ThingDto",
-      { enums: (declarations) => declarations.map(({ name, members }) => ({ name, members })) },
+      {
+        enums: (declarations) =>
+          declarations.map((declaration) => ({
+            ...declaration,
+            source: { kind: "outsideContractSources" },
+          })),
+      },
     );
 
     expect(result).toMatchObject({
@@ -171,5 +173,61 @@ export const drifted = { id: "t1", status: "retired" };`,
         'enum "Status", which is declared outside the contract sources',
       ),
     });
+  });
+
+  it("leaves a TODO for a declare enum, which has no runtime value to import", async () => {
+    const result = await mockResponse(
+      `export declare enum Status { Active = "active" }\nexport interface ThingDto { status: Status }`,
+      "ThingDto",
+    );
+
+    expect(result).toMatchObject({
+      kind: "todo",
+      message: expect.stringContaining('enum "Status", a `declare enum` with no runtime value'),
+    });
+  });
+
+  it("references a computed enum member by its name", async () => {
+    const result = await mockResponse(
+      `export enum Status { ["On Hold"] = "on-hold" }\nexport interface ThingDto { status: Status }`,
+      "ThingDto",
+    );
+
+    expect(result).toMatchObject({ kind: "value", source: '{\n  "status": Status["On Hold"]\n}' });
+  });
+
+  it("synthesizes instead of an example typed by a generic referenced without type arguments", async () => {
+    const { result, diagnostics } = await mockEndpoint(
+      `export interface Wrapper<T> { value: T }
+export interface Page<T = string> { data: Wrapper<T> }
+export const page = { data: { value: "a" } };`,
+      "Page",
+      { spec: "; responseExamples: [{ status: 200; examples: [typeof page] }]" },
+    );
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "SCAFFOLD_RESPONSE_EXAMPLE_MISMATCH",
+        message: expect.stringContaining('generic type "Page" without type arguments'),
+      }),
+    );
+    expect(result).toMatchObject({ kind: "todo" });
+  });
+
+  it("synthesizes instead of an example typed by a generic missing a defaulted type argument", async () => {
+    const { diagnostics } = await mockEndpoint(
+      `export interface Wrapper<T> { value: T }
+export interface Page<A, T = number> { label: A; data: Wrapper<T> }
+export const page = { label: "a", data: { value: 1 } };`,
+      "Page<string>",
+      { spec: "; responseExamples: [{ status: 200; examples: [typeof page] }]" },
+    );
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "SCAFFOLD_RESPONSE_EXAMPLE_MISMATCH",
+        message: expect.stringContaining('unresolved generic type parameter "T"'),
+      }),
+    );
   });
 });

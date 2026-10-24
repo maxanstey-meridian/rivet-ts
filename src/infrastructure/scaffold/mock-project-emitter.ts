@@ -344,7 +344,10 @@ const selectDemoClientCall = (
 ): { readonly httpMethod: string; readonly routeTemplate: string } | undefined =>
   groups.flatMap((group) => group.handlers).find((handler) => handler.supportsDemoCall);
 
-/** A copied contract source's specifier from `modules/<m>/application/`, as the sources import each other (`.js`). */
+/**
+ * A copied contract source's specifier from `modules/<m>/application/`, as
+ * the sources import each other (`.js`).
+ */
 const applicationImportSpecifier = (moduleDirectoryName: string, relativePath: string): string => {
   const specifier = path.posix
     .relative(`modules/${moduleDirectoryName}/application`, relativePath)
@@ -356,9 +359,7 @@ const emitUseCaseSource = (group: ContractGroup, handler: HandlerDescriptor): st
   const { brand, enums } = handler.bodyImports;
   const enumsByModule = new Map<string, string[]>();
   for (const { name, relativePath } of enums) {
-    if (relativePath !== undefined) {
-      enumsByModule.set(relativePath, [...(enumsByModule.get(relativePath) ?? []), name]);
-    }
+    enumsByModule.set(relativePath, [...(enumsByModule.get(relativePath) ?? []), name]);
   }
   const imports = [
     ...(brand ? ['import { brand } from "@maxanstey-meridian/rivet-ts";'] : []),

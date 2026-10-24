@@ -116,6 +116,9 @@ export const enterTypeDefinition = <TContext extends TypeWalkContext>(
  * The context for walking into `typeDef` with no recursion guard, for walks
  * bounded by something else (a finite value being checked against the type).
  * `typeArgs` resolve against the outer frame, as in `enterTypeDefinition`.
+ * A parameter with no argument, or one that resolves only to a still-unbound
+ * parameter, stays unbound: it never inherits an outer binding of the same
+ * name, and never binds to itself.
  */
 export const bindTypeArguments = <TContext extends TypeWalkContext>(
   context: TContext,
@@ -125,8 +128,11 @@ export const bindTypeArguments = <TContext extends TypeWalkContext>(
   const substitutions = new Map(context.substitutions);
   for (const [index, typeParameter] of typeDef.typeParameters.entries()) {
     const typeArg = typeArgs[index];
-    if (typeArg) {
-      substitutions.set(typeParameter, substituteTypeParams(typeArg, context.substitutions));
+    const resolved = typeArg && substituteTypeParams(typeArg, context.substitutions);
+    if (resolved && resolved.kind !== "typeParam") {
+      substitutions.set(typeParameter, resolved);
+    } else {
+      substitutions.delete(typeParameter);
     }
   }
 

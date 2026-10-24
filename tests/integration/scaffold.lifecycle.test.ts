@@ -23,7 +23,7 @@ import { makeTempDir, removeDir, tempDir } from "../support/temp.js";
  * The `scaffold` command is the engine behind `plumb init --ts-backend`:
  * a contract-less golden-shape workspace with one worked example module.
  * Gates, in order of strictness: shape → tsc → runtime behavior → plumb
- * (no findings beyond the recorded ones — the generator/doctrine coupling).
+ * (zero findings — the generator/doctrine coupling).
  */
 
 /**

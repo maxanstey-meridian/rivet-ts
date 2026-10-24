@@ -10,10 +10,13 @@ import { bindTypeArguments, type TypeWalkContext } from "./type-walk.js";
  * literal. A value the type rejects is a mismatch naming where it diverges.
  */
 
+/** A TS enum the printed expression references, and the copied contract module declaring it. */
+export type EnumImport = { readonly name: string; readonly relativePath: string };
+
 /** What the printed expression needs in scope. */
 export type MockSourceImports = {
   readonly brand: boolean;
-  readonly enums: readonly ContractEnumDeclaration[];
+  readonly enums: readonly EnumImport[];
 };
 
 export type RenderedMockSource =
@@ -30,11 +33,7 @@ type Expression =
       readonly entries: readonly { readonly key: string; readonly value: Expression }[];
     }
   | { readonly kind: "brand"; readonly inner: Expression }
-  | {
-      readonly kind: "enumMember";
-      readonly declaration: ContractEnumDeclaration;
-      readonly member: string;
-    };
+  | { readonly kind: "enumMember"; readonly enum: EnumImport; readonly member: string };
 
 type Mismatch = { readonly kind: "mismatch"; readonly path: string; readonly reason: string };
 
@@ -125,13 +124,23 @@ const renderEnum = (
   if (!declaration) {
     return literal(value);
   }
-  if (declaration.relativePath === undefined) {
-    return mismatch(path, `uses enum "${name}", which is declared outside the contract sources`);
+  const { source } = declaration;
+  switch (source.kind) {
+    case "outsideContractSources":
+      return mismatch(path, `uses enum "${name}", which is declared outside the contract sources`);
+    case "ambient":
+      return mismatch(path, `uses enum "${name}", a \`declare enum\` with no runtime value`);
+    case "module": {
+      const member = declaration.members.find((candidate) => candidate.value === value);
+      return member
+        ? {
+            kind: "enumMember",
+            enum: { name, relativePath: source.relativePath },
+            member: member.name,
+          }
+        : mismatch(path, `is not a value of enum "${name}"`);
+    }
   }
-  const member = declaration.members.find((candidate) => candidate.value === value);
-  return member
-    ? { kind: "enumMember", declaration, member: member.name }
-    : mismatch(path, `is not a value of enum "${name}"`);
 };
 
 const render = (
@@ -225,6 +234,11 @@ const render = (
       if (!typeDef) {
         return mismatch(path, `references unknown type "${type.name}"`);
       }
+      // As in synthesis: with no arguments its type parameters stay unbound,
+      // and a nested generic would bind one to itself.
+      if (typeDef.typeParameters.length > 0) {
+        return mismatch(path, `references generic type "${type.name}" without type arguments`);
+      }
       const nested = bindTypeArguments(context, typeDef);
       return typeDef.type
         ? render(typeDef.type, value, path, nested)
@@ -270,11 +284,14 @@ const render = (
   }
 };
 
-/** Dotted access for a plain identifier; anything else (`"in-review"`, non-ASCII) is bracketed, which is always valid. */
-const memberAccess = (declaration: ContractEnumDeclaration, member: string): string =>
+/**
+ * Dotted access for a plain identifier; anything else (`"in-review"`,
+ * non-ASCII) is bracketed, which is always valid.
+ */
+const memberAccess = (enumName: string, member: string): string =>
   /^[A-Za-z_$][\w$]*$/u.test(member)
-    ? `${declaration.name}.${member}`
-    : `${declaration.name}[${JSON.stringify(member)}]`;
+    ? `${enumName}.${member}`
+    : `${enumName}[${JSON.stringify(member)}]`;
 
 /** Prints like `JSON.stringify(value, null, 2)`, which the plain-JSON parts match. */
 const print = (expression: Expression, depth: number): string => {
@@ -286,7 +303,7 @@ const print = (expression: Expression, depth: number): string => {
     case "brand":
       return `brand(${print(expression.inner, depth)})`;
     case "enumMember":
-      return memberAccess(expression.declaration, expression.member);
+      return memberAccess(expression.enum.name, expression.member);
     case "array":
       return expression.items.length === 0
         ? "[]"
@@ -302,7 +319,7 @@ const print = (expression: Expression, depth: number): string => {
 
 const collectImports = (
   expression: Expression,
-  imports: { brand: boolean; enums: Map<string, ContractEnumDeclaration> },
+  imports: { brand: boolean; enums: Map<string, EnumImport> },
 ): void => {
   switch (expression.kind) {
     case "literal":
@@ -312,7 +329,7 @@ const collectImports = (
       collectImports(expression.inner, imports);
       return;
     case "enumMember":
-      imports.enums.set(expression.declaration.name, expression.declaration);
+      imports.enums.set(expression.enum.name, expression.enum);
       return;
     case "array":
       expression.items.forEach((item) => collectImports(item, imports));
@@ -339,7 +356,7 @@ export const renderMockSource = (
     return { kind: "mismatch", message: `${rendered.path} ${rendered.reason}` };
   }
 
-  const imports = { brand: false, enums: new Map<string, ContractEnumDeclaration>() };
+  const imports = { brand: false, enums: new Map<string, EnumImport>() };
   collectImports(rendered, imports);
   return {
     kind: "rendered",

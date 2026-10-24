@@ -12,7 +12,11 @@ import {
   type RivetContractEnum,
   type RivetEndpointDefinition,
 } from "../../domain/rivet-contract.js";
-import type { LoweringContext, SupportedDeclaration } from "./authoring-syntax.js";
+import {
+  hasModifier,
+  type LoweringContext,
+  type SupportedDeclaration,
+} from "./authoring-syntax.js";
 import {
   discoverContracts,
   indexDeclarations,
@@ -144,6 +148,12 @@ export const lowerContracts = (
   });
 };
 
+/** An enum member's name as `Enum[name]` reads it: `["a"] = 1` is the member `a`. */
+const enumMemberName = (name: ts.PropertyName): string => {
+  const key = ts.isComputedPropertyName(name) ? name.expression : name;
+  return ts.isStringLiteralLike(key) || ts.isIdentifier(key) ? key.text : key.getText();
+};
+
 /**
  * The document enums declared as TS `enum`s, each member paired with its
  * lowered value (lowering keeps declaration order).
@@ -164,16 +174,14 @@ const toEnumDeclarations = (
     return [
       {
         name: entry.name,
-        ...(sourceFilePaths.includes(declaringFile)
-          ? { relativePath: toPosixRelativePath(sourceRoot, declaringFile) }
-          : {}),
+        source: hasModifier(declaration, ts.ModifierFlags.Ambient)
+          ? { kind: "ambient" }
+          : sourceFilePaths.includes(declaringFile)
+            ? { kind: "module", relativePath: toPosixRelativePath(sourceRoot, declaringFile) }
+            : { kind: "outsideContractSources" },
         members: declaration.members.flatMap((member, index) => {
           const value = values[index];
-          const name =
-            ts.isIdentifier(member.name) || ts.isStringLiteral(member.name)
-              ? member.name.text
-              : member.name.getText();
-          return value === undefined ? [] : [{ name, value }];
+          return value === undefined ? [] : [{ name: enumMemberName(member.name), value }];
         }),
       },
     ];

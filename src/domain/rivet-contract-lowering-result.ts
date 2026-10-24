@@ -56,12 +56,17 @@ export type ContractSourcePathAliases = Readonly<Record<string, readonly string[
 export type ContractEnumDeclaration = Readonly<{
   /** The exported enum identifier, which is also the document enum's `name`. */
   name: string;
-  /**
-   * POSIX path of the declaring module, relative like
-   * `ContractSourceFile.relativePath`; absent when that module is not a
-   * contract source file (a library mapped in through tsconfig `paths`).
-   */
-  relativePath?: string;
+  /** Where the enum's runtime object can be imported from, or why it cannot. */
+  source:
+    | Readonly<{
+        kind: "module";
+        /** POSIX path of the declaring module, relative like `ContractSourceFile.relativePath`. */
+        relativePath: string;
+      }>
+    /** Declared outside the contract source files (a library mapped in through tsconfig `paths`). */
+    | Readonly<{ kind: "outsideContractSources" }>
+    /** A `declare enum`: a type only, with no runtime object to import. */
+    | Readonly<{ kind: "ambient" }>;
   /** In declaration order, each with the value the document enum carries. */
   members: readonly Readonly<{ name: string; value: string | number }>[];
 }>;

@@ -381,6 +381,11 @@ export interface AccountsContract extends Contract<"Accounts"> {
 
     const app = await loadScaffoldedApp(outputDirectory);
     await lintScaffoldedWorkspace(outputDirectory);
+    // The brand import and the use cases' imports of the copied contract are
+    // emitted only here; the zero-findings gate must see them too.
+    if (PLUMB_EXECUTABLE) {
+      expect(await plumbFindings(PLUMB_EXECUTABLE, outputDirectory)).toEqual([]);
+    }
     await expect((await app.request("/api/account")).json()).resolves.toEqual({
       id: "00000000-0000-0000-0000-000000000000",
       email: "example",

@@ -192,6 +192,29 @@ describe("handler resolution", () => {
       }),
     ).toThrow("Unused handlers were provided: Unknown.");
   });
+
+  it("fails fast on a success status Hono does not register", () => {
+    const unregistered: ContractJson = {
+      ...directory,
+      endpoints: directory.endpoints.map((endpoint) =>
+        endpoint.name === "health"
+          ? {
+              ...endpoint,
+              responses: endpoint.responses.map((response) => ({ ...response, statusCode: 299 })),
+            }
+          : endpoint,
+      ),
+    };
+
+    expect(() =>
+      registerRivetHonoRoutes<DirectoryContract>(new Hono(), unregistered, {
+        group: "directory",
+        handlers: directoryHandlers,
+      }),
+    ).toThrow(
+      'Endpoint "health" declares success status 299, which is not a registered 2xx status',
+    );
+  });
 });
 
 describe("groups", () => {

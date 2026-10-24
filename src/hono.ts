@@ -156,6 +156,7 @@ const createHandlerResolutionError = (message: string): Error => {
 /**
  * The handler map is typed per endpoint key; the runtime dispatches by the
  * endpoint it resolved, so every handler is called through one shape.
+ * Deliberately unchecked: `Reflect.apply` takes any function and arguments.
  */
 const toRuntimeHandler =
   (handler: (...args: never[]) => unknown): RuntimeHandler =>

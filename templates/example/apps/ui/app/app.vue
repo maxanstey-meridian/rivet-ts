@@ -23,9 +23,11 @@ await refreshQuotes();
 
 async function onSubmit() {
   serverError.value = null;
-  const { error } = await client.POST("/api/quotes", { body: { ...state } });
-  if (error) {
-    serverError.value = error.message;
+  const { error, response } = await client.POST("/api/quotes", { body: { ...state } });
+  if (!response.ok) {
+    // An undeclared failure (a proxy's HTML or empty 502, a wrong base URL)
+    // arrives unparsed or empty, with no message.
+    serverError.value = error?.message || "Could not add the quote. Try again.";
     return;
   }
   state.text = "";

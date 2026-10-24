@@ -61,7 +61,7 @@ Parameter lowering has two modes:
 | exported interfaces and object type aliases | Become named schemas/refs                                                                            |
 | inline object types                         | Supported as anonymous object shapes, including optional properties                                  |
 | `Brand<string, "Email">`                    | Branded primitives; `brand("jane@example.com")` brands a value without validating it (mocks, tests)  |
-| `Format<string, "uuid">`                    | Primitive plus format metadata; any value of the primitive is assignable, no brand needed            |
+| `Format<string, "uuid">`                    | Primitive plus format metadata; any value of the primitive is assignable, no cast needed             |
 | generic types                               | Contract JSON preserves generic refs and type arguments                                              |
 | optional properties on named object shapes  | Preserved                                                                                            |
 | plain `readonly` properties                 | Preserved as property-level type information                                                         |
@@ -82,7 +82,7 @@ Multipart endpoints use `acceptsFile: true` and an object-like `input` with exac
 - dictionaries
 - nullable shapes
 - string and numeric unions
-- enum refs (a TS `enum` as a member reference, `Status.Active`, imported from the copied contract module)
+- enum refs (a TS `enum` as a member reference, `Status.Active`, imported from the copied contract module; a `declare enum` or one declared outside the contract sources gets a `// TODO:`)
 - brands via underlying primitive types, wrapped in `brand(...)`
 - generics with actual type substitution
 - tagged unions
