@@ -615,12 +615,17 @@ const lowerTypeReferenceNode = (
       return null;
     }
 
-    if (underlyingType.kind !== "primitive") {
+    if (
+      underlyingType.kind !== "primitive" ||
+      (underlyingType.type !== "string" &&
+        underlyingType.type !== "number" &&
+        underlyingType.type !== "boolean")
+    ) {
       ctx.diagnostics.push(
         createNodeDiagnostic(
           node,
           "UNSUPPORTED_FORMAT_TARGET",
-          'Format<T, "name"> currently only supports primitive underlying types.',
+          'Format<T, "name"> only supports a string, number or boolean underlying type.',
         ),
       );
       return null;

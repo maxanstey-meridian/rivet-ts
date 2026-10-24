@@ -331,6 +331,47 @@ export interface EventsContract extends Contract<"Events"> {
     ]);
   });
 
+  it.each(["unknown", "File", "{ day: string }"])(
+    "refuses Format over %s, which TypeScript also rejects",
+    async (inner) => {
+      const { lowered } =
+        await lowerSource(`import type { Contract, Endpoint, Format } from "${AUTHORING_TYPES}";
+
+export interface EventsContract extends Contract<"Events"> {
+  // @ts-expect-error Format takes only a string, number or boolean
+  Get: Endpoint<{ method: "GET"; route: "/api/event"; response: Format<${inner}, "x"> }>;
+}
+`);
+
+      expect(lowered.diagnostics).toEqual([
+        errorDiagnostic({
+          code: "UNSUPPORTED_FORMAT_TARGET",
+          line: 5,
+          message: expect.stringContaining("string, number or boolean"),
+        }),
+      ]);
+    },
+  );
+
+  it("reports an HTTP method the contract cannot declare", async () => {
+    const { lowered } =
+      await lowerSource(`import type { Contract, Endpoint } from "${AUTHORING_TYPES}";
+
+export interface PingContract extends Contract<"Ping"> {
+  // @ts-expect-error OPTIONS is not an authoring HTTP method
+  Ping: Endpoint<{ method: "OPTIONS"; route: "/api/ping"; response: void }>;
+}
+`);
+
+    expect(lowered.diagnostics).toEqual([
+      errorDiagnostic({
+        code: "UNSUPPORTED_HTTP_METHOD",
+        line: 5,
+        message: expect.stringContaining("use one of GET, POST, PUT, PATCH, DELETE"),
+      }),
+    ]);
+  });
+
   it("lowers a Date in a response, which the handler returns as a Date", async () => {
     const { lowered } =
       await lowerSource(`import type { Contract, Endpoint } from "${AUTHORING_TYPES}";

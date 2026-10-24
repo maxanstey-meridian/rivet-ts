@@ -15,7 +15,7 @@ These shapes are not part of the contract system and should produce diagnostics 
 - `never`
 - standalone `null`; use `T | null`
 - `Date` anywhere in a request (body, route, query or form field): it arrives as a string, so lowering reports `DATE_IN_REQUEST`; use `Format<string, "date-time">`
-- `Format` over anything but a primitive, such as `Format<Date, "…">`: TypeScript rejects it, and lowering reports `UNSUPPORTED_FORMAT_TARGET` (a `Date` already lowers to a `date-time` string)
+- `Format` over anything but `string`, `number` or `boolean`: lowering reports `UNSUPPORTED_FORMAT_TARGET`. TypeScript also rejects a `Date`, an object, `unknown` or a `File` where you write it; a literal or a `Brand` passes TypeScript, so only lowering catches those (a `Date` already lowers to a `date-time` string)
 - non-literal or repeated tagged-union discriminator values
 - enums that mix string and numeric members
 - class-based or namespace-based contract authoring

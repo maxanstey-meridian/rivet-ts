@@ -20,7 +20,7 @@ You provide:
 
 It registers Hono routes from the contract onto your app and dispatches requests into your handlers.
 
-Routes are selected from the supplied contract. If `group` is provided, an endpoint matches when its `controllerName` equals that value. Handler keys may use the authored endpoint name or the generated runtime endpoint name, for example `CreateMember` or `createMember`, but each selected endpoint must match exactly one handler and unused handlers fail registration. So does an endpoint whose success status is not a registered 2xx code (200–208, 226).
+Routes are selected from the supplied contract. If `group` is provided, an endpoint matches when its `controllerName` equals that value. Handler keys may use the authored endpoint name or the generated runtime endpoint name, for example `CreateMember` or `createMember`, but each selected endpoint must match exactly one handler and unused handlers fail registration. So does an endpoint whose success status is not a registered 2xx code (200–208, 226), or whose HTTP method is not GET, POST, PUT, PATCH or DELETE.
 
 ## Example
 

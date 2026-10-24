@@ -16,7 +16,7 @@
 
 - An `errors` entry with a 2xx status is a lowering error, `INVALID_ERROR_STATUS`. An endpoint has one success response, and the Hono runtime and `scaffold-mock` took the first 2xx as it, so `errors: [{ status: 200 }]` on a POST was served, and mocked, as the success in place of the 201.
 
-- `Format<T, "name">` takes only a primitive `T` (`string`, `number` or `boolean`), so `Format<Date, "date">` or `Format<{ … }, "x">` is a TypeScript error where you write it. Lowering refused them already.
+- `Format<T, "name">` takes only a primitive `T` (`string`, `number` or `boolean`), so `Format<Date, "date">` or `Format<{ … }, "x">` is a TypeScript error where you write it. Lowering refused those already, and now also refuses `Format<unknown, …>`, which it used to lower with the format attached.
 
 - `registerRivetHonoRoutes` rejects, at registration, an endpoint whose HTTP method is not GET, POST, PUT, PATCH or DELETE. One such method list now backs the authoring type, lowering and the runtime.
 
@@ -26,6 +26,7 @@
 - `scaffold-mock` checks a success response example against the response type instead of casting it. An example that does not match (a value outside its enum, a missing or extra property: an example given as `typeof someConst` is not checked against the response type when you write it, so it can drift) is replaced by a synthesized value, and the handler carries a `// TODO:` naming where it diverged (`SCAFFOLD_RESPONSE_EXAMPLE_MISMATCH`). The cast used to ship it as-is.
 - `scaffold-mock` prints a TS `Date` as `new Date("…")`. A `Date` lowers to a `date-time` string, as `Format<string, "date-time">` does, so the mock printed a string where its handler returns a `Date`, and `tsc` rejected it.
 - `scaffold-mock` prints its warnings on stderr, each pointing at the use case that carries it as a `// TODO:`: `SCAFFOLD_RESPONSE_EXAMPLE_MISMATCH` (a response example that did not match its type), `SCAFFOLD_UNSUPPORTED_RESPONSE_SHAPE` (a response it cannot mock) and `SCAFFOLD_UNSUPPORTED_PARAM_SOURCE` (a file or form-field param, whose handler throws). They used to appear only in the handler, so nothing said a mock had diverged from its contract.
+- An endpoint with an unsupported HTTP method (`method: "OPTIONS"`) gets one error, `UNSUPPORTED_HTTP_METHOD`, which now lists the supported methods. It also got `INCOMPLETE_ENDPOINT` ("must declare both method and route"), though it declared both.
 - The root entry's type declarations no longer import `hono`. A consumer without the optional `hono` peer and without `skipLibCheck` got `Cannot find module 'hono'` from importing the root.
 - New `brand(value)` export: brands a value without validating it, for mocks and tests, inferring the brand name from where the value goes (`const email: Email = brand("jane@example.com")`). Contract example consts can use it (`email: brand("jane@example.com")`); lowering reads the call as its argument.
 

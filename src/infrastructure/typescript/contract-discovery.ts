@@ -2,6 +2,7 @@
 import ts from "typescript";
 import type { EndpointAuthoringSuccessStatus } from "../../domain/authoring-types.js";
 import {
+  HTTP_METHOD_NAMES,
   isHttpMethod,
   isSuccessStatus,
   SUCCESS_STATUS_CODES,
@@ -324,15 +325,27 @@ const discoverEndpoint = (
     return null;
   }
 
-  const method = parseHttpMethod(ctx, propertyMap.get("method"), endpointName);
+  const methodNode = propertyMap.get("method");
+  const method = readStringLiteral(ctx, methodNode);
   const route = readStringLiteral(ctx, propertyMap.get("route"));
 
-  if (!method || !route) {
+  if (!methodNode || !method || !route) {
     ctx.diagnostics.push(
       createNodeDiagnostic(
         specNode,
         "INCOMPLETE_ENDPOINT",
         `Endpoint "${endpointName}" must declare both method and route.`,
+      ),
+    );
+    return null;
+  }
+
+  if (!isHttpMethod(method)) {
+    ctx.diagnostics.push(
+      createNodeDiagnostic(
+        methodNode,
+        "UNSUPPORTED_HTTP_METHOD",
+        `Endpoint "${endpointName}" uses unsupported HTTP method "${method}"; use one of ${HTTP_METHOD_NAMES.join(", ")}.`,
       ),
     );
     return null;
@@ -387,28 +400,4 @@ const discoverEndpoint = (
       fileContentType,
     ),
   };
-};
-
-const parseHttpMethod = (
-  ctx: LoweringContext,
-  node: ts.TypeNode | undefined,
-  endpointName: string,
-): HttpMethod | null => {
-  const method = readStringLiteral(ctx, node);
-  if (!node || !method) {
-    return null;
-  }
-
-  if (!isHttpMethod(method)) {
-    ctx.diagnostics.push(
-      createNodeDiagnostic(
-        node,
-        "UNSUPPORTED_HTTP_METHOD",
-        `Endpoint "${endpointName}" uses unsupported HTTP method "${method}".`,
-      ),
-    );
-    return null;
-  }
-
-  return method;
 };

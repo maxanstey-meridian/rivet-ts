@@ -14,6 +14,8 @@ const HTTP_METHODS: Readonly<Record<HttpMethod, true>> = {
   DELETE: true,
 };
 
+export const HTTP_METHOD_NAMES: readonly string[] = Object.keys(HTTP_METHODS);
+
 export const isHttpMethod = (value: string): value is HttpMethod =>
   Object.hasOwn(HTTP_METHODS, value);
 

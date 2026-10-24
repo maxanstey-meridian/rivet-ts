@@ -4,6 +4,7 @@ import type { ContentfulStatusCode, ContentlessStatusCode } from "hono/utils/htt
 import type { EndpointAuthoringSuccessStatus } from "./domain/authoring-types.js";
 import {
   getDefaultSuccessStatus,
+  HTTP_METHOD_NAMES,
   isHttpMethod,
   isSuccessStatus,
   SUCCESS_STATUS_CODES,
@@ -536,7 +537,7 @@ export const registerRivetHonoRoutes = <TContract, TApp extends HonoRouteTarget 
     const method = endpoint.httpMethod.toUpperCase();
     if (!isHttpMethod(method)) {
       throw createHandlerResolutionError(
-        `Endpoint "${endpoint.name}" declares HTTP method "${endpoint.httpMethod}", which is not one of GET, POST, PUT, PATCH, DELETE.`,
+        `Endpoint "${endpoint.name}" declares HTTP method "${endpoint.httpMethod}", which is not one of ${HTTP_METHOD_NAMES.join(", ")}.`,
       );
     }
     const status = getSuccessStatus(endpoint, method);
