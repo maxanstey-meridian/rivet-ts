@@ -16,6 +16,7 @@ export type {
   InlineEndpointRequestExampleAuthoringSpec,
   RefEndpointRequestExampleAuthoringSpec,
 } from "./domain/authoring-types.js";
+export { brand } from "./domain/authoring-types.js";
 export {
   asRivetHandler,
   type ContractEndpointKey,

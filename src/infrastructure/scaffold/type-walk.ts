@@ -106,13 +106,29 @@ export const enterTypeDefinition = <TContext extends TypeWalkContext>(
     return undefined;
   }
 
+  return {
+    ...bindTypeArguments(context, typeDef, typeArgs),
+    walking: [...context.walking, instantiation],
+  };
+};
+
+/**
+ * The context for walking into `typeDef` with no recursion guard, for walks
+ * bounded by something else (a finite value being checked against the type).
+ * `typeArgs` resolve against the outer frame, as in `enterTypeDefinition`.
+ */
+export const bindTypeArguments = <TContext extends TypeWalkContext>(
+  context: TContext,
+  typeDef: RivetTypeDefinition,
+  typeArgs: readonly RivetType[] = [],
+): TContext => {
   const substitutions = new Map(context.substitutions);
   for (const [index, typeParameter] of typeDef.typeParameters.entries()) {
-    const typeArg = resolvedTypeArgs[index];
+    const typeArg = typeArgs[index];
     if (typeArg) {
-      substitutions.set(typeParameter, typeArg);
+      substitutions.set(typeParameter, substituteTypeParams(typeArg, context.substitutions));
     }
   }
 
-  return { ...context, substitutions, walking: [...context.walking, instantiation] };
+  return { ...context, substitutions };
 };

@@ -227,28 +227,31 @@ const synthesize = (type: RivetType, context: TypeWalkContext): ZodSourceResult 
         exact: true,
       };
 
-    case "intUnion":
-      if (type.values.length === 0) {
+    case "intUnion": {
+      const [only, ...rest] = type.values;
+      if (only === undefined) {
         return inexact("empty int union");
       }
-      if (type.values.length === 1) {
-        return { source: literalSource(type.values[0]!), exact: true };
+      if (rest.length === 0) {
+        return { source: literalSource(only), exact: true };
       }
       return {
         source: `z.union([${type.values.map(literalSource).join(", ")}])`,
         exact: true,
       };
+    }
 
     case "literal":
       return { source: literalSource(type.value), exact: true };
 
     case "union": {
       const variants = type.variants.map((variant) => synthesize(variant, context));
-      if (variants.length === 0) {
+      const [only, ...rest] = variants;
+      if (only === undefined) {
         return inexact("empty union");
       }
-      if (variants.length === 1) {
-        return variants[0]!;
+      if (rest.length === 0) {
+        return only;
       }
       return {
         source: `z.union([${variants.map((variant) => variant.source).join(", ")}])`,

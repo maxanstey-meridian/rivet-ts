@@ -133,7 +133,7 @@ test("asRivetHandler rejects ambiguous handler owners", () => {
 });
 
 test("asRivetHandler rejects owners without a recognized method", () => {
-  expect(() => asRivetHandler({} as never)).toThrow(
+  expect(() => asRivetHandler({})).toThrow(
     'asRivetHandler expected a "handle" or "invoke" method.',
   );
 });

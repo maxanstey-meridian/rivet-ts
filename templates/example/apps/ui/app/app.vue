@@ -25,7 +25,7 @@ async function onSubmit() {
   serverError.value = null;
   const { error } = await client.POST("/api/quotes", { body: { ...state } });
   if (error) {
-    serverError.value = (error as { message?: string }).message ?? "Request failed.";
+    serverError.value = error.message;
     return;
   }
   state.text = "";

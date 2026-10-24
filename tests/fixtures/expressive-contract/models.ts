@@ -1,4 +1,4 @@
-import type { Brand, Format } from "../../../src/domain/authoring-types.js";
+import { brand, type Brand, type Format } from "../../../src/domain/authoring-types.js";
 
 export enum MemberStatus {
   Active = "active",
@@ -72,8 +72,8 @@ export interface ValidationErrorDto {
 }
 
 export const createMemberRequestExample = {
-  teamId: "550e8400-e29b-41d4-a716-446655440000" as Format<string, "uuid">,
-  email: "jane@example.com" as Brand<string, "EmailAddress">,
+  teamId: "550e8400-e29b-41d4-a716-446655440000",
+  email: brand("jane@example.com"),
   status: MemberStatus.Active,
   priority: 2,
   profile: {
@@ -88,8 +88,8 @@ export const createMemberRequestExample = {
 
 export const createMemberResponseExample = {
   data: {
-    id: "550e8400-e29b-41d4-a716-446655440001" as Format<string, "uuid">,
-    email: "jane@example.com" as Brand<string, "EmailAddress">,
+    id: "550e8400-e29b-41d4-a716-446655440001",
+    email: brand("jane@example.com"),
     status: MemberStatus.Active,
     priority: 2,
     managerId: null,

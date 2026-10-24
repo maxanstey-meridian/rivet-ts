@@ -1,6 +1,7 @@
 import type { RivetContractLoweringResult } from "../../src/domain/rivet-contract-lowering-result.js";
 import type { RivetContractDocument } from "../../src/domain/rivet-contract.js";
 import { lowerContracts } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
+import { expectValidContractDocument } from "../contract-schema.js";
 import { writeContractProject } from "./contract-project.js";
 import { fixturePath } from "./paths.js";
 
@@ -19,7 +20,12 @@ type Json<T> = T extends (...args: never) => unknown
 /** Contract JSON as `toJson()` and the CLI write it: the domain document's data. */
 export type ContractJson = Json<RivetContractDocument>;
 
-export const parseContractJson = (text: string): ContractJson => JSON.parse(text);
+/** Contract JSON text, checked against the pinned Rivet release's contract schema. */
+export const parseContractJson = (text: string): ContractJson => {
+  const document: unknown = JSON.parse(text);
+  expectValidContractDocument(document);
+  return document;
+};
 
 export type LoweredEntry = {
   readonly entryPath: string;

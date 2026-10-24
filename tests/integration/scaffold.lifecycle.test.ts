@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { z } from "zod";
 import { emitGoldenConfigSources } from "../../src/infrastructure/scaffold/workspace-emitter.js";
+import { fn, importModule, newable, parseJson, readJsonFile } from "../support/checked.js";
 import { runCliCaptured } from "../support/cli.js";
 import { parseContractJson } from "../support/lower.js";
 import { PROJECT_ROOT } from "../support/paths.js";
@@ -9,6 +11,7 @@ import {
   PLUMB_NOT_FOUND,
   TASK_EXECUTABLE,
   TASK_NOT_FOUND,
+  lintScaffoldedWorkspace,
   linkScaffoldDependencies,
   plumbFindings,
   runTask,
@@ -44,9 +47,10 @@ const lintThroughTaskfile = async (
     PATH: `${fakeDirectory}${path.delimiter}${process.env["PATH"] ?? ""}`,
   });
 
-  const uiPackage = JSON.parse(
-    await fs.readFile(path.join(outputDirectory, "apps", "ui", "package.json"), "utf8"),
-  ) as { readonly scripts: Readonly<Record<string, string>> };
+  const uiPackage = await readJsonFile(
+    path.join(outputDirectory, "apps", "ui", "package.json"),
+    z.object({ scripts: z.record(z.string(), z.string()) }),
+  );
   return {
     pnpmArguments: (await fs.readFile(argsFile, "utf8")).trim(),
     uiLintScript: uiPackage.scripts["lint"],
@@ -212,20 +216,31 @@ describe("scaffold lifecycle", () => {
     await typecheckScaffoldedWorkspace(outputDirectory);
   });
 
+  it("passes its own oxlint config: no type assertions, no non-null `!`", async () => {
+    await lintScaffoldedWorkspace(outputDirectory);
+  });
+
   it("serves the contract: list, add, 422, declared 409, structured 500, /api/me", async () => {
     await linkScaffoldDependencies(outputDirectory);
     const apiSrc = path.join(outputDirectory, "apps", "api", "src");
-    const { createApp } = (await import(path.join(apiSrc, "app.ts"))) as {
-      createApp: (useCases: unknown) => {
-        request: (input: string, init?: RequestInit) => Promise<Response>;
-      };
-    };
-    const { composeApp } = (await import(path.join(apiSrc, "composition.ts"))) as {
-      composeApp: (adapters: { quoteStore: unknown }) => unknown;
-    };
-    const { InMemoryQuoteStore } = (await import(
-      path.join(apiSrc, "modules", "quotes", "infrastructure", "in-memory-quote-store.ts")
-    )) as { InMemoryQuoteStore: new () => unknown };
+    const { createApp } = await importModule(
+      path.join(apiSrc, "app.ts"),
+      z.object({
+        createApp: fn<
+          (useCases: unknown) => {
+            request: (input: string, init?: RequestInit) => Promise<Response>;
+          }
+        >(),
+      }),
+    );
+    const { composeApp } = await importModule(
+      path.join(apiSrc, "composition.ts"),
+      z.object({ composeApp: fn<(adapters: { quoteStore: unknown }) => unknown>() }),
+    );
+    const { InMemoryQuoteStore } = await importModule(
+      path.join(apiSrc, "modules", "quotes", "infrastructure", "in-memory-quote-store.ts"),
+      z.object({ InMemoryQuoteStore: newable<new () => unknown>() }),
+    );
 
     // The server entry's wiring, minus serve(): the composition split means
     // the node-side test never touches the Dexie adapter (no IndexedDB here).
@@ -233,7 +248,7 @@ describe("scaffold lifecycle", () => {
 
     const list = await app.request("/api/quotes");
     expect(list.status).toBe(200);
-    const quotes = (await list.json()) as Array<{ text: string }>;
+    const quotes = z.array(z.object({ text: z.string() })).parse(await list.json());
     expect(quotes[0]?.text).toBe("Never cross; always Common.");
 
     const add = (text: string) =>
@@ -250,22 +265,20 @@ describe("scaffold lifecycle", () => {
     // use case runs.
     const invalid = await add("   ");
     expect(invalid.status).toBe(422);
-    const invalidBody = (await invalid.json()) as {
-      code: string;
-      errors: Record<string, string[]>;
-    };
-    expect(invalidBody.code).toBe("validation_failed");
-    expect(invalidBody.errors.text).toBeTruthy();
+    expect(await invalid.json()).toMatchObject({
+      code: "validation_failed",
+      errors: { text: expect.anything() },
+    });
 
     // The users module serves the stubbed identity.
     const me = await app.request("/api/me");
     expect(me.status).toBe(200);
-    expect(((await me.json()) as { name: string }).name).toBe("Local Dev");
+    expect(await me.json()).toMatchObject({ name: "Local Dev" });
 
     // The declared failure travels as the contract's 409 result.
     const duplicate = await add("  ship it. ");
     expect(duplicate.status).toBe(409);
-    expect(((await duplicate.json()) as { code: string }).code).toBe("duplicate_quote");
+    expect(await duplicate.json()).toMatchObject({ code: "duplicate_quote" });
 
     // Malformed input must produce a structured response in
     // local mode — never a rejected dispatch promise.
@@ -277,18 +290,10 @@ describe("scaffold lifecycle", () => {
     expect([400, 500]).toContain(malformed.status);
   });
 
-  it("has no plumb findings beyond the recorded ones", async (context) => {
+  it("has no plumb findings", async (context) => {
     const plumb = PLUMB_EXECUTABLE ?? context.skip(PLUMB_NOT_FOUND);
 
-    expect(await plumbFindings(plumb, outputDirectory)).toEqual([
-      // plumb only accepts a PascalCase `TestSupport/<Module>/` path for doubles,
-      // which is .NET casing in a kebab-case TS tree (Plumb follow-up).
-      {
-        rule: "MER-TE-008",
-        severity: "info",
-        location: "apps/api/test/support/fake-quote-store.ts:5",
-      },
-    ]);
+    expect(await plumbFindings(plumb, outputDirectory)).toEqual([]);
   });
 
   type PlumbLookup = {
@@ -356,7 +361,7 @@ describe("scaffold lifecycle", () => {
       if (golden && typeof golden === "object") {
         for (const [key, value] of Object.entries(golden)) {
           expect(actual, context).toHaveProperty(key);
-          assertCovers(value, (actual as Record<string, unknown>)[key], `${context}.${key}`);
+          assertCovers(value, Reflect.get(Object(actual), key), `${context}.${key}`);
         }
         return;
       }
@@ -369,10 +374,8 @@ describe("scaffold lifecycle", () => {
     ];
 
     for (const [plumbFile, embeddedFile] of pairs) {
-      const golden = JSON.parse(
-        await fs.readFile(path.join(plumbConfigsRoot, plumbFile), "utf8"),
-      ) as unknown;
-      const ours = JSON.parse(embedded[embeddedFile] ?? "{}") as unknown;
+      const golden = await readJsonFile(path.join(plumbConfigsRoot, plumbFile), z.unknown());
+      const ours = parseJson(embedded[embeddedFile] ?? "{}", z.unknown());
       assertCovers(golden, ours, embeddedFile);
     }
   });
@@ -433,14 +436,16 @@ describe("scaffold --no-api lifecycle", () => {
     );
     expect(uiPackageJsonSource).not.toContain("@fe-demo/api");
     expect(uiPackageJsonSource).toContain("@fe-demo/contracts");
-    const uiPackage = JSON.parse(uiPackageJsonSource) as {
-      scripts: Record<string, string>;
-      devDependencies: Record<string, string>;
-    };
+    const StringMap = z.record(z.string(), z.string());
+    const uiPackage = parseJson(
+      uiPackageJsonSource,
+      z.object({ scripts: StringMap, devDependencies: StringMap }),
+    );
     expect(uiPackage.scripts.typecheck).toBe("nuxt typecheck");
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(PROJECT_ROOT, "package.json"), "utf8"),
-    ) as { dependencies: Record<string, string>; devDependencies: Record<string, string> };
+    const manifest = await readJsonFile(
+      path.join(PROJECT_ROOT, "package.json"),
+      z.object({ dependencies: StringMap, devDependencies: StringMap }),
+    );
     expect(uiPackage.devDependencies["vue-tsc"]).toBe(manifest.devDependencies["vue-tsc"]);
     // @nuxt/eslint's config pulls in plugins that peer on eslint 10.
     expect(uiPackage.devDependencies["eslint"]).toBe(manifest.devDependencies["eslint"]);
@@ -481,7 +486,11 @@ describe("scaffold --no-api lifecycle", () => {
     ]);
   });
 
-  it("has no plumb findings beyond the recorded ones", async (context) => {
+  it("passes its own oxlint config: no type assertions, no non-null `!`", async () => {
+    await lintScaffoldedWorkspace(outputDirectory);
+  });
+
+  it("has no plumb findings", async (context) => {
     const plumb = PLUMB_EXECUTABLE ?? context.skip(PLUMB_NOT_FOUND);
 
     expect(await plumbFindings(plumb, outputDirectory)).toEqual([]);

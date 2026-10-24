@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import openapiTS, { astToString, type OpenAPI3 } from "openapi-typescript";
+import openapiTS, { astToString } from "openapi-typescript";
 
 /**
  * The hand-written client facade over the generated artifacts. Emitted ONCE at
@@ -40,18 +40,16 @@ export const emitClientFacadeSource = (): string =>
     "",
   ].join("\n");
 
-const readOpenApiSpec = async (openApiPath: string): Promise<OpenAPI3> => {
-  let raw: string;
+/** The spec's text; openapi-typescript parses and validates it. */
+const readOpenApiSpec = async (openApiPath: string): Promise<string> => {
   try {
-    raw = await fs.readFile(openApiPath, "utf8");
+    return await fs.readFile(openApiPath, "utf8");
   } catch {
     throw new Error(
       `Cannot generate the client package: OpenAPI spec not found at ${openApiPath}. ` +
         "Run the Rivet binary first (rivet --from <contract.json> --output <dir> writes <dir>/openapi.json).",
     );
   }
-
-  return JSON.parse(raw) as OpenAPI3;
 };
 
 const SCHEMA_HEADER = [

@@ -144,21 +144,21 @@ export type RivetHandlerOwnerWithInput<
   invoke?: RivetInvokableHandler<TContract, TKey, TInput>;
 };
 
-export const asRivetHandler = <
+export function asRivetHandler<
   TContract,
   TKey extends ContractEndpointKey<TContract>,
   TInput extends RivetHandlerInput<TContract, TKey> = RivetHandlerInput<TContract, TKey>,
 >(
   handlerOwner: RivetHandlerOwnerWithInput<TContract, TKey, TInput>,
-): RivetInvokableHandler<TContract, TKey, TInput> => {
-  const handle =
-    "handle" in handlerOwner && typeof handlerOwner.handle === "function"
-      ? handlerOwner.handle
-      : undefined;
-  const invoke =
-    "invoke" in handlerOwner && typeof handlerOwner.invoke === "function"
-      ? handlerOwner.invoke
-      : undefined;
+): RivetInvokableHandler<TContract, TKey, TInput>;
+// `bind` cannot see through the conditional `RivetInvokableHandler`, so the
+// overload above is the typed contract and this body works on what it checks.
+export function asRivetHandler(handlerOwner: {
+  readonly handle?: unknown;
+  readonly invoke?: unknown;
+}): unknown {
+  const handle = typeof handlerOwner.handle === "function" ? handlerOwner.handle : undefined;
+  const invoke = typeof handlerOwner.invoke === "function" ? handlerOwner.invoke : undefined;
 
   if (handle && invoke) {
     throw new Error(
@@ -167,12 +167,12 @@ export const asRivetHandler = <
   }
 
   if (handle) {
-    return handle.bind(handlerOwner) as RivetInvokableHandler<TContract, TKey, TInput>;
+    return handle.bind(handlerOwner);
   }
 
   if (invoke) {
-    return invoke.bind(handlerOwner) as RivetInvokableHandler<TContract, TKey, TInput>;
+    return invoke.bind(handlerOwner);
   }
 
   throw new Error('asRivetHandler expected a "handle" or "invoke" method.');
-};
+}

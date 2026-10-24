@@ -2,11 +2,13 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { z } from "zod";
 import { resolveRivetBinaryConfig } from "../../src/config/rivet-binary.js";
 import { RivetContractDocument } from "../../src/domain/rivet-contract.js";
 import { emitMockProject } from "../../src/infrastructure/scaffold/mock-project-emitter.js";
 import { lowerContracts } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { ensureRivetBinary } from "../../src/infrastructure/vite/rivet-binary.js";
+import { fn, importModule, readJsonFile } from "../support/checked.js";
 import { runCliCaptured } from "../support/cli.js";
 import { writeContractProject } from "../support/contract-project.js";
 import { parseContractJson } from "../support/lower.js";
@@ -20,6 +22,7 @@ import {
 import {
   PLUMB_EXECUTABLE,
   PLUMB_NOT_FOUND,
+  lintScaffoldedWorkspace,
   plumbFindings,
   typecheckScaffoldedWorkspace,
 } from "../support/scaffold-oracles.js";
@@ -134,9 +137,10 @@ const apiSourcePath = (outputDirectory: string, ...segments: readonly string[]) 
 /** The real compile oracle first, then the scaffolded app itself. */
 const loadScaffoldedApp = async (outputDirectory: string): Promise<ScaffoldedApp> => {
   await typecheckScaffoldedWorkspace(outputDirectory);
-  const { app } = (await import(apiSourcePath(outputDirectory, "local.ts"))) as {
-    app: ScaffoldedApp;
-  };
+  const { app } = await importModule(
+    apiSourcePath(outputDirectory, "local.ts"),
+    z.object({ app: z.object({ request: fn<ScaffoldedApp["request"]>() }) }),
+  );
   return app;
 };
 
@@ -145,9 +149,6 @@ const listFiles = async (root: string): Promise<string[]> =>
     .filter((entry) => entry.isFile())
     .map((entry) => path.relative(root, path.join(entry.parentPath, entry.name)))
     .sort();
-
-const readJson = async <T>(filePath: string): Promise<T> =>
-  JSON.parse(await fs.readFile(filePath, "utf8")) as T;
 
 describe("scaffold-mock lifecycle", () => {
   it("scaffolds a golden-shape workspace whose app serves a mock for every endpoint", async () => {
@@ -190,14 +191,15 @@ describe("scaffold-mock lifecycle", () => {
       'satisfies z.ZodType<import("@maxanstey-meridian/rivet-ts").RivetHandlerInput<import("#contract").MembersContract, "Create">["body"]>',
     );
 
-    const { version } = await readJson<{ version: string }>(
+    const StringMap = z.record(z.string(), z.string());
+    const { version } = await readJsonFile(
       path.join(PROJECT_ROOT, "package.json"),
+      z.object({ version: z.string() }),
     );
-    const apiPackage = await readJson<{
-      imports: Record<string, string>;
-      exports: Record<string, string>;
-      dependencies: Record<string, string>;
-    }>(path.join(outputDirectory, "apps", "api", "package.json"));
+    const apiPackage = await readJsonFile(
+      path.join(outputDirectory, "apps", "api", "package.json"),
+      z.object({ imports: StringMap, exports: StringMap, dependencies: StringMap }),
+    );
     expect(apiPackage.imports["#contract"]).toBe("./src/contracts.ts");
     expect(apiPackage.exports).toMatchObject({
       "./local": "./src/local.ts",
@@ -205,10 +207,10 @@ describe("scaffold-mock lifecycle", () => {
     });
     // The scaffolded rivet-ts pin tracks this package's version.
     expect(apiPackage.dependencies[PACKAGE_NAME]).toBe(`^${version}`);
-    const contractsPackage = await readJson<{
-      exports: Record<string, string>;
-      dependencies: Record<string, string>;
-    }>(path.join(outputDirectory, "packages", "contracts", "package.json"));
+    const contractsPackage = await readJsonFile(
+      path.join(outputDirectory, "packages", "contracts", "package.json"),
+      z.object({ exports: StringMap, dependencies: StringMap }),
+    );
     expect(contractsPackage.exports["."]).toBe("./src/index.ts");
     expect(Object.keys(contractsPackage.dependencies)).toEqual(["openapi-fetch"]);
 
@@ -271,18 +273,15 @@ describe("scaffold-mock lifecycle", () => {
     expect(created.status).toBe(201);
     expect(await created.json()).toEqual({ id: "mem_001", email: "jane@example.com" });
 
-    const facade = (await import(
-      path.join(outputDirectory, "packages", "contracts", "src", "index.ts")
-    )) as { configureRivet: unknown };
-    expect(facade.configureRivet).toBeTypeOf("function");
-    const validation = (await import(apiSourcePath(outputDirectory, "validation.ts"))) as Record<
-      string,
-      unknown
-    >;
-    expect(Object.keys(validation)).toEqual(["createRequest"]);
+    await expect(
+      import(path.join(outputDirectory, "packages", "contracts", "src", "index.ts")),
+    ).resolves.toMatchObject({ configureRivet: expect.any(Function) });
+    expect(Object.keys(await import(apiSourcePath(outputDirectory, "validation.ts")))).toEqual([
+      "createRequest",
+    ]);
   });
 
-  it("has no plumb findings on a fresh mock beyond the recorded ones", async (context) => {
+  it("has no plumb findings on a fresh mock", async (context) => {
     const plumb = PLUMB_EXECUTABLE ?? context.skip(PLUMB_NOT_FOUND);
     const { exitCode, outputDirectory } = await scaffoldMock(
       { "models.ts": MEMBERS_MODELS, "contracts.ts": MEMBERS_CONTRACTS },
@@ -292,6 +291,144 @@ describe("scaffold-mock lifecycle", () => {
     expect(exitCode).toBe(0);
     expect(await plumbFindings(plumb, outputDirectory)).toEqual([]);
   });
+
+  it("types every mock without an assertion: formats, brands, TS enums, aliases, examples", async () => {
+    const { exitCode, stderr, outputDirectory } = await scaffoldMock({
+      "models.ts": `import { brand, type Brand, type Format } from "@maxanstey-meridian/rivet-ts";
+
+export enum AccountStatus {
+  Active = "active",
+  "On Hold" = "on-hold",
+}
+
+export enum Level {
+  Low = 1,
+  High,
+}
+
+export type Sort = "asc" | "desc";
+
+export type Email = Brand<string, "Email">;
+
+export interface AccountDto {
+  id: Format<string, "uuid">;
+  email: Email;
+  backup: Email | null;
+  tags: Brand<string, "Tag">[];
+  status: AccountStatus;
+  level: Level;
+  sort: Sort;
+}
+
+// Format alone once compiled to a mock tsc rejected: Format was nominal.
+export interface ThingDto {
+  id: Format<string, "uuid">;
+  name: string;
+}
+
+export const accountExample = {
+  id: "550e8400-e29b-41d4-a716-446655440000",
+  email: brand("jane@example.com"),
+  backup: null,
+  tags: [brand("vip")],
+  status: AccountStatus["On Hold"],
+  level: Level.High,
+  sort: "desc",
+} satisfies AccountDto;
+`,
+      "contracts.ts": `import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
+import type { AccountDto, Email, ThingDto } from "./models.js";
+import { accountExample } from "./models.js";
+
+export interface AccountsContract extends Contract<"Accounts"> {
+  Get: Endpoint<{ method: "GET"; route: "/api/account"; response: AccountDto }>;
+  Create: Endpoint<{
+    method: "POST";
+    route: "/api/accounts";
+    input: { email: string };
+    response: AccountDto;
+    successStatus: 201;
+    responseExamples: [{ status: 201; examples: [typeof accountExample] }];
+  }>;
+  Thing: Endpoint<{ method: "GET"; route: "/api/thing"; response: ThingDto }>;
+  // Its use case is named \`brand\`, like the helper the mock imports.
+  Brand: Endpoint<{ method: "GET"; route: "/api/brand"; response: Email }>;
+}
+`,
+    });
+    expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+
+    const application = (...segments: readonly string[]) =>
+      fs.readFile(
+        apiSourcePath(outputDirectory, "modules", "accounts", "application", ...segments),
+        "utf8",
+      );
+    const getSource = await application("get.ts");
+    expect(getSource).toContain('import { brand } from "@maxanstey-meridian/rivet-ts";');
+    expect(getSource).toContain('import { AccountStatus, Level } from "../../../models.js";');
+    expect(getSource).toContain('"status": AccountStatus.Active');
+    expect(getSource).toContain('"level": Level.Low');
+    const createSource = await application("create.ts");
+    expect(createSource).toContain('"status": AccountStatus["On Hold"]');
+    expect(createSource).toContain('"email": brand("jane@example.com")');
+    const brandSource = await application("brand.ts");
+    expect(brandSource).toContain("const brandUseCase = async");
+    expect(brandSource).toContain("export { brandUseCase as brand };");
+    // No `} as RivetHandlerResult<…>`: the oxlint gate below bans every assertion.
+    for (const file of ["get.ts", "create.ts", "thing.ts", "brand.ts"]) {
+      expect(await application(file), file).not.toContain(" as import(");
+    }
+
+    const app = await loadScaffoldedApp(outputDirectory);
+    await lintScaffoldedWorkspace(outputDirectory);
+    await expect((await app.request("/api/account")).json()).resolves.toEqual({
+      id: "00000000-0000-0000-0000-000000000000",
+      email: "example",
+      backup: "example",
+      tags: ["example"],
+      status: "active",
+      level: 1,
+      sort: "asc",
+    });
+    const created = await app.request("/api/accounts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "jane@example.com" }),
+    });
+    expect(created.status).toBe(201);
+    await expect(created.json()).resolves.toEqual({
+      id: "550e8400-e29b-41d4-a716-446655440000",
+      email: "jane@example.com",
+      backup: null,
+      tags: ["vip"],
+      status: "on-hold",
+      level: 2,
+      sort: "desc",
+    });
+    await expect((await app.request("/api/thing")).json()).resolves.toEqual({
+      id: "00000000-0000-0000-0000-000000000000",
+      name: "example",
+    });
+    await expect((await app.request("/api/brand")).json()).resolves.toBe("example");
+  });
+
+  it.each(["expressive-contract", "response-examples-contract"])(
+    "scaffolds the %s fixture into a workspace that typechecks and passes its oxlint config",
+    async (fixture) => {
+      const outputDirectory = path.join(await tempDir("rivet-ts-scaffold-mock-"), "mock-app");
+      const { exitCode, stderr } = await runCliCaptured([
+        "scaffold-mock",
+        "--entry",
+        fixturePath(fixture, "contracts.ts"),
+        "--out",
+        outputDirectory,
+      ]);
+      expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+
+      await typecheckScaffoldedWorkspace(outputDirectory);
+      await lintScaffoldedWorkspace(outputDirectory);
+    },
+  );
 
   it("scaffolds one module per contract when contracts share endpoint names", async () => {
     // A contract named like a rivet-ts type and two `Get`/`Create` pairs: per-module
@@ -334,11 +471,9 @@ export interface SummaryContract extends Contract<"Summary"> {
       name: "example",
     });
     await expect((await app.request("/api/summary")).json()).resolves.toEqual({ total: 0 });
-    const validation = (await import(apiSourcePath(outputDirectory, "validation.ts"))) as Record<
-      string,
-      unknown
-    >;
-    expect(Object.keys(validation).sort()).toEqual(["petCreateRequest", "summaryCreateRequest"]);
+    expect(
+      Object.keys(await import(apiSourcePath(outputDirectory, "validation.ts"))).sort(),
+    ).toEqual(["petCreateRequest", "summaryCreateRequest"]);
   });
 
   it("serves endpoints whose names are numeric, quoted or collide with rivet-ts types", async () => {
@@ -738,9 +873,10 @@ export interface WidgetsContract extends Contract<"Widgets"> {
     expect(created.status).toBe(201);
     await expect(created.json()).resolves.toEqual({ id: "name,nickname,quantity,tags" });
 
-    const { createRequest } = (await import(validationPath)) as {
-      createRequest: { safeParse: (value: unknown) => { success: boolean } };
-    };
+    const { createRequest } = await importModule(
+      validationPath,
+      z.object({ createRequest: z.instanceof(z.ZodType) }),
+    );
     expect(createRequest.safeParse(valid).success).toBe(true);
     for (const invalid of [
       { name: "ab" },
@@ -811,6 +947,7 @@ export interface ThingsContract extends Contract<"Things"> {
         contracts: lowered.contracts,
         sourceFiles: lowered.sourceFiles,
         sourcePathAliases: lowered.sourcePathAliases,
+        enumDeclarations: lowered.enumDeclarations,
         document: new RivetContractDocument({
           ...lowered.document,
           endpoints: lowered.document.endpoints.filter(

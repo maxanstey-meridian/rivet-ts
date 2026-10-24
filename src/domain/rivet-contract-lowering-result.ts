@@ -47,12 +47,32 @@ export type ContractSourceFile = Readonly<{
  */
 export type ContractSourcePathAliases = Readonly<Record<string, readonly string[]>>;
 
+/**
+ * A TS `enum` declaration among the contract source files, for emitting
+ * member references (`MemberStatus.Active`): a raw value is not assignable to
+ * a TS enum. Enum-like type aliases lower to document enums too but are absent
+ * here — their literals are assignable as written.
+ */
+export type ContractEnumDeclaration = Readonly<{
+  /** The exported enum identifier, which is also the document enum's `name`. */
+  name: string;
+  /**
+   * POSIX path of the declaring module, relative like
+   * `ContractSourceFile.relativePath`; absent when that module is not a
+   * contract source file (a library mapped in through tsconfig `paths`).
+   */
+  relativePath?: string;
+  /** In declaration order, each with the value the document enum carries. */
+  members: readonly Readonly<{ name: string; value: string | number }>[];
+}>;
+
 export class RivetContractLoweringResult {
   public readonly document: RivetContractDocument;
   public readonly diagnostics: readonly ExtractionDiagnostic[];
   public readonly contracts: readonly DiscoveredContract[];
   public readonly sourceFiles: readonly ContractSourceFile[];
   public readonly sourcePathAliases: ContractSourcePathAliases;
+  public readonly enumDeclarations: readonly ContractEnumDeclaration[];
 
   public constructor(input: {
     document: RivetContractDocument;
@@ -60,12 +80,14 @@ export class RivetContractLoweringResult {
     contracts?: readonly DiscoveredContract[];
     sourceFiles?: readonly ContractSourceFile[];
     sourcePathAliases?: ContractSourcePathAliases;
+    enumDeclarations?: readonly ContractEnumDeclaration[];
   }) {
     this.document = input.document;
     this.diagnostics = input.diagnostics ?? [];
     this.contracts = input.contracts ?? [];
     this.sourceFiles = input.sourceFiles ?? [];
     this.sourcePathAliases = input.sourcePathAliases ?? {};
+    this.enumDeclarations = input.enumDeclarations ?? [];
   }
 
   public get hasErrors(): boolean {

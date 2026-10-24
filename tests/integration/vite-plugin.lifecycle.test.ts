@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { build, createServer } from "vite";
+import { z } from "zod";
+import { readJsonFile } from "../support/checked.js";
 import { fixturePath, linkPackage, PROJECT_ROOT } from "../support/paths.js";
 import {
   FAKE_RIVET_VERSION,
@@ -14,13 +16,14 @@ const EMPTY_SPEC = { openapi: "3.1.0", info: { title: "t", version: "1" }, paths
 
 describe("vite plugin lifecycle", () => {
   it("runs against a vite major that the package's vite peer range admits", async () => {
-    const readManifest = async (directory: string) =>
-      JSON.parse(await fs.readFile(path.join(directory, "package.json"), "utf8")) as {
-        readonly version: string;
-        readonly peerDependencies: Readonly<Record<string, string>>;
-      };
-    const { peerDependencies } = await readManifest(PROJECT_ROOT);
-    const { version } = await readManifest(path.join(PROJECT_ROOT, "node_modules", "vite"));
+    const { peerDependencies } = await readJsonFile(
+      path.join(PROJECT_ROOT, "package.json"),
+      z.object({ peerDependencies: z.record(z.string(), z.string()) }),
+    );
+    const { version } = await readJsonFile(
+      path.join(PROJECT_ROOT, "node_modules", "vite", "package.json"),
+      z.object({ version: z.string() }),
+    );
     const [major] = version.split(".");
 
     expect(peerDependencies["vite"]?.split(" || ")).toContain(`^${major}.0.0`);
@@ -209,7 +212,7 @@ export default defineConfig({
     // The plugin invokes the binary in its minimal headline form: --from
     // <contract> --output <clientOutDir>. No --openapi override, and no
     // legacy <clientOutDir>/rivet leg (the binary writes openapi.json only).
-    const recordedArgs = JSON.parse(await fs.readFile(fakeRivetArgsPath, "utf8")) as string[];
+    const recordedArgs = await readJsonFile(fakeRivetArgsPath, z.array(z.string()));
     expect(recordedArgs).toEqual([
       "--from",
       path.join(apiRoot, "generated", "api.contract.json"),
@@ -573,9 +576,10 @@ fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify(${JSON.str
       ],
     });
 
-    const spec = JSON.parse(
-      await fs.readFile(path.join(tempDirectory, "generated", "openapi.json"), "utf8"),
-    ) as { readonly components: { readonly securitySchemes: Record<string, unknown> } };
+    const spec = await readJsonFile(
+      path.join(tempDirectory, "generated", "openapi.json"),
+      z.object({ components: z.object({ securitySchemes: z.record(z.string(), z.unknown()) }) }),
+    );
     expect(spec.components.securitySchemes).toHaveProperty("admin");
   });
 
@@ -606,9 +610,10 @@ fs.writeFileSync(path.join(outputDir, "openapi.json"), JSON.stringify(${JSON.str
       vi.unstubAllEnvs();
     }
 
-    const spec = JSON.parse(await fs.readFile(fixture.openApiPath, "utf8")) as {
-      readonly info: { readonly title: string };
-    };
+    const spec = await readJsonFile(
+      fixture.openApiPath,
+      z.object({ info: z.object({ title: z.string() }) }),
+    );
     expect(spec.info.title).toBe("pinned");
   });
 

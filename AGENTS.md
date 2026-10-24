@@ -9,7 +9,7 @@ golden-shape workspaces (`rivet-ts scaffold` / `scaffold-mock`).
   import `dist/` in places; a stale build means stale tests.
 - Finish line: `pnpm lint && pnpm check && pnpm test`.
 - The scaffold lifecycle suite enforces ZERO plumb findings on fresh scaffold
-  output beyond the recorded ones (plumb from `PLUMB`, else `plumb` on `PATH`,
+  output (plumb from `PLUMB`, else `plumb` on `PATH`,
   e.g. `PLUMB=~/Sites/plumb/plumb pnpm test`; skipped if neither). Any change to the
   emitters in `src/infrastructure/scaffold/` must keep that gate green — the
   scaffolder is permanently coupled to Meridian doctrine.

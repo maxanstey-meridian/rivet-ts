@@ -103,10 +103,33 @@ const PINNED_PACKAGE_SECTIONS = {
 
 export type PinnedPackage = keyof typeof PINNED_PACKAGE_SECTIONS;
 
+const MANIFEST_SECTIONS: readonly ManifestSection[] = [
+  "dependencies",
+  "devDependencies",
+  "peerDependencies",
+];
+
+const isStringRecord = (value: unknown): boolean =>
+  typeof value === "object" &&
+  value !== null &&
+  Object.values(value).every((entry) => typeof entry === "string");
+
+const isPackageManifest = (value: unknown): value is PackageManifest =>
+  typeof value === "object" &&
+  value !== null &&
+  (!("version" in value) || typeof value.version === "string") &&
+  MANIFEST_SECTIONS.every(
+    (section) => !(section in value) || isStringRecord(Reflect.get(value, section)),
+  );
+
 /** rivet-ts's own `package.json`. */
 export const readPackageManifest = async (): Promise<PackageManifest> => {
   const manifestText = await fs.readFile(new URL("../../../package.json", import.meta.url), "utf8");
-  return JSON.parse(manifestText) as PackageManifest;
+  const manifest: unknown = JSON.parse(manifestText);
+  if (!isPackageManifest(manifest)) {
+    throw new Error("rivet-ts's package.json has an unexpected shape.");
+  }
+  return manifest;
 };
 
 const pinnedVersions =
@@ -169,7 +192,12 @@ export const toPackageScope = (projectName: string): string =>
 const OXLINTRC_SOURCE = jsonFile({
   ignorePatterns: ["**/generated/**"],
   categories: { correctness: "warn" },
-  rules: { "no-unused-vars": "warn", curly: ["error", "all"] },
+  rules: {
+    "no-unused-vars": "warn",
+    curly: ["error", "all"],
+    "typescript/no-non-null-assertion": "error",
+    "typescript/consistent-type-assertions": ["error", { assertionStyle: "never" }],
+  },
 });
 
 const OXFMTRC_SOURCE = jsonFile({

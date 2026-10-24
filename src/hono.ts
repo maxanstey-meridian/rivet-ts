@@ -1,6 +1,10 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
+import type {
+  ContentfulStatusCode,
+  ContentlessStatusCode,
+  SuccessStatusCode,
+} from "hono/utils/http-status";
 import {
   asRivetHandler,
   type ContractEndpointKey,
@@ -95,8 +99,16 @@ type RegisterRivetHonoRoutesOptions<TContract> = {
 type RuntimeHandler = (input?: Record<string, unknown>) => Promise<unknown>;
 
 /** 204/205/304 forbid a response body. */
-const isBodylessStatus = (status: number): boolean =>
+const isBodylessStatus = (status: number): status is ContentlessStatusCode =>
   status === 204 || status === 205 || status === 304;
+
+/** The registered 2xx codes, which are exactly Hono's `SuccessStatusCode`. */
+const SUCCESS_STATUS_CODES: readonly SuccessStatusCode[] = [
+  200, 201, 202, 203, 204, 205, 206, 207, 208, 226,
+];
+
+const isSuccessStatusCode = (status: number): status is SuccessStatusCode =>
+  SUCCESS_STATUS_CODES.some((code) => code === status);
 
 /**
  * Route placeholders bind to params case-insensitively (as in ASP.NET), so each
@@ -121,8 +133,13 @@ const isHandlerClassToken = <TContract, TKey extends ContractEndpointKey<TContra
     return false;
   }
 
-  const prototype = value.prototype as { handle?: unknown; invoke?: unknown } | undefined;
-  return typeof prototype?.handle === "function" || typeof prototype?.invoke === "function";
+  const prototype: unknown = value.prototype;
+  return (
+    typeof prototype === "object" &&
+    prototype !== null &&
+    (("handle" in prototype && typeof prototype.handle === "function") ||
+      ("invoke" in prototype && typeof prototype.invoke === "function"))
+  );
 };
 
 const isRichHandlerEntry = <TContract, TKey extends ContractEndpointKey<TContract>>(
@@ -136,6 +153,15 @@ const createHandlerResolutionError = (message: string): Error => {
   return error;
 };
 
+/**
+ * The handler map is typed per endpoint key; the runtime dispatches by the
+ * endpoint it resolved, so every handler is called through one shape.
+ */
+const toRuntimeHandler =
+  (handler: (...args: never[]) => unknown): RuntimeHandler =>
+  (...args) =>
+    Reflect.apply(handler, undefined, args);
+
 const resolveHandlerEntry = <TContract, TKey extends ContractEndpointKey<TContract>>(
   endpointName: string,
   handlerEntry: HonoHandlerEntry<TContract, TKey>,
@@ -148,13 +174,11 @@ const resolveHandlerEntry = <TContract, TKey extends ContractEndpointKey<TContra
         `Handler for endpoint "${endpointName}" must be a plain function or a class with a prototype "handle" or "invoke" method.`,
       );
     }
-    // The handler map is typed per endpoint key; the runtime dispatches by the
-    // endpoint it resolved, so every handler is called through one shape.
-    return handlerEntry as RuntimeHandler;
+    return toRuntimeHandler(handlerEntry);
   }
 
   const owner = resolveHandler ? resolveHandler(handlerEntry, context) : new handlerEntry();
-  return asRivetHandler(owner) as RuntimeHandler;
+  return toRuntimeHandler(asRivetHandler(owner));
 };
 
 // Request-binding failures surface as structured 400s through the same
@@ -260,7 +284,7 @@ const buildHandlerInput = async (
   }
 
   if (routeParams.length > 0) {
-    const routeValues = context.req.param() as Record<string, string | undefined>;
+    const routeValues: Record<string, string | undefined> = context.req.param();
     const params: Record<string, unknown> = {};
     for (const param of routeParams) {
       const raw = routeValues[param.name];
@@ -332,12 +356,17 @@ const getDefaultSuccessStatus = (httpMethod: string): number => {
   }
 };
 
-const getSuccessStatus = (endpoint: ContractEndpointJson): number => {
+const getSuccessStatus = (endpoint: ContractEndpointJson): SuccessStatusCode => {
   const successResponse = endpoint.responses.find(
     (response) => response.statusCode >= 200 && response.statusCode < 300,
   );
-
-  return successResponse?.statusCode ?? getDefaultSuccessStatus(endpoint.httpMethod);
+  const status = successResponse?.statusCode ?? getDefaultSuccessStatus(endpoint.httpMethod);
+  if (!isSuccessStatusCode(status)) {
+    throw createHandlerResolutionError(
+      `Endpoint "${endpoint.name}" declares success status ${status}, which is not a registered 2xx status (${SUCCESS_STATUS_CODES.join(", ")}).`,
+    );
+  }
+  return status;
 };
 
 const toResponseBody = (
@@ -364,11 +393,11 @@ const toResponseBody = (
 const writeSuccessResponse = async (
   context: Context,
   endpoint: ContractEndpointJson,
-  status: number,
+  status: SuccessStatusCode,
   result: unknown,
 ): Promise<Response> => {
   if (result === undefined || isBodylessStatus(status)) {
-    return context.body(null, status as 204);
+    return context.body(null, status);
   }
 
   if (endpoint.fileContentType) {
@@ -378,7 +407,7 @@ const writeSuccessResponse = async (
     });
   }
 
-  return context.json(result as object, status as 200);
+  return context.json(result, status);
 };
 
 const toHeaders = (headers: RivetHeadersInit): Headers => {
@@ -475,9 +504,9 @@ export const registerRivetHonoRoutes = <TContract, TApp extends HonoRouteTarget 
 
   type RouteEntry = HonoRouteEntry<TContract, ContractEndpointKey<TContract>>;
   // Object.entries cannot see through the per-key handler map type.
-  const handlerEntries = (
-    Object.entries(options.handlers) as [string, RouteEntry | undefined][]
-  ).filter((entry): entry is [string, RouteEntry] => entry[1] !== undefined);
+  const handlerEntries = Object.entries<RouteEntry | undefined>(options.handlers).filter(
+    (entry): entry is [string, RouteEntry] => entry[1] !== undefined,
+  );
   const usedHandlerKeys = new Set<string>();
   const registeredRouteKeys = new Set<string>();
 

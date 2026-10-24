@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import ts from "typescript";
 import type {
+  ContractEnumDeclaration,
   ContractSourceFile,
   ContractSourcePathAliases,
   DiscoveredContract,
@@ -12,6 +13,7 @@ import type {
   RivetEndpointDefinition,
 } from "../../domain/rivet-contract.js";
 import { toKebabCase } from "../codegen/kebab-case.js";
+import type { MockSourceImports } from "./mock-source-renderer.js";
 import { generateEndpointMock } from "./mock-value-generator.js";
 import {
   assertOutDirWritable,
@@ -38,6 +40,7 @@ export type MockProjectConfig = {
   readonly contracts: readonly DiscoveredContract[];
   readonly sourceFiles: readonly ContractSourceFile[];
   readonly sourcePathAliases: ContractSourcePathAliases;
+  readonly enumDeclarations: readonly ContractEnumDeclaration[];
   readonly document: RivetContractDocument;
 };
 
@@ -50,6 +53,8 @@ type HandlerDescriptor = {
   readonly useCaseExportName: string;
   readonly takesInput: boolean;
   readonly body: string;
+  /** What the body's mock expression needs imported; empty when it is not a value. */
+  readonly bodyImports: MockSourceImports;
   readonly supportsDemoCall: boolean;
   /** Present when the handler receives a JSON body the route validates. */
   readonly bodySchema?: ZodSourceResult;
@@ -134,16 +139,16 @@ const isSupportedParamSource = (source: string): boolean =>
   source === "body" || source === "route" || source === "query";
 
 const buildHandlerDescriptor = (
-  contract: DiscoveredContract,
   spec: DiscoveredEndpoint,
   endpoint: RivetEndpointDefinition,
   document: RivetContractDocument,
+  enumDeclarations: readonly ContractEnumDeclaration[],
 ): HandlerDescriptor => {
   // RivetHandlerInput has a slot per lowered param source, so an endpoint
   // with no lowered params is the one whose handler takes no input.
   const takesInput = endpoint.params.length > 0;
 
-  const mock = generateEndpointMock(endpoint, document);
+  const mock = generateEndpointMock(endpoint, document, enumDeclarations);
   const unsupportedParams = endpoint.params.filter(
     (param) => !isSupportedParamSource(param.source),
   );
@@ -167,13 +172,10 @@ const buildHandlerDescriptor = (
   } else if (mock.result.kind === "source") {
     body = `  return ${mock.result.source};`;
   } else {
-    const expression = JSON.stringify(mock.result.value, null, 2);
-    // Enum members, brands and example-backed values are not assignable as raw
-    // JSON literals; the cast lets a fresh scaffold pass its own typecheck.
-    const cast = mock.result.needsCast
-      ? ` as ${handlerType("Result", contract.exportedName, spec.name)}`
-      : "";
-    body = `  return ${indent(expression, 2).trimStart()}${cast};`;
+    // A value the contract type rejects (an example that drifted from it)
+    // was replaced by a synthesized one; say so where the user will look.
+    const notes = mock.diagnostics.map((diagnostic) => `  // TODO: ${diagnostic.message}`);
+    body = [...notes, `  return ${indent(mock.result.source, 2).trimStart()};`].join("\n");
   }
 
   const bodyParam = endpoint.params.find((param) => param.source === "body");
@@ -185,6 +187,7 @@ const buildHandlerDescriptor = (
     useCaseExportName: toSafeIdentifier(spec.name),
     takesInput,
     body,
+    bodyImports: mock.result.kind === "value" ? mock.result.imports : { brand: false, enums: [] },
     supportsDemoCall:
       !endpoint.params.some((param) => isSupportedParamSource(param.source)) &&
       mock.result.kind === "value",
@@ -225,7 +228,7 @@ const buildContractGroups = (config: MockProjectConfig): readonly ContractGroup[
             `Endpoint "${contract.name}.${spec.name}" is missing from the lowered contract document.`,
           );
         }
-        return buildHandlerDescriptor(contract, spec, endpoint, config.document);
+        return buildHandlerDescriptor(spec, endpoint, config.document, config.enumDeclarations);
       }),
     };
   });
@@ -341,11 +344,44 @@ const selectDemoClientCall = (
 ): { readonly httpMethod: string; readonly routeTemplate: string } | undefined =>
   groups.flatMap((group) => group.handlers).find((handler) => handler.supportsDemoCall);
 
-const emitUseCaseSource = (group: ContractGroup, handler: HandlerDescriptor): string =>
-  `export const ${handler.useCaseExportName} = async (_input: ${handlerType("Input", group.contractExportName, handler.endpointName)}): Promise<${handlerType("Result", group.contractExportName, handler.endpointName)}> => {
+/** A copied contract source's specifier from `modules/<m>/application/`, as the sources import each other (`.js`). */
+const applicationImportSpecifier = (moduleDirectoryName: string, relativePath: string): string => {
+  const specifier = path.posix
+    .relative(`modules/${moduleDirectoryName}/application`, relativePath)
+    .replace(/\.([mc]?)tsx?$/u, ".$1js");
+  return specifier.startsWith(".") ? specifier : `./${specifier}`;
+};
+
+const emitUseCaseSource = (group: ContractGroup, handler: HandlerDescriptor): string => {
+  const { brand, enums } = handler.bodyImports;
+  const enumsByModule = new Map<string, string[]>();
+  for (const { name, relativePath } of enums) {
+    if (relativePath !== undefined) {
+      enumsByModule.set(relativePath, [...(enumsByModule.get(relativePath) ?? []), name]);
+    }
+  }
+  const imports = [
+    ...(brand ? ['import { brand } from "@maxanstey-meridian/rivet-ts";'] : []),
+    ...[...enumsByModule].map(
+      ([relativePath, names]) =>
+        `import { ${names.join(", ")} } from "${applicationImportSpecifier(group.moduleDirectoryName, relativePath)}";`,
+    ),
+  ];
+  // The mock expression names `brand` and enums unqualified; a use case
+  // named like one of them binds locally under another name.
+  const imported = new Set([...(brand ? ["brand"] : []), ...enums.map(({ name }) => name)]);
+  const exportName = handler.useCaseExportName;
+  const localName = imported.has(exportName) ? `${exportName}UseCase` : exportName;
+  const declaration = `${localName === exportName ? "export " : ""}const ${localName} = async (_input: ${handlerType("Input", group.contractExportName, handler.endpointName)}): Promise<${handlerType("Result", group.contractExportName, handler.endpointName)}> => {
 ${handler.body}
 };
 `;
+  return [
+    ...(imports.length > 0 ? [`${imports.join("\n")}\n\n`] : []),
+    declaration,
+    ...(localName === exportName ? [] : [`export { ${localName} as ${exportName} };\n`]),
+  ].join("");
+};
 
 /**
  * Synthesized Zod schemas per body-carrying endpoint — scaffold-time emitted,

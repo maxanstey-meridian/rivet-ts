@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased — breaking
+
+- `Format<T, "name">` is no longer nominal: its phantom `__format` property is optional, so any `T` is assignable (`const id: Format<string, "uuid"> = "…"`). The docs called it "primitive plus format metadata", but nothing could construct one without an `as Format<…>` cast, which plumb's golden oxlint rules now reject. Existing casts still compile and can be deleted.
+
+- `registerRivetHonoRoutes` rejects, at registration, an endpoint whose success status is not a registered 2xx code (200–208, 226: Hono's `SuccessStatusCode`), naming the endpoint and status. It passed any 2xx to Hono through a type assertion.
+
+## Unreleased — fixes
+
+- `scaffold-mock` handlers return typed mock values with no `as RivetHandlerResult<…>` cast, so a fresh mock passes its own oxlint config. TS `enum` values print as member references (`AccountStatus.Active`, `Status["On Hold"]`) imported from the copied contract module; enum-like type aliases print as literals; branded values go through the new `brand()` export. A contract whose response had a `Format<…>` field but no enum or brand got no cast and failed `tsc`; it compiles now.
+- `scaffold-mock` checks a success response example against the response type instead of casting it. An example that does not match (a value outside its enum, a missing or extra property; the authoring types do not check `typeof` examples) is replaced by a synthesized value, and the handler carries a `// TODO:` naming where it diverged (`SCAFFOLD_RESPONSE_EXAMPLE_MISMATCH`). The cast used to ship it as-is.
+- New `brand(value)` export: brands a value without validating it, for mocks and tests, inferring the brand name from where the value goes (`const email: Email = brand("jane@example.com")`). Contract example consts can use it (`email: brand("jane@example.com")`); lowering reads the call as its argument.
+
+- The scaffolded `.oxlintrc.json` (`scaffold`, `scaffold --no-api`, `scaffold-mock`) carries Plumb's two new golden rules, `typescript/no-non-null-assertion` and `typescript/consistent-type-assertions` (`assertionStyle: "never"`). Without them Plumb's MER-TO-002 reported two "diverging from golden base" findings on a fresh scaffold. The full scaffold's `app.vue` reads `error.message` directly (the contract types it as `ApiError | ValidationError`), dropping its `as { message?: string }` cast, which the new rule rejects.
+
 ## 0.16.2 — fixes
 
 - The default Rivet pin moves from `v0.45.0` to `v0.45.1`, whose release binaries are self-contained without single-file packaging: its `--project` and loose-`.cs` modes work again (`--from`, which rivet-ts uses, was unaffected). The contract JSON schema is unchanged.

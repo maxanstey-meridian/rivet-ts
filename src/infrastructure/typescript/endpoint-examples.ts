@@ -8,6 +8,7 @@ import {
   getListEntryNodes,
   getPropertyName,
   hasModifier,
+  isRivetSymbol,
   literalValueOfType,
   readNumericLiteral,
   readStringLiteral,
@@ -446,7 +447,7 @@ const parseExampleValue = (
   ctx: LoweringContext,
   expression: ts.Expression,
 ): RivetEndpointExampleValue | undefined => {
-  const unwrapped = unwrapExampleExpression(expression);
+  const unwrapped = unwrapExampleExpression(ctx, expression);
 
   if (ts.isStringLiteral(unwrapped) || ts.isNoSubstitutionTemplateLiteral(unwrapped)) {
     return unwrapped.text;
@@ -596,14 +597,28 @@ const parseShorthandExampleValue = (
   );
 };
 
-const unwrapExampleExpression = (expression: ts.Expression): ts.Expression => {
+const unwrapExampleExpression = (
+  ctx: LoweringContext,
+  expression: ts.Expression,
+): ts.Expression => {
   if (
     ts.isParenthesizedExpression(expression) ||
     ts.isAsExpression(expression) ||
     ts.isSatisfiesExpression(expression) ||
     ts.isTypeAssertionExpression(expression)
   ) {
-    return unwrapExampleExpression(expression.expression);
+    return unwrapExampleExpression(ctx, expression.expression);
+  }
+
+  // rivet-ts's `brand(value)` only retypes its argument, so the wire value is the argument.
+  if (
+    ts.isCallExpression(expression) &&
+    isRivetSymbol(ctx.checker, expression.expression, "brand")
+  ) {
+    const [argument] = expression.arguments;
+    if (argument) {
+      return unwrapExampleExpression(ctx, argument);
+    }
   }
 
   return expression;

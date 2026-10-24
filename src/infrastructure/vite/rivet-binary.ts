@@ -60,7 +60,7 @@ const verifyDigest = async (filePath: string, expectedSha256: string): Promise<v
 
 type GitHubReleaseAsset = {
   readonly name: string;
-  readonly digest?: string;
+  readonly digest?: string | null;
   readonly browser_download_url: string;
 };
 
@@ -69,6 +69,22 @@ type GitHubRelease = {
 };
 
 const SHA256_DIGEST = /^sha256:([0-9a-f]{64})$/u;
+
+const isGitHubReleaseAsset = (value: unknown): value is GitHubReleaseAsset =>
+  typeof value === "object" &&
+  value !== null &&
+  "name" in value &&
+  typeof value.name === "string" &&
+  "browser_download_url" in value &&
+  typeof value.browser_download_url === "string" &&
+  (!("digest" in value) || value.digest === null || typeof value.digest === "string");
+
+const isGitHubRelease = (value: unknown): value is GitHubRelease =>
+  typeof value === "object" &&
+  value !== null &&
+  "assets" in value &&
+  Array.isArray(value.assets) &&
+  value.assets.every(isGitHubReleaseAsset);
 
 const resolveReleaseAsset = async (
   tagName: string,
@@ -83,7 +99,10 @@ const resolveReleaseAsset = async (
   });
   await ensureOk(releaseResponse, `Failed to resolve Rivet release ${tagName}`);
 
-  const release = (await releaseResponse.json()) as GitHubRelease;
+  const release: unknown = await releaseResponse.json();
+  if (!isGitHubRelease(release)) {
+    throw new Error(`Release ${tagName} returned an unexpected GitHub API response.`);
+  }
   const asset = release.assets.find((candidate) => candidate.name === assetName);
 
   if (!asset) {
@@ -158,10 +177,7 @@ export const ensureRivetBinary = async (
       throw new Error(`Download for ${assetName} returned an empty body.`);
     }
 
-    await pipeline(
-      Readable.fromWeb(downloadResponse.body as globalThis.ReadableStream),
-      createWriteStream(archivePath),
-    );
+    await pipeline(Readable.fromWeb(downloadResponse.body), createWriteStream(archivePath));
     await verifyDigest(archivePath, asset.sha256);
 
     await tar.x({

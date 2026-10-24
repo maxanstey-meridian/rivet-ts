@@ -186,8 +186,9 @@ describe("handler resolution", () => {
         group: "directory",
         handlers: {
           ...directoryHandlers,
+          // @ts-expect-error the contract has no Unknown endpoint
           Unknown: async () => ({ status: "ok" as const }),
-        } as never,
+        },
       }),
     ).toThrow("Unused handlers were provided: Unknown.");
   });
@@ -225,7 +226,7 @@ describe("groups", () => {
   it("fails loudly without a group when one handler key matches endpoints in several groups", () => {
     expect(() =>
       registerRivetHonoRoutes(new Hono(), sharedEndpointNames, {
-        handlers: { Get: async () => "x" } as never,
+        handlers: { Get: async () => "x" },
       }),
     ).toThrow(/matched multiple endpoints/);
   });
@@ -233,7 +234,7 @@ describe("groups", () => {
   it("fails loudly at registration when two contracts share a route and method", () => {
     expect(() =>
       registerRivetHonoRoutes(new Hono(), sharedRoutes, {
-        handlers: { ListPets: async () => "x", ListOwners: async () => "x" } as never,
+        handlers: { ListPets: async () => "x", ListOwners: async () => "x" },
       }),
     ).toThrow(/Duplicate route/);
   });
@@ -327,7 +328,7 @@ describe("request binding", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
       code: "MISSING_MULTIPART_FIELD",
-      message: expect.stringContaining("file") as string,
+      message: expect.stringContaining("file"),
     });
     expect(handlerCalls).toBe(0);
   });
@@ -351,7 +352,7 @@ describe("request binding", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
       code: "INVALID_REQUEST_BODY",
-      message: expect.stringContaining("search") as string,
+      message: expect.stringContaining("search"),
     });
     expect(handlerCalls).toBe(0);
   });
@@ -427,7 +428,7 @@ describe("request binding", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
       code,
-      message: expect.stringContaining(parameter) as string,
+      message: expect.stringContaining(parameter),
     });
   });
 });

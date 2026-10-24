@@ -168,7 +168,7 @@ const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<numb
   let spec: unknown;
   if (specPath) {
     try {
-      spec = JSON.parse(await fs.readFile(specPath, "utf8")) as unknown;
+      spec = JSON.parse(await fs.readFile(specPath, "utf8"));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       io.stderr(`error: could not read OpenAPI spec at ${specPath}: ${message}\n`);
@@ -192,6 +192,7 @@ const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<numb
       contracts: lowered.contracts,
       sourceFiles: lowered.sourceFiles,
       sourcePathAliases: lowered.sourcePathAliases,
+      enumDeclarations: lowered.enumDeclarations,
       // A spec carries JSON Schema constraints the TS contract cannot express.
       document:
         spec === undefined

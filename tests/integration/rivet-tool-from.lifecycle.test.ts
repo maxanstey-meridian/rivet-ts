@@ -3,9 +3,11 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { z } from "zod";
 import { resolveRivetBinaryConfig } from "../../src/config/rivet-binary.js";
 import { bearerSecurityArguments } from "../../src/infrastructure/rivet/security-arguments.js";
 import { ensureRivetBinary } from "../../src/infrastructure/vite/rivet-binary.js";
+import { readJsonFile } from "../support/checked.js";
 import { type ContractJson, lowerFixture } from "../support/lower.js";
 import { PROJECT_ROOT, fixturePath } from "../support/paths.js";
 import { tempDir } from "../support/temp.js";
@@ -38,20 +40,34 @@ const lowerableFixtures = (await fs.readdir(fixturePath())).filter(
 // so Rivet builds the multipart schema inline and says so (RIV2004).
 const MULTIPART_INLINE_WARNING = /^warning RIV2004: multipart input type /u;
 
-type OpenApiOperation = {
-  readonly responses?: Record<
-    string,
-    { readonly content?: Record<string, { readonly schema?: { readonly $ref?: string } }> }
-  >;
-};
+// Loose: the tests match emitted keys these schemas do not name.
+const OpenApiOperation = z.looseObject({
+  responses: z
+    .record(
+      z.string(),
+      z.looseObject({
+        content: z
+          .record(
+            z.string(),
+            z.looseObject({ schema: z.looseObject({ $ref: z.string().optional() }).optional() }),
+          )
+          .optional(),
+      }),
+    )
+    .optional(),
+});
 
-type OpenApiDocument = {
-  readonly paths: Record<string, Record<string, OpenApiOperation>>;
-  readonly components?: {
-    readonly schemas?: Record<string, unknown>;
-    readonly examples?: Record<string, unknown>;
-  };
-};
+const OpenApiDocument = z.looseObject({
+  paths: z.record(z.string(), z.record(z.string(), OpenApiOperation)),
+  components: z
+    .looseObject({
+      schemas: z.record(z.string(), z.unknown()).optional(),
+      examples: z.record(z.string(), z.unknown()).optional(),
+    })
+    .optional(),
+});
+
+type OpenApiDocument = z.output<typeof OpenApiDocument>;
 
 /** Lowers a fixture and runs the pinned `rivet --from` on it; returns the emitted OpenAPI. */
 const emitOpenApi = async (
@@ -77,9 +93,7 @@ const emitOpenApi = async (
     .split("\n")
     .filter((line) => line.trim() !== "" && !MULTIPART_INLINE_WARNING.test(line));
   expect(unexpectedStderr).toEqual([]);
-  const openApi = JSON.parse(
-    await fs.readFile(path.join(outputDirectory, "openapi.json"), "utf8"),
-  ) as OpenApiDocument;
+  const openApi = await readJsonFile(path.join(outputDirectory, "openapi.json"), OpenApiDocument);
   return { contract: document, openApi };
 };
 

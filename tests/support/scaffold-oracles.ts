@@ -3,6 +3,8 @@ import { accessSync, constants, existsSync, realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { z } from "zod";
+import { execFailureOutput, parseJson } from "./checked.js";
 import { PROJECT_ROOT, linkPackage } from "./paths.js";
 
 const execFileAsync = promisify(execFile);
@@ -37,9 +39,9 @@ const runTsc = async (tsconfigPath: string): Promise<void> => {
   try {
     await execFileAsync(tscPath, ["--noEmit", "-p", tsconfigPath]);
   } catch (error: unknown) {
-    const failure = error as { stdout?: string; stderr?: string };
+    const { stdout, stderr } = execFailureOutput(error);
     throw new Error(
-      `Scaffolded package failed tsc --noEmit (${tsconfigPath}):\n${failure.stdout ?? ""}\n${failure.stderr ?? ""}`,
+      `Scaffolded package failed tsc --noEmit (${tsconfigPath}):\n${stdout}\n${stderr}`,
     );
   }
 };
@@ -54,6 +56,26 @@ export const typecheckScaffoldedWorkspace = async (outputDirectory: string): Pro
   await linkScaffoldDependencies(outputDirectory);
   await runTsc(path.join(outputDirectory, "apps", "api", "tsconfig.json"));
   await runTsc(path.join(outputDirectory, "packages", "contracts", "tsconfig.json"));
+};
+
+/**
+ * Lint oracle for scaffold output: oxlint with the workspace's own
+ * `.oxlintrc.json` (plumb's golden base), so emitted code honours the rules
+ * the scaffold ships, assertions and non-null `!` included.
+ */
+export const lintScaffoldedWorkspace = async (outputDirectory: string): Promise<void> => {
+  const oxlintPath = path.join(PROJECT_ROOT, "node_modules", ".bin", "oxlint");
+
+  try {
+    await execFileAsync(oxlintPath, ["-c", ".oxlintrc.json", "--deny-warnings", "."], {
+      cwd: outputDirectory,
+    });
+  } catch (error: unknown) {
+    const { stdout, stderr } = execFailureOutput(error);
+    throw new Error(
+      `Scaffolded workspace failed oxlint (${outputDirectory}):\n${stdout}\n${stderr}`,
+    );
+  }
 };
 
 /** `name` on `PATH`, resolved through symlinks; a shell alias is not on `PATH`. */
@@ -102,11 +124,9 @@ export const runTask = (
 ): Promise<{ readonly stdout: string; readonly stderr: string }> =>
   execFileAsync(task, [name], { cwd: outputDirectory, env: { ...process.env, ...env } });
 
-export type PlumbFinding = {
-  readonly rule: string;
-  readonly severity: string;
-  readonly location: string;
-};
+const PlumbFinding = z.object({ rule: z.string(), severity: z.string(), location: z.string() });
+
+export type PlumbFinding = Readonly<z.output<typeof PlumbFinding>>;
 
 /** Every plumb finding (errors, warnings and info) for a scaffold output directory. */
 export const plumbFindings = async (
@@ -116,8 +136,8 @@ export const plumbFindings = async (
   // plumb exits non-zero when a finding is an error; the JSON is on stdout either way.
   const stdout = await execFileAsync(plumb, [outputDirectory, "--json"]).then(
     (result) => result.stdout,
-    (error: { stdout?: string }) => error.stdout ?? "",
+    (error: unknown) => execFailureOutput(error).stdout,
   );
-  const findings = JSON.parse(stdout) as readonly PlumbFinding[];
-  return findings.map(({ rule, severity, location }) => ({ rule, severity, location }));
+  // Parsing keeps the three fields asserted on and drops the rest.
+  return parseJson(stdout, z.array(PlumbFinding));
 };

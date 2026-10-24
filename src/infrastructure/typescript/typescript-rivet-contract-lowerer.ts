@@ -3,6 +3,7 @@ import ts from "typescript";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import {
   RivetContractLoweringResult,
+  type ContractEnumDeclaration,
   type ContractSourcePathAliases,
 } from "../../domain/rivet-contract-lowering-result.js";
 import {
@@ -11,7 +12,7 @@ import {
   type RivetContractEnum,
   type RivetEndpointDefinition,
 } from "../../domain/rivet-contract.js";
-import type { LoweringContext } from "./authoring-syntax.js";
+import type { LoweringContext, SupportedDeclaration } from "./authoring-syntax.js";
 import {
   discoverContracts,
   indexDeclarations,
@@ -139,8 +140,44 @@ export const lowerContracts = (
       relativePath: toPosixRelativePath(sourceRoot, absolutePath),
     })),
     sourcePathAliases: toSourcePathAliases(project.compilerOptions, sourceRoot),
+    enumDeclarations: toEnumDeclarations(document.enums, declarations, sourceFilePaths, sourceRoot),
   });
 };
+
+/**
+ * The document enums declared as TS `enum`s, each member paired with its
+ * lowered value (lowering keeps declaration order).
+ */
+const toEnumDeclarations = (
+  enums: readonly RivetContractEnum[],
+  declarations: ReadonlyMap<string, SupportedDeclaration>,
+  sourceFilePaths: readonly string[],
+  sourceRoot: string,
+): ContractEnumDeclaration[] =>
+  enums.flatMap((entry) => {
+    const declaration = declarations.get(entry.name);
+    if (!declaration || !ts.isEnumDeclaration(declaration)) {
+      return [];
+    }
+    const declaringFile = path.resolve(declaration.getSourceFile().fileName);
+    const values: readonly (string | number)[] = "values" in entry ? entry.values : entry.intValues;
+    return [
+      {
+        name: entry.name,
+        ...(sourceFilePaths.includes(declaringFile)
+          ? { relativePath: toPosixRelativePath(sourceRoot, declaringFile) }
+          : {}),
+        members: declaration.members.flatMap((member, index) => {
+          const value = values[index];
+          const name =
+            ts.isIdentifier(member.name) || ts.isStringLiteral(member.name)
+              ? member.name.text
+              : member.name.getText();
+          return value === undefined ? [] : [{ name, value }];
+        }),
+      },
+    ];
+  });
 
 const isWithin = (directory: string, candidate: string): boolean => {
   const relative = path.relative(directory, candidate);

@@ -27,8 +27,13 @@ const synthesizeRequest = (
 
 // The emitted source is real Zod input — evaluating it against the pinned
 // zod is the only honest oracle for the chained constraint behavior.
-const evaluate = (source: string): z.ZodType =>
-  new Function("z", `return ${source};`)(z) as z.ZodType;
+const evaluate = (source: string): z.ZodType => {
+  const schema: unknown = new Function("z", `return ${source};`)(z);
+  if (!(schema instanceof z.ZodType)) {
+    throw new Error(`Emitted source did not evaluate to a Zod schema: ${source}`);
+  }
+  return schema;
+};
 
 describe("zod-schema-emitter generics", () => {
   it("resolves a type argument that is itself the outer type parameter", () => {

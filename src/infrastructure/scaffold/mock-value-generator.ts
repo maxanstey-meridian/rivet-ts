@@ -1,4 +1,5 @@
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
+import type { ContractEnumDeclaration } from "../../domain/rivet-contract-lowering-result.js";
 import type {
   RivetContractDocument,
   RivetEndpointDefinition,
@@ -6,6 +7,7 @@ import type {
   RivetExample,
   RivetType,
 } from "../../domain/rivet-contract.js";
+import { isJsonObject, renderMockSource, type MockSourceImports } from "./mock-source-renderer.js";
 import { createTypeWalkContext, enterTypeDefinition, type TypeWalkContext } from "./type-walk.js";
 
 type SynthesizedValue = { kind: "value"; value: RivetEndpointExampleValue };
@@ -18,7 +20,9 @@ type MockGenerationFailure = {
 type TypeSynthesisResult = SynthesizedValue | { kind: "void" } | MockGenerationFailure;
 
 export type MockGenerationResult =
-  | (SynthesizedValue & { needsCast: boolean })
+  /** A typed TS expression for the response body, and what it needs imported. */
+  | { kind: "value"; source: string; imports: MockSourceImports }
+  /** A placeholder that is not a JSON body (a file response's Blob). */
   | { kind: "source"; source: string }
   | { kind: "void" }
   | MockGenerationFailure;
@@ -26,10 +30,6 @@ export type MockGenerationResult =
 type TypeContext = TypeWalkContext & {
   readonly endpointName: string;
   readonly depth: number;
-  /** Mutable: set when the synthesized value passes through a TS enum ref or a
-   * brand — raw JSON literals are not assignable to either, so the emitted
-   * mock body needs an `as <Output>` cast. */
-  readonly state: { needsCast: boolean };
 };
 
 /**
@@ -63,7 +63,9 @@ const parseExample = (example: RivetExample): RivetEndpointExampleValue | undefi
 
   // A malformed stored example must degrade to synthesis, not crash the run.
   try {
-    return JSON.parse(rawJson) as RivetEndpointExampleValue;
+    // JSON.parse yields only JSON values, which is exactly this type.
+    const value: RivetEndpointExampleValue = JSON.parse(rawJson);
+    return value;
   } catch {
     return undefined;
   }
@@ -112,10 +114,7 @@ const synthesizeTaggedUnion = (
     return value;
   }
 
-  const objectValue =
-    value.kind === "value" && value.value !== null && !Array.isArray(value.value)
-      ? (value.value as Record<string, RivetEndpointExampleValue>)
-      : {};
+  const objectValue = value.kind === "value" && isJsonObject(value.value) ? value.value : {};
 
   return {
     kind: "value",
@@ -235,7 +234,6 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): TypeSynthes
             message: `Endpoint "${context.endpointName}" references empty enum "${type.name}".`,
           };
         }
-        context.state.needsCast = true;
         return { kind: "value", value: firstValue };
       }
 
@@ -306,7 +304,6 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): TypeSynthes
     }
 
     case "brand":
-      context.state.needsCast = true;
       return synthesizeType(type.underlying, context);
 
     case "inlineObject":
@@ -320,6 +317,7 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): TypeSynthes
 export const generateEndpointMock = (
   endpoint: RivetEndpointDefinition,
   document: RivetContractDocument,
+  enumDeclarations: readonly ContractEnumDeclaration[],
 ): { result: MockGenerationResult; diagnostics: readonly ExtractionDiagnostic[] } => {
   const successResponse = findSuccessResponse(endpoint);
   const diagnostics: ExtractionDiagnostic[] = [];
@@ -334,19 +332,6 @@ export const generateEndpointMock = (
     };
   }
 
-  const firstExample = successResponse?.examples?.[0];
-  if (firstExample) {
-    const parsed = parseExample(firstExample);
-    if (parsed !== undefined) {
-      // Example-backed mocks are emitted verbatim with no conformance check
-      // against the response type, so they always cast.
-      return {
-        result: { kind: "value", value: parsed, needsCast: true },
-        diagnostics,
-      };
-    }
-  }
-
   const responseType = successResponse?.dataType ?? endpoint.returnType;
   if (!responseType) {
     return {
@@ -355,15 +340,35 @@ export const generateEndpointMock = (
     };
   }
 
-  const state = { needsCast: false };
+  const walkContext = createTypeWalkContext(document);
+  const firstExample = successResponse?.examples?.[0];
+  const example = firstExample && parseExample(firstExample);
+  if (example !== undefined) {
+    // The example is checked against the response type as it is printed, so
+    // the handler returns it without an assertion; one the type rejects
+    // yields to synthesis.
+    const rendered = renderMockSource(responseType, example, walkContext, enumDeclarations);
+    if (rendered.kind === "rendered") {
+      return {
+        result: { kind: "value", source: rendered.source, imports: rendered.imports },
+        diagnostics,
+      };
+    }
+    diagnostics.push(
+      new ExtractionDiagnostic({
+        severity: "warning",
+        code: "SCAFFOLD_RESPONSE_EXAMPLE_MISMATCH",
+        message: `Endpoint "${endpoint.name}" response example does not match its response type (${rendered.message}); scaffold-mock synthesized a value instead.`,
+      }),
+    );
+  }
+
   const synthesized = synthesizeType(responseType, {
-    ...createTypeWalkContext(document),
+    ...walkContext,
     endpointName: endpoint.name,
     depth: 0,
-    state,
   });
-  const result: MockGenerationResult =
-    synthesized.kind === "value" ? { ...synthesized, needsCast: state.needsCast } : synthesized;
+  const result = toMockResult(synthesized, responseType, walkContext, enumDeclarations, endpoint);
 
   if (result.kind === "todo") {
     diagnostics.push(
@@ -376,4 +381,23 @@ export const generateEndpointMock = (
   }
 
   return { result, diagnostics };
+};
+
+const toMockResult = (
+  synthesized: TypeSynthesisResult,
+  responseType: RivetType,
+  walkContext: TypeWalkContext,
+  enumDeclarations: readonly ContractEnumDeclaration[],
+  endpoint: RivetEndpointDefinition,
+): MockGenerationResult => {
+  if (synthesized.kind !== "value") {
+    return synthesized;
+  }
+  const rendered = renderMockSource(responseType, synthesized.value, walkContext, enumDeclarations);
+  return rendered.kind === "rendered"
+    ? { kind: "value", source: rendered.source, imports: rendered.imports }
+    : {
+        kind: "todo",
+        message: `Endpoint "${endpoint.name}" has a response scaffold-mock cannot type: ${rendered.message}.`,
+      };
 };

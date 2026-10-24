@@ -5,8 +5,10 @@ import path from "node:path";
 import { promisify } from "node:util";
 import * as tar from "tar";
 import ts from "typescript";
+import { z } from "zod";
 import { lowerContracts } from "../../src/infrastructure/typescript/typescript-rivet-contract-lowerer.js";
 import { expectValidContractDocument } from "../contract-schema.js";
+import { execFailureOutput, readJsonFile } from "../support/checked.js";
 import { runCliCaptured } from "../support/cli.js";
 import { writeContractProject } from "../support/contract-project.js";
 import { parseContractJson } from "../support/lower.js";
@@ -22,7 +24,10 @@ import { tempDir } from "../support/temp.js";
 
 const execFileAsync = promisify(execFile);
 
-/** The authoring type names `src/index.ts` re-exports, which users write contracts against. */
+/**
+ * The authoring exports `src/index.ts` re-exports, which users write contracts
+ * against, as import specifiers (`type Brand`, `brand`).
+ */
 const authoringTypeExports = async (): Promise<readonly string[]> => {
   const indexPath = path.join(PROJECT_ROOT, "src", "index.ts");
   const index = ts.createSourceFile(
@@ -37,7 +42,11 @@ const authoringTypeExports = async (): Promise<readonly string[]> => {
     statement.moduleSpecifier.text === "./domain/authoring-types.js" &&
     statement.exportClause !== undefined &&
     ts.isNamedExports(statement.exportClause)
-      ? statement.exportClause.elements.map((element) => element.name.text)
+      ? statement.exportClause.elements.map((element) =>
+          statement.isTypeOnly || element.isTypeOnly
+            ? `type ${element.name.text}`
+            : element.name.text,
+        )
       : [],
   );
 };
@@ -164,9 +173,10 @@ export interface TempContract extends Contract<"TempContract"> {
     ]);
 
     const { stdout: cliVersion } = await run("pnpm", ["exec", "rivet-ts", "--version"]);
-    const { version } = JSON.parse(
-      await fs.readFile(path.join(PROJECT_ROOT, "package.json"), "utf8"),
-    ) as { version: string };
+    const { version } = await readJsonFile(
+      path.join(PROJECT_ROOT, "package.json"),
+      z.object({ version: z.string() }),
+    );
     expect(cliVersion.trim()).toBe(version);
 
     // Resolved through node_modules, as a consumer's tsconfig resolves it. No
@@ -190,7 +200,7 @@ export interface TempContract extends Contract<"TempContract"> {
     const authoringExports = await authoringTypeExports();
     await fs.writeFile(
       path.join(consumerDirectory, "authoring.ts"),
-      `import type { ${authoringExports.join(", ")} } from "${PACKAGE_NAME}";
+      `import { ${authoringExports.join(", ")} } from "${PACKAGE_NAME}";
 
 type MemberId = Brand<string, "MemberId">;
 type Email = Format<string, "email">;
@@ -235,8 +245,9 @@ export interface MembersContract extends Contract<"Members"> {
 
 // @ts-expect-error a plain string is not a branded id
 const unbranded: MemberId = "mem_1";
+const branded: MemberId = brand("mem_2");
 
-export const usages = [spec, value, unbranded];
+export const usages = [spec, value, unbranded, branded];
 `,
     );
     // tsc reports on stdout; a failure surfaces it instead of a bare exit code.
@@ -244,7 +255,7 @@ export const usages = [spec, value, unbranded];
       execFileAsync(path.join(PROJECT_ROOT, "node_modules", ".bin", "tsc"), [
         "-p",
         path.join(consumerDirectory, "tsconfig.json"),
-      ]).catch((error: { stdout: string }) => error.stdout),
+      ]).catch((error: unknown) => execFailureOutput(error).stdout),
     ).resolves.toEqual({ stdout: "", stderr: "" });
     await fs.writeFile(
       path.join(consumerDirectory, "contracts.ts"),
@@ -293,9 +304,10 @@ describe("CLI argument handling and diagnostics", () => {
   });
 
   it("prints the package version for --version with exit code 0", async () => {
-    const { version } = JSON.parse(
-      await fs.readFile(path.join(PROJECT_ROOT, "package.json"), "utf8"),
-    ) as { version: string };
+    const { version } = await readJsonFile(
+      path.join(PROJECT_ROOT, "package.json"),
+      z.object({ version: z.string() }),
+    );
 
     const { exitCode, stdout, stderr } = await runCliCaptured(["--version"]);
 

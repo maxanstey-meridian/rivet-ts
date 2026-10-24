@@ -210,6 +210,19 @@ export type Brand<TInner, TName extends string> = TInner & {
   readonly __brand: TName;
 };
 
+/**
+ * Brands a value WITHOUT validating it, for mocks and tests; production
+ * values come from the domain's validating constructor. The brand name is
+ * inferred from where the value goes: `const email: Email = brand("jane@example.com")`.
+ * Only the name comes from context, so a structurally identical `Brand`
+ * declared elsewhere brands just as well.
+ */
+export function brand<TInner, TName extends string>(value: TInner): Brand<TInner, TName>;
+export function brand(value: unknown): unknown {
+  return value;
+}
+
+/** Format metadata on a primitive. Not nominal: any `TInner` value is assignable. */
 export type Format<TInner, TFormat extends string> = TInner & {
-  readonly __format: TFormat;
+  readonly __format?: TFormat;
 };

@@ -1,8 +1,10 @@
+import { z } from "zod";
 import { RivetContractDocument, RivetTypeDefinition } from "../../src/domain/rivet-contract.js";
 import {
   enrichDocumentWithConstraints,
   readOpenApiConstraints,
 } from "../../src/infrastructure/scaffold/openapi-constraint-reader.js";
+import { parseJson } from "../support/checked.js";
 
 /**
  * Fixture shaped like the Rivet binary's real output (SchemaEnricher
@@ -165,14 +167,17 @@ describe("enrichDocumentWithConstraints", () => {
       baseDocument(),
       readOpenApiConstraints(emitterShapedSpec),
     );
-    const serialized = JSON.parse(JSON.stringify(enriched)) as {
-      types: Array<Record<string, unknown>>;
-    };
+    const Definition = z.object({
+      name: z.string(),
+      properties: z
+        .array(z.object({ name: z.string(), constraints: z.unknown().optional() }))
+        .optional(),
+    });
+    const { types } = parseJson(JSON.stringify(enriched), z.object({ types: z.array(Definition) }));
 
-    const product = serialized.types.find((definition) => definition.name === "ProductDto");
-    const alias = serialized.types.find((definition) => definition.name === "Slug");
-    const properties = (product?.properties ?? []) as Array<Record<string, unknown>>;
-    const name = properties.find((property) => property.name === "name");
+    const product = types.find((definition) => definition.name === "ProductDto");
+    const alias = types.find((definition) => definition.name === "Slug");
+    const name = product?.properties?.find((property) => property.name === "name");
     expect(name?.constraints).toEqual({ minLength: 1, maxLength: 200 });
     expect(alias?.properties).toBeUndefined();
   });
