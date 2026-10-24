@@ -1,6 +1,7 @@
 // Request and response examples: `typeof exportedConst` references read as JSON.
 import ts from "typescript";
-import type { HttpMethod } from "../../domain/contract.js";
+import type { EndpointAuthoringSuccessStatus } from "../../domain/authoring-types.js";
+import { getDefaultSuccessStatus, type HttpMethod } from "../../domain/contract.js";
 import { RivetExample, type RivetEndpointExampleValue } from "../../domain/rivet-contract.js";
 import {
   createNodeDiagnostic,
@@ -16,7 +17,6 @@ import {
   resolveSymbol,
   type LoweringContext,
 } from "./authoring-syntax.js";
-import { getDefaultSuccessStatus } from "./http-status.js";
 
 export type ResponseExampleGroup = {
   status: number;
@@ -97,7 +97,7 @@ export const parseResponseExamples = (
   propertyMap: ReadonlyMap<string, ts.TypeNode>,
   endpointName: string,
   method: HttpMethod,
-  successStatus: number | null,
+  successStatus: EndpointAuthoringSuccessStatus | null,
   fileContentType: string | undefined,
 ): ResponseExampleGroup[] => {
   const pluralNode = propertyMap.get("responseExamples");

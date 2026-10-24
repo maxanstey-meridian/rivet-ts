@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import type { SuccessStatusCode } from "hono/utils/http-status";
+import type { EndpointAuthoringSuccessStatus } from "../../src/domain/authoring-types.js";
 import { type ContractJson, registerRivetHonoRoutes } from "../../src/hono.js";
 import type { DirectoryContract } from "../fixtures/hono-runtime/directory.js";
 
@@ -47,5 +49,9 @@ describe("registerRivetHonoRoutes app types", () => {
   it("rejects a value that is not a Hono app", () => {
     // @ts-expect-error — the routes are registered on a Hono app.
     registerRivetHonoRoutes<DirectoryContract>({}, contract, { handlers });
+  });
+
+  it("takes exactly Hono's success statuses as successStatus", () => {
+    expectTypeOf<EndpointAuthoringSuccessStatus>().toEqualTypeOf<SuccessStatusCode>();
   });
 });

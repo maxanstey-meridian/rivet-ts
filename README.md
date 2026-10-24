@@ -7,15 +7,15 @@
 </p>
 
 **Your TypeScript is the contract.** rivet-ts reads a type-only TypeScript contract with
-the compiler API and lowers it to Rivet contract JSON. The
+the TypeScript compiler and turns it into Rivet's contract JSON. The
 [Rivet](https://github.com/maxanstey-meridian/rivet) binary then emits an OpenAPI 3.1 spec
 from it, and the OpenAPI ecosystem does the rest: `openapi-typescript` types an
 `openapi-fetch` client, and the Hono runtime serves handlers typed against the same contract.
 
-The contract is types and nothing else. There are no decorators, no router object and no
-runtime registration, so the contract module has no work to do at runtime. Rivet gives a .NET
-server this DX; rivet-ts is the same pipeline when your server is TypeScript. Both read the same
-contract JSON, so the backend can move to .NET later without the client noticing.
+The contract is types and nothing else. There are no decorators and no router object; the
+contract module has nothing to run. Rivet gives a .NET server this DX; rivet-ts is the same
+pipeline when your server is TypeScript. Both emit the same OpenAPI, so the backend can move to
+.NET later and the client's call sites stay as they are.
 
 ## Prerequisites
 
@@ -99,7 +99,13 @@ const { data, error } = await api.POST("/api/members", {
 
 ## Serve it
 
-Add `hono` and register handlers against the contract JSON:
+The server loads rivet-ts at runtime, so install it as a dependency along with `hono`:
+
+```bash
+pnpm add hono @maxanstey-meridian/rivet-ts
+```
+
+Then register handlers against the contract JSON:
 
 ```ts
 import { Hono } from "hono";
@@ -118,9 +124,9 @@ registerRivetHonoRoutes<MembersContract>(app, contract, {
 });
 ```
 
-`POST /api/members` answers `201` with the new member. Change `MemberDto` and the spec, the
-client and every handler change with it: a handler that returns the old shape stops
-compiling. A missing handler, an unused one or a duplicate route fails at registration, not
+`POST /api/members` answers `201` with the new member. Change `MemberDto` and every handler
+checks against the new shape at once, and the spec and client follow once you regenerate: a
+handler that returns the old shape stops compiling. A missing handler, an unused one or a duplicate route fails at registration, not
 on the first request.
 
 ## Also in the box
@@ -137,11 +143,14 @@ on the first request.
   imports change
 - [.NET handoff](https://maxanstey-meridian.github.io/rivet-ts/guides/dotnet-handoff): move the
   backend to Rivet on .NET and keep every client call site
-- Stable diagnostic codes on every lowering error and scaffold warning, naming the file it
-  concerns, so you can grep for them
-- [Plumb](https://github.com/maxanstey-meridian/plumb#requirements) checks: scaffolded
-  workspaces start with zero Meridian doctrine findings, and `task plumb` keeps them there
-- `@maxanstey-meridian/rivet-ts/tooling`: the lowering pipeline as a library, for build tools
+- [Stable diagnostic codes](https://maxanstey-meridian.github.io/rivet-ts/reference/cli#diagnostics)
+  on every lowering error and scaffold warning, with the file and line where there is one, so
+  you can grep for them
+- [Plumb](https://github.com/maxanstey-meridian/plumb#requirements) (installed separately)
+  checks scaffolds against Meridian's house rules: a fresh one starts with zero findings, and
+  `task plumb` keeps it there
+- [`@maxanstey-meridian/rivet-ts/tooling`](https://maxanstey-meridian.github.io/rivet-ts/reference/cli):
+  the contract-to-JSON pipeline as a library, for build tools that convert contracts themselves
 
 ## Documentation
 
@@ -154,7 +163,8 @@ on the first request.
 (what rivet-ts deliberately doesn't lower)
 
 Contributors should read [CONTRIBUTING.md](CONTRIBUTING.md). `pnpm test` builds first and needs
-network access once, for the pinned Rivet release.
+network access: it downloads the pinned Rivet release once, and checks the copied-in contract
+schema against that release on every run.
 
 ## License
 

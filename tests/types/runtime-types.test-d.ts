@@ -86,7 +86,7 @@ interface CreatedContract extends Contract<"CreatedContract"> {
     route: "/api/create";
     input: { readonly name: string };
     response: CreateResponse;
-    successStatus: 201;
+    successStatus: 202;
   }>;
 }
 
@@ -122,7 +122,7 @@ test("RivetSuccessResult defaults GET to status 200", () => {
 
 test("RivetSuccessResult with custom successStatus uses that literal", () => {
   expectTypeOf<RivetSuccessResult<CreatedContract, "Create">>().toEqualTypeOf<{
-    readonly status: 201;
+    readonly status: 202;
     readonly data: CreateResponse;
   }>();
 });

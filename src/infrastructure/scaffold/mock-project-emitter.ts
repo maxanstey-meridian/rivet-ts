@@ -154,16 +154,21 @@ const buildHandlerDescriptor = (
   const unsupportedParams = endpoint.params.filter(
     (param) => !isSupportedParamSource(param.source),
   );
+  const diagnostics = [
+    ...mock.diagnostics,
+    ...unsupportedParams.map(
+      (param) =>
+        new ExtractionDiagnostic({
+          severity: "warning",
+          code: "SCAFFOLD_UNSUPPORTED_PARAM_SOURCE",
+          message: `Endpoint "${endpoint.name}" takes a ${param.source} param "${param.name}", which scaffold-mock cannot mock; its handler throws until you write it.`,
+        }),
+    ),
+  ];
+  const todoLines = diagnostics.map((diagnostic) => `  // TODO: ${diagnostic.message}`);
 
   let body: string;
   if (mock.result.kind === "todo" || unsupportedParams.length > 0) {
-    const todoLines = [
-      ...mock.diagnostics.map((diagnostic) => `  // TODO: ${diagnostic.message}`),
-      ...unsupportedParams.map(
-        (param) =>
-          `  // TODO: Endpoint "${endpoint.name}" uses unsupported param source "${param.source}" in scaffold-mock.`,
-      ),
-    ];
     const message =
       mock.result.kind === "todo"
         ? mock.result.message
@@ -176,8 +181,7 @@ const buildHandlerDescriptor = (
   } else {
     // A value the contract type rejects (an example that drifted from it)
     // was replaced by a synthesized one; say so where the user will look.
-    const notes = mock.diagnostics.map((diagnostic) => `  // TODO: ${diagnostic.message}`);
-    body = [...notes, `  return ${indent(mock.result.source, 2).trimStart()};`].join("\n");
+    body = [...todoLines, `  return ${indent(mock.result.source, 2).trimStart()};`].join("\n");
   }
 
   const bodyParam = endpoint.params.find((param) => param.source === "body");
@@ -194,7 +198,7 @@ const buildHandlerDescriptor = (
       !endpoint.params.some((param) => isSupportedParamSource(param.source)) &&
       mock.result.kind === "value",
     bodySchema: bodyParam ? zodSourceForType(bodyParam.type, document) : undefined,
-    diagnostics: mock.diagnostics,
+    diagnostics,
   };
 };
 
@@ -520,6 +524,10 @@ serve({ fetch: app.fetch, port: 5180 }, (info) => {
 });
 `;
 
+/** Where a handler's use case lands, relative to the workspace root. */
+const useCasePath = (group: ContractGroup, handler: HandlerDescriptor): string =>
+  `apps/api/src/modules/${group.moduleDirectoryName}/application/${handler.fileBaseName}.ts`;
+
 /** Emitted files at the root of `apps/api/src`; copied contract sources must not land on them. */
 const API_SOURCE_FILES = ["local.ts", "main.ts", "app.ts", "validation.ts", "http-errors.ts"];
 
@@ -592,7 +600,7 @@ export const emitMockProject = async (
             : []),
           [`${moduleRoot}/${group.moduleDirectoryName}-routes.ts`, emitRoutesSource(group)],
           ...group.handlers.map((handler) => [
-            `${moduleRoot}/application/${handler.fileBaseName}.ts`,
+            useCasePath(group, handler),
             emitUseCaseSource(group, handler),
           ]),
         ];
@@ -609,10 +617,7 @@ export const emitMockProject = async (
           (diagnostic) =>
             new ExtractionDiagnostic({
               ...diagnostic,
-              filePath: path.join(
-                config.outDir,
-                `apps/api/src/modules/${group.moduleDirectoryName}/application/${handler.fileBaseName}.ts`,
-              ),
+              filePath: path.resolve(config.outDir, useCasePath(group, handler)),
             }),
         ),
       ),

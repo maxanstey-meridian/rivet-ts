@@ -73,8 +73,7 @@ export const lowerContracts = (
   const declarations = indexDeclarations(program, checker, diagnostics);
   const typeDefinitions = new Map<string, RivetTypeDefinition>();
   const enums = new Map<string, RivetContractEnum>();
-  const endpoints: RivetEndpointDefinition[] = [];
-  const endpointNames = new Map<RivetEndpointDefinition, string>();
+  const endpoints: { readonly label: string; readonly lowered: RivetEndpointDefinition }[] = [];
   const referencedTypeNames = new Set<string>();
   const ctx: LoweringContext = { checker, declarations, diagnostics, dateTypes: new Map() };
   const contracts = discoverContracts(ctx, sourceFile);
@@ -82,8 +81,10 @@ export const lowerContracts = (
   for (const contract of contracts) {
     for (const endpoint of contract.endpoints) {
       const loweredEndpoint = lowerEndpoint(ctx, endpoint);
-      endpoints.push(loweredEndpoint);
-      endpointNames.set(loweredEndpoint, `${endpoint.contractName}.${endpoint.name}`);
+      endpoints.push({
+        label: `${endpoint.contractName}.${endpoint.name}`,
+        lowered: loweredEndpoint,
+      });
       for (const parameter of loweredEndpoint.params) {
         collectTypeReferences(parameter.type, referencedTypeNames);
       }
@@ -127,14 +128,14 @@ export const lowerContracts = (
     }
   }
 
-  for (const endpoint of endpoints) {
-    reportDateInputs(ctx, endpointNames.get(endpoint) ?? endpoint.name, endpoint, typeDefinitions);
+  for (const { label, lowered } of endpoints) {
+    reportDateInputs(ctx, label, lowered, typeDefinitions);
   }
 
   const document = new RivetContractDocument({
     types: [...typeDefinitions.values()].sort((left, right) => left.name.localeCompare(right.name)),
     enums: [...enums.values()].sort((left, right) => left.name.localeCompare(right.name)),
-    endpoints,
+    endpoints: endpoints.map(({ lowered }) => lowered),
   });
 
   const sourceFilePaths = program
@@ -171,7 +172,8 @@ const PARAM_PATH_ROOTS: Readonly<Record<RivetEndpointParam["source"], string>> =
  * it as a string, and nothing between the wire and the handler (route and
  * query binding, `req.json()`, the scaffold's validator) makes it a `Date`
  * again, so the handler would receive a string its type calls a `Date`.
- * Reported once per `Date` and endpoint, at the reference that wrote it.
+ * Reported once per `Date` and endpoint, at the reference that wrote it, even
+ * when the input lowers it twice (a route placeholder also in the body).
  */
 const reportDateInputs = (
   ctx: LoweringContext,
@@ -179,30 +181,33 @@ const reportDateInputs = (
   endpoint: RivetEndpointDefinition,
   typeDefinitions: ReadonlyMap<string, RivetTypeDefinition>,
 ): void => {
-  const reported = new Set<RivetType>();
-  const visit = (type: RivetType, path: string, entered: ReadonlySet<string>): void => {
+  const reported = new Set<ts.Node>();
+  // A definition's own Dates are the same nodes wherever it is used, and type
+  // arguments are visited at each use, so each definition is walked once.
+  const walked = new Set<string>();
+  const visit = (type: RivetType, path: string): void => {
     const enter = (name: string, typeArgs: readonly RivetType[]): void => {
       for (const typeArg of typeArgs) {
-        visit(typeArg, path, entered);
+        visit(typeArg, path);
       }
       const definition = typeDefinitions.get(name);
-      if (!definition || entered.has(name)) {
+      if (!definition || walked.has(name)) {
         return;
       }
-      const inside = new Set(entered).add(name);
+      walked.add(name);
       if (definition.type) {
-        visit(definition.type, path, inside);
+        visit(definition.type, path);
       }
       for (const property of definition.properties) {
-        visit(property.type, `${path}.${property.name}`, inside);
+        visit(property.type, `${path}.${property.name}`);
       }
     };
 
     switch (type.kind) {
       case "primitive": {
         const node = ctx.dateTypes.get(type);
-        if (node && !reported.has(type)) {
-          reported.add(type);
+        if (node && !reported.has(node)) {
+          reported.add(node);
           ctx.diagnostics.push(
             createNodeDiagnostic(
               node,
@@ -214,30 +219,30 @@ const reportDateInputs = (
         return;
       }
       case "nullable":
-        return visit(type.inner, path, entered);
+        return visit(type.inner, path);
       case "array":
-        return visit(type.element, `${path}[]`, entered);
+        return visit(type.element, `${path}[]`);
       case "dictionary":
-        return visit(type.value, `${path}[key]`, entered);
+        return visit(type.value, `${path}[key]`);
       case "brand":
-        return visit(type.underlying, path, entered);
+        return visit(type.underlying, path);
       case "ref":
         return enter(type.name, []);
       case "generic":
         return enter(type.name, type.typeArgs);
       case "inlineObject":
         for (const property of type.properties) {
-          visit(property.type, `${path}.${property.name}`, entered);
+          visit(property.type, `${path}.${property.name}`);
         }
         return;
       case "union":
         for (const variant of type.variants) {
-          visit(variant, path, entered);
+          visit(variant, path);
         }
         return;
       case "taggedUnion":
         for (const variant of type.variants) {
-          visit(variant.type, path, entered);
+          visit(variant.type, path);
         }
         return;
       case "stringUnion":
@@ -250,7 +255,7 @@ const reportDateInputs = (
 
   for (const param of endpoint.params) {
     const root = PARAM_PATH_ROOTS[param.source];
-    visit(param.type, param.source === "body" ? root : `${root}.${param.name}`, new Set());
+    visit(param.type, param.source === "body" ? root : `${root}.${param.name}`);
   }
 };
 

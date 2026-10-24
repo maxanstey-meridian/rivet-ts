@@ -471,6 +471,44 @@ export interface ThingsContract extends Contract<"Things"> {
     );
   });
 
+  it("warns on stderr, at the use case's TODO, for each param it cannot mock", async () => {
+    const { exitCode, stderr, outputDirectory } = await scaffoldMock({
+      "contracts.ts": `import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
+
+export interface UploadRequest {
+  id: string;
+  file: Blob;
+  title: string;
+}
+
+export interface UploadsContract extends Contract<"Uploads"> {
+  Upload: Endpoint<{
+    method: "PUT";
+    route: "/api/uploads/{id}";
+    input: UploadRequest;
+    response: void;
+    acceptsFile: true;
+  }>;
+}
+`,
+    });
+
+    expect(exitCode).toBe(0);
+    const useCasePath = apiSourcePath(
+      outputDirectory,
+      "modules",
+      "uploads",
+      "application",
+      "upload.ts",
+    );
+    expect(stderr).toContain(`warning: [SCAFFOLD_UNSUPPORTED_PARAM_SOURCE] ${useCasePath} `);
+    expect(stderr).toContain('takes a file param "file"');
+    expect(stderr).toContain('takes a formField param "title"');
+    await expect(fs.readFile(useCasePath, "utf8")).resolves.toContain(
+      '// TODO: Endpoint "upload" takes a file param "file"',
+    );
+  });
+
   it.each(["expressive-contract", "response-examples-contract"])(
     "scaffolds the %s fixture into a workspace that typechecks and passes its oxlint config",
     async (fixture) => {
@@ -855,6 +893,12 @@ export interface HelloContract extends Contract<"Hello"> {
               },
               required: ["name", "quantity", "tags", "nickname"],
             },
+            // Enriching WidgetDto rebuilds its properties; its Date must stay one.
+            WidgetDto: {
+              type: "object",
+              properties: { id: { type: "string", minLength: 1 } },
+              required: ["id", "createdAt"],
+            },
           },
         },
       }),
@@ -872,6 +916,7 @@ export interface CreateWidgetRequest {
 
 export interface WidgetDto {
   id: string;
+  createdAt: Date;
 }
 
 export interface WidgetsContract extends Contract<"Widgets"> {
@@ -913,12 +958,23 @@ export interface WidgetsContract extends Contract<"Widgets"> {
     expect(await fs.readFile(validationPath, "utf8")).toContain(
       'satisfies z.ZodType<import("@maxanstey-meridian/rivet-ts").RivetHandlerInput<import("#contract").WidgetsContract, "Create">["body"]>',
     );
+    const useCasePath = apiSourcePath(
+      outputDirectory,
+      "modules",
+      "widgets",
+      "application",
+      "create.ts",
+    );
+    await expect(fs.readFile(useCasePath, "utf8")).resolves.toContain(
+      '"createdAt": new Date("2025-01-01T00:00:00.000Z")',
+    );
     // A use case that reports the body keys it received shows it gets the
     // parsed body (unknown keys stripped), not the raw wire body.
     await fs.writeFile(
-      apiSourcePath(outputDirectory, "modules", "widgets", "application", "create.ts"),
+      useCasePath,
       `export const create = async (input: import("@maxanstey-meridian/rivet-ts").RivetHandlerInput<import("#contract").WidgetsContract, "Create">): Promise<import("@maxanstey-meridian/rivet-ts").RivetHandlerResult<import("#contract").WidgetsContract, "Create">> => ({
   id: Object.keys(input.body).sort().join(","),
+  createdAt: new Date(0),
 });
 `,
     );
@@ -930,7 +986,10 @@ export interface WidgetsContract extends Contract<"Widgets"> {
       body: JSON.stringify({ ...valid, extra: "raw" }),
     });
     expect(created.status).toBe(201);
-    await expect(created.json()).resolves.toEqual({ id: "name,nickname,quantity,tags" });
+    await expect(created.json()).resolves.toEqual({
+      id: "name,nickname,quantity,tags",
+      createdAt: "1970-01-01T00:00:00.000Z",
+    });
 
     const { createRequest } = await importModule(
       validationPath,

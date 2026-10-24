@@ -2,16 +2,22 @@ import type { Context, MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode, ContentlessStatusCode } from "hono/utils/http-status";
 import type { EndpointAuthoringSuccessStatus } from "./domain/authoring-types.js";
-import { isSuccessStatus, SUCCESS_STATUS_CODES } from "./domain/contract.js";
+import {
+  getDefaultSuccessStatus,
+  isSuccessStatus,
+  SUCCESS_STATUS_CODES,
+} from "./domain/contract.js";
 import {
   asRivetHandler,
   type ContractEndpointKey,
   type RivetHandler,
   type RivetHandlerOwner,
-  type RivetHandlerOwnerWithInput,
+  type RivetInvokable,
   toLoweredEndpointName,
 } from "./domain/handler-types.js";
 import type { RivetEndpointDefinition } from "./domain/rivet-contract.js";
+
+export type { RivetInvokable };
 
 /**
  * A domain type as TypeScript infers it for an imported `.json` module: string
@@ -49,11 +55,6 @@ export type ContractJson = {
 };
 
 type RivetHeadersInit = Record<string, string | string[]>;
-
-export type RivetInvokable<
-  TContract,
-  TKey extends ContractEndpointKey<TContract>,
-> = RivetHandlerOwnerWithInput<TContract, TKey>;
 
 /**
  * A class with any constructor. `any[]` is the constructor-arguments wildcard:
@@ -96,9 +97,9 @@ type RegisterRivetHonoRoutesOptions<TContract> = {
 /** The shape every handler entry is called through once the endpoint is resolved at runtime. */
 type RuntimeHandler = (input?: Record<string, unknown>) => Promise<unknown>;
 
-/** 204/205/304 forbid a response body. */
+/** Hono's statuses that forbid a response body (204/205/304; 101 never reaches a handler). */
 const isBodylessStatus = (status: number): status is ContentlessStatusCode =>
-  status === 204 || status === 205 || status === 304;
+  status === 101 || status === 204 || status === 205 || status === 304;
 
 /**
  * Route placeholders bind to params case-insensitively (as in ASP.NET), so each
@@ -332,26 +333,14 @@ const buildHandlerInput = async (
   return input;
 };
 
-// Fallback table for contracts whose responses carry no 2xx entry, shared with
-// the lowerer, the type-level SuccessStatus, and the .NET extractor:
-// POST -> 201; DELETE (void by construction when no 2xx exists) -> 204;
-// everything else -> 200.
-const getDefaultSuccessStatus = (httpMethod: string): number => {
-  switch (httpMethod.toUpperCase()) {
-    case "DELETE":
-      return 204;
-    case "POST":
-      return 201;
-    default:
-      return 200;
-  }
-};
-
 const getSuccessStatus = (endpoint: ContractEndpointJson): EndpointAuthoringSuccessStatus => {
   const successResponse = endpoint.responses.find(
     (response) => response.statusCode >= 200 && response.statusCode < 300,
   );
-  const status = successResponse?.statusCode ?? getDefaultSuccessStatus(endpoint.httpMethod);
+  // No 2xx entry means a void response, so DELETE falls back to 204.
+  const status =
+    successResponse?.statusCode ??
+    getDefaultSuccessStatus(endpoint.httpMethod.toUpperCase(), false);
   if (!isSuccessStatus(status)) {
     throw createHandlerResolutionError(
       `Endpoint "${endpoint.name}" declares success status ${status}, which is not a registered 2xx status (${SUCCESS_STATUS_CODES.join(", ")}).`,

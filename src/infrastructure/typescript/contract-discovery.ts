@@ -1,5 +1,6 @@
 // Finds the entry file's contracts and parses each endpoint spec once.
 import ts from "typescript";
+import type { EndpointAuthoringSuccessStatus } from "../../domain/authoring-types.js";
 import { isSuccessStatus, SUCCESS_STATUS_CODES, type HttpMethod } from "../../domain/contract.js";
 import type { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import { toLoweredEndpointName } from "../../domain/handler-types.js";
@@ -32,7 +33,7 @@ export type DiscoveredEndpointSpec = {
   propertyMap: ReadonlyMap<string, ts.TypeNode>;
   method: HttpMethod;
   route: string;
-  successStatus: number | null;
+  successStatus: EndpointAuthoringSuccessStatus | null;
   formEncoded: boolean;
   acceptsFile: boolean;
   fileContentType: string | undefined;
@@ -343,16 +344,20 @@ const discoverEndpoint = (
   }
 
   const successStatusNode = propertyMap.get("successStatus");
-  const successStatus = readNumericLiteral(ctx, successStatusNode);
-  if (successStatus !== null && !isSuccessStatus(successStatus)) {
-    ctx.diagnostics.push(
-      createNodeDiagnostic(
-        successStatusNode ?? specNode,
-        "INVALID_SUCCESS_STATUS",
-        `Endpoint "${endpointName}" declares successStatus ${successStatus}, which is not a registered 2xx status (${SUCCESS_STATUS_CODES.join(", ")}).`,
-      ),
-    );
-    return null;
+  let successStatus: EndpointAuthoringSuccessStatus | null = null;
+  if (successStatusNode) {
+    const status = readNumericLiteral(ctx, successStatusNode);
+    if (status === null || !isSuccessStatus(status)) {
+      ctx.diagnostics.push(
+        createNodeDiagnostic(
+          successStatusNode,
+          "INVALID_SUCCESS_STATUS",
+          `Endpoint "${endpointName}" declares successStatus ${successStatusNode.getText()}, which is not a single registered 2xx status (${SUCCESS_STATUS_CODES.join(", ")}).`,
+        ),
+      );
+      return null;
+    }
+    successStatus = status;
   }
   const formEncoded = readBooleanLiteral(ctx, propertyMap.get("formEncoded")) ?? false;
   const acceptsFile = readBooleanLiteral(ctx, propertyMap.get("acceptsFile")) ?? false;

@@ -151,7 +151,8 @@ export interface TempContract extends Contract<"TempContract"> {
     const run = (command: string, args: readonly string[]) =>
       execFileAsync(command, args, { cwd: consumerDirectory });
 
-    // hono is an optional peer the consumer lacks: the root, tooling and vite entries must not import it.
+    // hono is an optional peer the consumer lacks: the root, tooling and vite
+    // entries must not import it.
     const typeofExports = async (exports: Readonly<Record<string, string>>) => {
       const script = Object.entries(exports)
         .map(([entry, name]) => `console.log(typeof (await import("${entry}")).${name});`)
@@ -167,15 +168,6 @@ export interface TempContract extends Contract<"TempContract"> {
       }),
     ).toEqual(["function", "function", "function"]);
 
-    await fs.symlink(
-      path.join(PROJECT_ROOT, "node_modules", "hono"),
-      path.join(consumerDirectory, "node_modules", "hono"),
-      "dir",
-    );
-    expect(await typeofExports({ [`${PACKAGE_NAME}/hono`]: "registerRivetHonoRoutes" })).toEqual([
-      "function",
-    ]);
-
     const { stdout: cliVersion } = await run("pnpm", ["exec", "rivet-ts", "--version"]);
     const { version } = await readJsonFile(
       path.join(PROJECT_ROOT, "package.json"),
@@ -184,8 +176,8 @@ export interface TempContract extends Contract<"TempContract"> {
     expect(cliVersion.trim()).toBe(version);
 
     // Resolved through node_modules, as a consumer's tsconfig resolves it. No
-    // skipLibCheck, and the optional vite peer is not installed: the root entry's
-    // declarations must not reach vite's types.
+    // skipLibCheck, and neither optional peer (vite, hono) is installed: the root
+    // entry's declarations must not reach their types.
     await fs.writeFile(
       path.join(consumerDirectory, "tsconfig.json"),
       JSON.stringify({
@@ -265,6 +257,17 @@ export const usages = [spec, value, unbranded, branded, unregistered];
         path.join(consumerDirectory, "tsconfig.json"),
       ]).catch((error: unknown) => execFailureOutput(error).stdout),
     ).resolves.toEqual({ stdout: "", stderr: "" });
+
+    // Only now install the optional hono peer, so the check above proves the
+    // root's declarations do not need it.
+    await fs.symlink(
+      path.join(PROJECT_ROOT, "node_modules", "hono"),
+      path.join(consumerDirectory, "node_modules", "hono"),
+      "dir",
+    );
+    expect(await typeofExports({ [`${PACKAGE_NAME}/hono`]: "registerRivetHonoRoutes" })).toEqual([
+      "function",
+    ]);
     await fs.writeFile(
       path.join(consumerDirectory, "contracts.ts"),
       `import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";

@@ -1,5 +1,6 @@
 // A discovered endpoint to its contract-JSON definition: params, responses, security.
 import ts from "typescript";
+import { getDefaultSuccessStatus, isBodyForbiddenStatus } from "../../domain/contract.js";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import { toLoweredEndpointName } from "../../domain/handler-types.js";
 import {
@@ -23,7 +24,6 @@ import {
   type PropertyDescriptor,
 } from "./authoring-syntax.js";
 import { deriveGroupName, type DiscoveredEndpointSpec } from "./contract-discovery.js";
-import { getDefaultSuccessStatus, isBodyForbiddenStatus } from "./http-status.js";
 import {
   getObjectProperties,
   getTypeParameterScope,

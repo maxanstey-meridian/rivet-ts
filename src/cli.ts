@@ -192,7 +192,7 @@ const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<numb
       contracts: lowered.contracts,
       sourceFiles: lowered.sourceFiles,
       sourcePathAliases: lowered.sourcePathAliases,
-      sourceTypes: { enumDeclarations: lowered.enumDeclarations, dateTypes: lowered.dateTypes },
+      sourceTypes: lowered,
       // A spec carries JSON Schema constraints the TS contract cannot express.
       document:
         spec === undefined

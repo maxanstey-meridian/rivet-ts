@@ -20,3 +20,24 @@ export const SUCCESS_STATUS_CODES: readonly number[] = Object.keys(SUCCESS_STATU
 
 export const isSuccessStatus = (status: number): status is EndpointAuthoringSuccessStatus =>
   Object.hasOwn(SUCCESS_STATUSES, status);
+
+// HTTP forbids a message body on these; C# Rivet refuses authored content there (RIV1102).
+export const isBodyForbiddenStatus = (status: number): boolean =>
+  (status >= 100 && status < 200) || status === 204 || status === 205 || status === 304;
+
+// The success status when a contract names none, shared with the type-level
+// SuccessStatus in runtime-types.ts and the .NET extractor:
+// POST -> 201; DELETE with a void response -> 204; everything else -> 200.
+export const getDefaultSuccessStatus = (
+  httpMethod: string,
+  hasResponseBody: boolean,
+): EndpointAuthoringSuccessStatus => {
+  switch (httpMethod) {
+    case "DELETE":
+      return hasResponseBody ? 200 : 204;
+    case "POST":
+      return 201;
+    default:
+      return 200;
+  }
+};

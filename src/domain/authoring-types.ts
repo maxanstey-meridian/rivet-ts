@@ -4,7 +4,10 @@ export type Contract<TName extends string> = {
 
 export type EndpointAuthoringHttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
-/** The registered 2xx statuses: exactly Hono's `SuccessStatusCode`, so the runtime can send each. */
+/**
+ * The registered 2xx statuses: exactly Hono's `SuccessStatusCode` (a type test
+ * pins it), so the runtime can send each.
+ */
 export type EndpointAuthoringSuccessStatus =
   | 200
   | 201

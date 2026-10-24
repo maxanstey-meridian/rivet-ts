@@ -79,7 +79,7 @@ export class RivetContractLoweringResult {
   public readonly sourcePathAliases: ContractSourcePathAliases;
   public readonly enumDeclarations: readonly ContractEnumDeclaration[];
   /**
-   * The nodes of `document` that were a TS `Date`, by object identity: the
+   * Every node of `document` that was a TS `Date`, by object identity: the
    * contract JSON writes them as `date-time` strings, like
    * `Format<string, "date-time">`, but code typed by the contract holds a
    * `Date`. Valid only for this result's own `document` objects.

@@ -144,6 +144,12 @@ export type RivetHandlerOwnerWithInput<
   invoke?: RivetInvokableHandler<TContract, TKey, TInput>;
 };
 
+/** A handler object with a `handle` or `invoke` method for one endpoint. */
+export type RivetInvokable<
+  TContract,
+  TKey extends ContractEndpointKey<TContract>,
+> = RivetHandlerOwnerWithInput<TContract, TKey>;
+
 export function asRivetHandler<
   TContract,
   TKey extends ContractEndpointKey<TContract>,

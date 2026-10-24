@@ -73,6 +73,7 @@ const substituteTypeParams = (
         ...type,
         variants: type.variants.map((variant) => substituteTypeParams(variant, substitutions)),
       };
+    // Leaves come back as the same object: `dateTypes` knows a TS Date by identity.
     default:
       return type;
   }

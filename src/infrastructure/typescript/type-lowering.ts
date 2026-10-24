@@ -626,6 +626,17 @@ const lowerTypeReferenceNode = (
       return null;
     }
 
+    if (ctx.dateTypes.has(underlyingType)) {
+      ctx.diagnostics.push(
+        createNodeDiagnostic(
+          node,
+          "UNSUPPORTED_FORMAT_TARGET",
+          'Format<Date, "name"> is not supported: a Date already lowers to a date-time string. Use Date, or Format<string, "name">.',
+        ),
+      );
+      return null;
+    }
+
     return {
       ...underlyingType,
       format,

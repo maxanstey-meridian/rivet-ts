@@ -1,4 +1,7 @@
-import type { ContractEnumDeclaration } from "../../domain/rivet-contract-lowering-result.js";
+import type {
+  ContractEnumDeclaration,
+  RivetContractLoweringResult,
+} from "../../domain/rivet-contract-lowering-result.js";
 import type { RivetEndpointExampleValue, RivetType } from "../../domain/rivet-contract.js";
 import { bindTypeArguments, type TypeWalkContext } from "./type-walk.js";
 
@@ -14,11 +17,10 @@ import { bindTypeArguments, type TypeWalkContext } from "./type-walk.js";
  * What the contract's TS source declares that its JSON cannot say: which
  * enums are TS `enum`s, and which `date-time` strings are TS `Date`s.
  */
-export type ContractSourceTypes = {
-  readonly enumDeclarations: readonly ContractEnumDeclaration[];
-  /** By identity, as `RivetContractLoweringResult.dateTypes`. */
-  readonly dateTypes: ReadonlySet<RivetType>;
-};
+export type ContractSourceTypes = Pick<
+  RivetContractLoweringResult,
+  "enumDeclarations" | "dateTypes"
+>;
 
 /** A TS enum the printed expression references, and the copied contract module declaring it. */
 export type EnumImport = { readonly name: string; readonly relativePath: string };

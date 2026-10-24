@@ -9,7 +9,7 @@ export type LoweringContext = {
   readonly checker: ts.TypeChecker;
   readonly declarations: ReadonlyMap<string, SupportedDeclaration>;
   readonly diagnostics: ExtractionDiagnostic[];
-  /** Every lowered type node that was a TS `Date`, by identity, with the reference it lowered from. */
+  /** Every lowered type node that was a TS `Date`, by identity, with its source reference. */
   readonly dateTypes: Map<RivetType, ts.Node>;
 };
 

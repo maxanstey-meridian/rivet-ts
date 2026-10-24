@@ -15,6 +15,7 @@ These shapes are not part of the contract system and should produce diagnostics 
 - `never`
 - standalone `null`; use `T | null`
 - `Date` anywhere in a request (body, route, query or form field): it arrives as a string, so lowering reports `DATE_IN_REQUEST`; use `Format<string, "date-time">`
+- `Format<Date, "…">`: a `Date` already lowers to a `date-time` string, so lowering reports `UNSUPPORTED_FORMAT_TARGET`
 - non-literal or repeated tagged-union discriminator values
 - enums that mix string and numeric members
 - class-based or namespace-based contract authoring
