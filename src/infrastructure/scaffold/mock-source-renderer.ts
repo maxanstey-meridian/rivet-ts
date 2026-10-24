@@ -10,6 +10,16 @@ import { bindTypeArguments, type TypeWalkContext } from "./type-walk.js";
  * literal. A value the type rejects is a mismatch naming where it diverges.
  */
 
+/**
+ * What the contract's TS source declares that its JSON cannot say: which
+ * enums are TS `enum`s, and which `date-time` strings are TS `Date`s.
+ */
+export type ContractSourceTypes = {
+  readonly enumDeclarations: readonly ContractEnumDeclaration[];
+  /** By identity, as `RivetContractLoweringResult.dateTypes`. */
+  readonly dateTypes: ReadonlySet<RivetType>;
+};
+
 /** A TS enum the printed expression references, and the copied contract module declaring it. */
 export type EnumImport = { readonly name: string; readonly relativePath: string };
 
@@ -33,12 +43,14 @@ type Expression =
       readonly entries: readonly { readonly key: string; readonly value: Expression }[];
     }
   | { readonly kind: "brand"; readonly inner: Expression }
+  | { readonly kind: "date"; readonly iso: string }
   | { readonly kind: "enumMember"; readonly enum: EnumImport; readonly member: string };
 
 type Mismatch = { readonly kind: "mismatch"; readonly path: string; readonly reason: string };
 
 type RenderContext = TypeWalkContext & {
   readonly enumDeclarations: ReadonlyMap<string, ContractEnumDeclaration>;
+  readonly dateTypes: ReadonlySet<RivetType>;
 };
 
 export const isJsonObject = (value: RivetEndpointExampleValue): value is JsonObject =>
@@ -153,7 +165,15 @@ const render = (
     case "primitive":
       switch (type.type) {
         case "string":
-          return typeof value === "string" ? literal(value) : mismatch(path, "expected a string");
+          if (typeof value !== "string") {
+            return mismatch(path, "expected a string");
+          }
+          if (!context.dateTypes.has(type)) {
+            return literal(value);
+          }
+          return Number.isNaN(Date.parse(value))
+            ? mismatch(path, "is not a date")
+            : { kind: "date", iso: value };
         case "number":
           return typeof value === "number" ? literal(value) : mismatch(path, "expected a number");
         case "boolean":
@@ -302,6 +322,8 @@ const print = (expression: Expression, depth: number): string => {
       return JSON.stringify(expression.value);
     case "brand":
       return `brand(${print(expression.inner, depth)})`;
+    case "date":
+      return `new Date(${JSON.stringify(expression.iso)})`;
     case "enumMember":
       return memberAccess(expression.enum.name, expression.member);
     case "array":
@@ -323,6 +345,7 @@ const collectImports = (
 ): void => {
   switch (expression.kind) {
     case "literal":
+    case "date":
       return;
     case "brand":
       imports.brand = true;
@@ -344,13 +367,14 @@ export const renderMockSource = (
   type: RivetType,
   value: RivetEndpointExampleValue,
   context: TypeWalkContext,
-  enumDeclarations: readonly ContractEnumDeclaration[],
+  sourceTypes: ContractSourceTypes,
 ): RenderedMockSource => {
   const rendered = render(type, value, "response", {
     ...context,
     enumDeclarations: new Map(
-      enumDeclarations.map((declaration) => [declaration.name, declaration]),
+      sourceTypes.enumDeclarations.map((declaration) => [declaration.name, declaration]),
     ),
+    dateTypes: sourceTypes.dateTypes,
   });
   if (isMismatch(rendered)) {
     return { kind: "mismatch", message: `${rendered.path} ${rendered.reason}` };

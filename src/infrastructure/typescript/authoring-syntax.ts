@@ -2,12 +2,15 @@
 // literals, spec property maps and list entries. Shared by every lowering step.
 import ts from "typescript";
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
+import type { RivetType } from "../../domain/rivet-contract.js";
 
 /** What every lowering step reads from and reports to. */
 export type LoweringContext = {
   readonly checker: ts.TypeChecker;
   readonly declarations: ReadonlyMap<string, SupportedDeclaration>;
   readonly diagnostics: ExtractionDiagnostic[];
+  /** Every lowered type node that was a TS `Date`, by identity, with the reference it lowered from. */
+  readonly dateTypes: Map<RivetType, ts.Node>;
 };
 
 export type SupportedDeclaration =

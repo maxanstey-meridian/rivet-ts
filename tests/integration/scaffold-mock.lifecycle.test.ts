@@ -320,10 +320,21 @@ export interface AccountDto {
   sort: Sort;
 }
 
-// Format alone once compiled to a mock tsc rejected: Format was nominal.
+export interface Box<T> {
+  value: T;
+}
+
+// Format alone once compiled to a mock tsc rejected: Format was nominal. A
+// Date lowers to a date-time string, like Format<string, "date-time">, but
+// the handler returns a Date.
 export interface ThingDto {
   id: Format<string, "uuid">;
   name: string;
+  createdAt: Date;
+  seenAt: Date | null;
+  history: Date[];
+  latest: Box<Date>;
+  stamp: Format<string, "date-time">;
 }
 
 export const accountExample = {
@@ -371,6 +382,9 @@ export interface AccountsContract extends Contract<"Accounts"> {
     const createSource = await application("create.ts");
     expect(createSource).toContain('"status": AccountStatus["On Hold"]');
     expect(createSource).toContain('"email": brand("jane@example.com")');
+    const thingSource = await application("thing.ts");
+    expect(thingSource).toContain('"createdAt": new Date("2025-01-01T00:00:00.000Z")');
+    expect(thingSource).toContain('"stamp": "2025-01-01T00:00:00.000Z"');
     const brandSource = await application("brand.ts");
     expect(brandSource).toContain("const brandUseCase = async");
     expect(brandSource).toContain("export { brandUseCase as brand };");
@@ -413,8 +427,48 @@ export interface AccountsContract extends Contract<"Accounts"> {
     await expect((await app.request("/api/thing")).json()).resolves.toEqual({
       id: "00000000-0000-0000-0000-000000000000",
       name: "example",
+      createdAt: "2025-01-01T00:00:00.000Z",
+      seenAt: "2025-01-01T00:00:00.000Z",
+      history: ["2025-01-01T00:00:00.000Z"],
+      latest: { value: "2025-01-01T00:00:00.000Z" },
+      stamp: "2025-01-01T00:00:00.000Z",
     });
     await expect((await app.request("/api/brand")).json()).resolves.toBe("example");
+  });
+
+  it("warns on stderr, at the use case's TODO, when it replaces a response example", async () => {
+    const { exitCode, stderr, outputDirectory } = await scaffoldMock({
+      "contracts.ts": `import type { Contract, Endpoint } from "@maxanstey-meridian/rivet-ts";
+
+export interface ThingDto {
+  status: "active" | "retired";
+}
+
+export const drifted = { status: "archived" };
+
+export interface ThingsContract extends Contract<"Things"> {
+  Get: Endpoint<{
+    method: "GET";
+    route: "/api/thing";
+    response: ThingDto;
+    responseExamples: [{ status: 200; examples: [typeof drifted] }];
+  }>;
+}
+`,
+    });
+
+    expect(exitCode).toBe(0);
+    const useCasePath = apiSourcePath(
+      outputDirectory,
+      "modules",
+      "things",
+      "application",
+      "get.ts",
+    );
+    expect(stderr).toContain(`warning: [SCAFFOLD_RESPONSE_EXAMPLE_MISMATCH] ${useCasePath} `);
+    await expect(fs.readFile(useCasePath, "utf8")).resolves.toContain(
+      '// TODO: Endpoint "get" response example does not match its response type',
+    );
   });
 
   it.each(["expressive-contract", "response-examples-contract"])(
@@ -952,7 +1006,7 @@ export interface ThingsContract extends Contract<"Things"> {
         contracts: lowered.contracts,
         sourceFiles: lowered.sourceFiles,
         sourcePathAliases: lowered.sourcePathAliases,
-        enumDeclarations: lowered.enumDeclarations,
+        sourceTypes: lowered,
         document: new RivetContractDocument({
           ...lowered.document,
           endpoints: lowered.document.endpoints.filter(

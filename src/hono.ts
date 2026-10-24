@@ -1,10 +1,8 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
-import type {
-  ContentfulStatusCode,
-  ContentlessStatusCode,
-  SuccessStatusCode,
-} from "hono/utils/http-status";
+import type { ContentfulStatusCode, ContentlessStatusCode } from "hono/utils/http-status";
+import type { EndpointAuthoringSuccessStatus } from "./domain/authoring-types.js";
+import { isSuccessStatus, SUCCESS_STATUS_CODES } from "./domain/contract.js";
 import {
   asRivetHandler,
   type ContractEndpointKey,
@@ -101,14 +99,6 @@ type RuntimeHandler = (input?: Record<string, unknown>) => Promise<unknown>;
 /** 204/205/304 forbid a response body. */
 const isBodylessStatus = (status: number): status is ContentlessStatusCode =>
   status === 204 || status === 205 || status === 304;
-
-/** The registered 2xx codes, which are exactly Hono's `SuccessStatusCode`. */
-const SUCCESS_STATUS_CODES: readonly SuccessStatusCode[] = [
-  200, 201, 202, 203, 204, 205, 206, 207, 208, 226,
-];
-
-const isSuccessStatusCode = (status: number): status is SuccessStatusCode =>
-  SUCCESS_STATUS_CODES.some((code) => code === status);
 
 /**
  * Route placeholders bind to params case-insensitively (as in ASP.NET), so each
@@ -357,12 +347,12 @@ const getDefaultSuccessStatus = (httpMethod: string): number => {
   }
 };
 
-const getSuccessStatus = (endpoint: ContractEndpointJson): SuccessStatusCode => {
+const getSuccessStatus = (endpoint: ContractEndpointJson): EndpointAuthoringSuccessStatus => {
   const successResponse = endpoint.responses.find(
     (response) => response.statusCode >= 200 && response.statusCode < 300,
   );
   const status = successResponse?.statusCode ?? getDefaultSuccessStatus(endpoint.httpMethod);
-  if (!isSuccessStatusCode(status)) {
+  if (!isSuccessStatus(status)) {
     throw createHandlerResolutionError(
       `Endpoint "${endpoint.name}" declares success status ${status}, which is not a registered 2xx status (${SUCCESS_STATUS_CODES.join(", ")}).`,
     );
@@ -394,7 +384,7 @@ const toResponseBody = (
 const writeSuccessResponse = async (
   context: Context,
   endpoint: ContractEndpointJson,
-  status: SuccessStatusCode,
+  status: EndpointAuthoringSuccessStatus,
   result: unknown,
 ): Promise<Response> => {
   if (result === undefined || isBodylessStatus(status)) {

@@ -2,14 +2,22 @@
 
 ## Unreleased — breaking
 
+- The reflection pipeline moves off the root entry to `@maxanstey-meridian/rivet-ts/tooling`: `lowerContracts`, `runCli`, `RivetContractLoweringResult`, `RivetContractDocument` and the other document classes, `ExtractionDiagnostic`. The root keeps the authoring types, `brand()` and the handler and runtime types, and now loads no other package at runtime. It used to load the TypeScript compiler, `tar` and the CLI, which a `scaffold-mock` API (run in the browser) pulled in the moment a mock imported `brand`.
+
 - `Format<T, "name">` is no longer nominal: its phantom `__format` property is optional, so any `T` is assignable (`const id: Format<string, "uuid"> = "…"`). The docs called it "primitive plus format metadata", but nothing could construct one without an `as Format<…>` cast, which plumb's golden oxlint rules now reject. Existing casts still compile and can be deleted.
 
 - `registerRivetHonoRoutes` rejects, at registration, an endpoint whose success status is not a registered 2xx code (200–208, 226: Hono's `SuccessStatusCode`), naming the endpoint and status. It passed any 2xx to Hono through a type assertion.
+
+- A `Date` anywhere in an endpoint's input (body, route, query or form field, through named types and generic arguments) is a lowering error, `DATE_IN_REQUEST`, at the line that declares it. A request carries the value as a string, and nothing between the wire and the handler turns it back into a `Date`, so a handler typed with `Date` received a string and failed at runtime (`startsAt.getTime is not a function`). Declare request dates as `Format<string, "date-time">`. A `Date` in a response is unchanged: the handler returns a `Date` and it serializes to the same string.
+
+- `successStatus` takes only a registered 2xx status (200–208, 226; the new `EndpointAuthoringSuccessStatus` type), and lowering reports any other as `INVALID_SUCCESS_STATUS`. A `successStatus: 299` used to lower and fail when the app booted; a `successStatus: 404` lowered as a "success" the Hono runtime served as 200.
 
 ## Unreleased — fixes
 
 - `scaffold-mock` handlers return typed mock values with no `as RivetHandlerResult<…>` cast, so a fresh mock passes its own oxlint config. TS `enum` values print as member references (`AccountStatus.Active`, `Status["On Hold"]`) imported from the copied contract module; enum-like type aliases print as literals; branded values go through the new `brand()` export. A contract whose response had a `Format<…>` field but no enum or brand got no cast and failed `tsc`; it compiles now.
 - `scaffold-mock` checks a success response example against the response type instead of casting it. An example that does not match (a value outside its enum, a missing or extra property: an example given as `typeof someConst` is not checked against the response type when you write it, so it can drift) is replaced by a synthesized value, and the handler carries a `// TODO:` naming where it diverged (`SCAFFOLD_RESPONSE_EXAMPLE_MISMATCH`). The cast used to ship it as-is.
+- `scaffold-mock` prints a TS `Date` as `new Date("…")`. A `Date` lowers to a `date-time` string, as `Format<string, "date-time">` does, so the mock printed a string where its handler returns a `Date`, and `tsc` rejected it.
+- `scaffold-mock` prints its warnings on stderr, each pointing at the use case that carries it as a `// TODO:`: `SCAFFOLD_RESPONSE_EXAMPLE_MISMATCH` (a response example that did not match its type) and `SCAFFOLD_UNSUPPORTED_RESPONSE_SHAPE` (a response it cannot mock). They used to appear only in the handler, so nothing said a mock had diverged from its contract.
 - New `brand(value)` export: brands a value without validating it, for mocks and tests, inferring the brand name from where the value goes (`const email: Email = brand("jane@example.com")`). Contract example consts can use it (`email: brand("jane@example.com")`); lowering reads the call as its argument.
 
 - The scaffolded `.oxlintrc.json` (`scaffold`, `scaffold --no-api`, `scaffold-mock`) carries Plumb's two new golden rules, `typescript/no-non-null-assertion` and `typescript/consistent-type-assertions` (`assertionStyle: "never"`). Without them Plumb's MER-TO-002 reported two "diverging from golden base" findings on a fresh scaffold. The full scaffold's `app.vue` reads `error.message` directly (the contract types it as `ApiError | ValidationError`), dropping its `as { message?: string }` cast, which the new rule rejects.

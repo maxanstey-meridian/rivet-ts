@@ -184,7 +184,7 @@ const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<numb
     }
 
     const name = projectName ?? path.basename(outDir);
-    await emitMockProject({
+    const emitted = await emitMockProject({
       outDir,
       projectName: name,
       entryPath,
@@ -192,13 +192,14 @@ const runScaffoldMock = async (args: readonly string[], io: CliIO): Promise<numb
       contracts: lowered.contracts,
       sourceFiles: lowered.sourceFiles,
       sourcePathAliases: lowered.sourcePathAliases,
-      enumDeclarations: lowered.enumDeclarations,
+      sourceTypes: { enumDeclarations: lowered.enumDeclarations, dateTypes: lowered.dateTypes },
       // A spec carries JSON Schema constraints the TS contract cannot express.
       document:
         spec === undefined
           ? lowered.document
           : enrichDocumentWithConstraints(lowered.document, readOpenApiConstraints(spec)),
     });
+    reportDiagnostics(emitted.diagnostics, io);
 
     io.stdout(`Scaffolded ${name} into ${outDir}.\n`);
     io.stdout("Next: task install && task dev (see README.md).\n");

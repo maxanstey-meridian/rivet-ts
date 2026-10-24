@@ -1,5 +1,4 @@
 import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
-import type { ContractEnumDeclaration } from "../../domain/rivet-contract-lowering-result.js";
 import type {
   RivetContractDocument,
   RivetEndpointDefinition,
@@ -7,7 +6,12 @@ import type {
   RivetExample,
   RivetType,
 } from "../../domain/rivet-contract.js";
-import { isJsonObject, renderMockSource, type MockSourceImports } from "./mock-source-renderer.js";
+import {
+  isJsonObject,
+  renderMockSource,
+  type ContractSourceTypes,
+  type MockSourceImports,
+} from "./mock-source-renderer.js";
 import { createTypeWalkContext, enterTypeDefinition, type TypeWalkContext } from "./type-walk.js";
 
 type SynthesizedValue = { kind: "value"; value: RivetEndpointExampleValue };
@@ -317,7 +321,7 @@ const synthesizeType = (type: RivetType, outerContext: TypeContext): TypeSynthes
 export const generateEndpointMock = (
   endpoint: RivetEndpointDefinition,
   document: RivetContractDocument,
-  enumDeclarations: readonly ContractEnumDeclaration[],
+  sourceTypes: ContractSourceTypes,
 ): { result: MockGenerationResult; diagnostics: readonly ExtractionDiagnostic[] } => {
   const successResponse = findSuccessResponse(endpoint);
   const diagnostics: ExtractionDiagnostic[] = [];
@@ -347,7 +351,7 @@ export const generateEndpointMock = (
     // The example is checked against the response type as it is printed, so
     // the handler returns it without an assertion; one the type rejects
     // yields to synthesis.
-    const rendered = renderMockSource(responseType, example, walkContext, enumDeclarations);
+    const rendered = renderMockSource(responseType, example, walkContext, sourceTypes);
     if (rendered.kind === "rendered") {
       return {
         result: { kind: "value", source: rendered.source, imports: rendered.imports },
@@ -368,7 +372,7 @@ export const generateEndpointMock = (
     endpointName: endpoint.name,
     depth: 0,
   });
-  const result = toMockResult(synthesized, responseType, walkContext, enumDeclarations, endpoint);
+  const result = toMockResult(synthesized, responseType, walkContext, sourceTypes, endpoint);
 
   if (result.kind === "todo") {
     diagnostics.push(
@@ -387,13 +391,13 @@ const toMockResult = (
   synthesized: TypeSynthesisResult,
   responseType: RivetType,
   walkContext: TypeWalkContext,
-  enumDeclarations: readonly ContractEnumDeclaration[],
+  sourceTypes: ContractSourceTypes,
   endpoint: RivetEndpointDefinition,
 ): MockGenerationResult => {
   if (synthesized.kind !== "value") {
     return synthesized;
   }
-  const rendered = renderMockSource(responseType, synthesized.value, walkContext, enumDeclarations);
+  const rendered = renderMockSource(responseType, synthesized.value, walkContext, sourceTypes);
   return rendered.kind === "rendered"
     ? { kind: "value", source: rendered.source, imports: rendered.imports }
     : {

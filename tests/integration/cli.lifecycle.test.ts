@@ -151,7 +151,7 @@ export interface TempContract extends Contract<"TempContract"> {
     const run = (command: string, args: readonly string[]) =>
       execFileAsync(command, args, { cwd: consumerDirectory });
 
-    // hono is an optional peer the consumer lacks: the root and vite entries must not import it.
+    // hono is an optional peer the consumer lacks: the root, tooling and vite entries must not import it.
     const typeofExports = async (exports: Readonly<Record<string, string>>) => {
       const script = Object.entries(exports)
         .map(([entry, name]) => `console.log(typeof (await import("${entry}")).${name});`)
@@ -160,8 +160,12 @@ export interface TempContract extends Contract<"TempContract"> {
       return stdout.trim().split("\n");
     };
     expect(
-      await typeofExports({ [PACKAGE_NAME]: "runCli", [`${PACKAGE_NAME}/vite`]: "rivetTs" }),
-    ).toEqual(["function", "function"]);
+      await typeofExports({
+        [PACKAGE_NAME]: "brand",
+        [`${PACKAGE_NAME}/tooling`]: "runCli",
+        [`${PACKAGE_NAME}/vite`]: "rivetTs",
+      }),
+    ).toEqual(["function", "function", "function"]);
 
     await fs.symlink(
       path.join(PROJECT_ROOT, "node_modules", "hono"),
@@ -223,9 +227,13 @@ const created: EndpointResponseExamplesAuthoringSpec<{ email: string }> = {
   status: 201,
   examples: [jane, inline],
 };
+const created201: EndpointAuthoringSuccessStatus = 201;
+// @ts-expect-error not a registered 2xx status
+const unregistered: EndpointAuthoringSuccessStatus = 299;
 const spec: EndpointAuthoringSpec = {
   method,
   route: "/api/members",
+  successStatus: created201,
   errors: [notFound],
   security: admin,
   requestExamples,
@@ -247,7 +255,7 @@ export interface MembersContract extends Contract<"Members"> {
 const unbranded: MemberId = "mem_1";
 const branded: MemberId = brand("mem_2");
 
-export const usages = [spec, value, unbranded, branded];
+export const usages = [spec, value, unbranded, branded, unregistered];
 `,
     );
     // tsc reports on stdout; a failure surfaces it instead of a bare exit code.

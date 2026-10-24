@@ -1,5 +1,5 @@
 import { ExtractionDiagnostic } from "./diagnostic.js";
-import { RivetContractDocument } from "./rivet-contract.js";
+import { RivetContractDocument, type RivetType } from "./rivet-contract.js";
 
 /**
  * An authored endpoint as contract discovery found it, joined to its lowered
@@ -78,6 +78,13 @@ export class RivetContractLoweringResult {
   public readonly sourceFiles: readonly ContractSourceFile[];
   public readonly sourcePathAliases: ContractSourcePathAliases;
   public readonly enumDeclarations: readonly ContractEnumDeclaration[];
+  /**
+   * The nodes of `document` that were a TS `Date`, by object identity: the
+   * contract JSON writes them as `date-time` strings, like
+   * `Format<string, "date-time">`, but code typed by the contract holds a
+   * `Date`. Valid only for this result's own `document` objects.
+   */
+  public readonly dateTypes: ReadonlySet<RivetType>;
 
   public constructor(input: {
     document: RivetContractDocument;
@@ -86,6 +93,7 @@ export class RivetContractLoweringResult {
     sourceFiles?: readonly ContractSourceFile[];
     sourcePathAliases?: ContractSourcePathAliases;
     enumDeclarations?: readonly ContractEnumDeclaration[];
+    dateTypes?: ReadonlySet<RivetType>;
   }) {
     this.document = input.document;
     this.diagnostics = input.diagnostics ?? [];
@@ -93,6 +101,7 @@ export class RivetContractLoweringResult {
     this.sourceFiles = input.sourceFiles ?? [];
     this.sourcePathAliases = input.sourcePathAliases ?? {};
     this.enumDeclarations = input.enumDeclarations ?? [];
+    this.dateTypes = input.dateTypes ?? new Set();
   }
 
   public get hasErrors(): boolean {

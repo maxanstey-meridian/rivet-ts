@@ -244,6 +244,69 @@ export interface UsersContract extends Contract<"Users"> {
     expect(lowered.contracts[0]?.endpoints).toEqual([]);
   });
 
+  it.each([
+    ["a body DTO", 'method: "POST"; input: EventRequest', "body.window.startsAt", 3],
+    ["a query param", 'method: "GET"; input: { from: Date | null }', "query.from", 7],
+    ["a generic argument", 'method: "POST"; input: Box<Date[]>', "body[]", 7],
+  ])("reports a Date in %s, which reaches the handler as a string", async (_, spec, path, line) => {
+    const { entryPath, lowered } =
+      await lowerSource(`import type { Contract, Endpoint } from "${AUTHORING_TYPES}";
+
+export interface EventRequest { window: { startsAt: Date } }
+export interface Box<T> { value: T }
+
+export interface EventsContract extends Contract<"Events"> {
+  Create: Endpoint<{ ${spec}; route: "/api/events"; response: void }>;
+}
+`);
+
+    expect(lowered.diagnostics).toEqual([
+      errorDiagnostic({
+        code: "DATE_IN_REQUEST",
+        filePath: entryPath,
+        line,
+        message: `Endpoint "Events.Create" receives a Date at ${path}, but a request carries it as a string and the handler would get that string unconverted. Declare it as Format<string, "date-time">.`,
+      }),
+    ]);
+  });
+
+  it("lowers a Date in a response, which the handler returns as a Date", async () => {
+    const { lowered } =
+      await lowerSource(`import type { Contract, Endpoint } from "${AUTHORING_TYPES}";
+
+export interface EventDto { startsAt: Date }
+
+export interface EventsContract extends Contract<"Events"> {
+  Get: Endpoint<{ method: "GET"; route: "/api/event"; response: EventDto }>;
+}
+`);
+
+    expect(lowered.diagnostics).toEqual([]);
+  });
+
+  it.each([101, 299, 304, 404])(
+    "reports a successStatus of %i, which no runtime can send",
+    async (status) => {
+      const { lowered } = await lowerSource(`
+import type { Contract, Endpoint } from "${AUTHORING_TYPES}";
+
+export interface UsersContract extends Contract<"Users"> {
+  // @ts-expect-error not a registered 2xx status
+  Ping: Endpoint<{ method: "POST"; route: "/api/ping"; response: void; successStatus: ${status} }>;
+}
+`);
+
+      expect(lowered.diagnostics).toContainEqual(
+        errorDiagnostic({
+          code: "INVALID_SUCCESS_STATUS",
+          message: expect.stringContaining(
+            `Endpoint "Ping" declares successStatus ${status}, which is not a registered 2xx status`,
+          ),
+        }),
+      );
+    },
+  );
+
   it("reads an endpoint spec alias declared in another file", async () => {
     const { lowered, document } = await lowerSource(
       `
@@ -1386,7 +1449,8 @@ export interface TempContract extends Contract<"TempContract"> {
     );
   });
 
-  it.each([101, 204, 205, 304])(
+  // 101 and 304 never reach this: no runtime can send them as a success status.
+  it.each([204, 205])(
     "refuses response examples on body-forbidden status %i, as C# Rivet does (RIV1102)",
     async (status) => {
       const { entryPath, lowered } = await lowerSource(`

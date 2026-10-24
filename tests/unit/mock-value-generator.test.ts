@@ -31,8 +31,11 @@ export interface ThingsContract extends Contract<"ThingsContract"> {
   if (!endpoint) {
     throw new Error("GetThing did not lower");
   }
-  const enums = options.enums?.(lowered.enumDeclarations) ?? lowered.enumDeclarations;
-  return generateEndpointMock(endpoint, lowered.document, enums);
+  const enumDeclarations = options.enums?.(lowered.enumDeclarations) ?? lowered.enumDeclarations;
+  return generateEndpointMock(endpoint, lowered.document, {
+    enumDeclarations,
+    dateTypes: lowered.dateTypes,
+  });
 };
 
 const mockResponse = async (models: string, response: string) =>
@@ -114,6 +117,40 @@ describe("mock-value-generator typed source", () => {
       source:
         '{\n  "id": "00000000-0000-0000-0000-000000000000",\n  "tags": [\n    brand("example")\n  ]\n}',
       imports: { brand: true, enums: [] },
+    });
+  });
+
+  it("prints a Date as new Date(...), and a date-time format as its string", async () => {
+    const result = await mockResponse(
+      `${BOX}\nexport interface ThingDto { at: Date | null; boxed: Box<Date>; stamp: Format<string, "date-time"> }`,
+      "ThingDto",
+    );
+
+    expect(result).toEqual({
+      kind: "value",
+      source:
+        '{\n  "at": new Date("2025-01-01T00:00:00.000Z"),\n  "boxed": {\n    "value": new Date("2025-01-01T00:00:00.000Z")\n  },\n  "stamp": "2025-01-01T00:00:00.000Z"\n}',
+      imports: NO_IMPORTS,
+    });
+  });
+
+  it("synthesizes instead of a response example whose Date is not a date", async () => {
+    const { result, diagnostics } = await mockEndpoint(
+      `export interface ThingDto { at: Date }
+export const thing = { at: "soon" };`,
+      "ThingDto",
+      { spec: "; responseExamples: [{ status: 200; examples: [typeof thing] }]" },
+    );
+
+    expect(diagnostics).toMatchObject([
+      {
+        code: "SCAFFOLD_RESPONSE_EXAMPLE_MISMATCH",
+        message: expect.stringContaining("response.at is not a date"),
+      },
+    ]);
+    expect(result).toMatchObject({
+      kind: "value",
+      source: '{\n  "at": new Date("2025-01-01T00:00:00.000Z")\n}',
     });
   });
 

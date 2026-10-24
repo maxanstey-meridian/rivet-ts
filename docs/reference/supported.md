@@ -16,7 +16,7 @@ Supported keys:
 | `params`           | Explicit route params shape                                      |
 | `query`            | Explicit query params shape                                      |
 | `response`         | Success response type                                            |
-| `successStatus`    | Success status override                                          |
+| `successStatus`    | Success status override: a registered 2xx (200–208, 226)         |
 | `errors`           | Error response array or tuple                                    |
 | `summary`          | Short summary                                                    |
 | `description`      | Long description                                                 |
@@ -46,25 +46,26 @@ Parameter lowering has two modes:
 
 ## Type support matrix
 
-| TypeScript construct                        | Notes                                                                                                |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `string`, `number`, `boolean`               | Primitive JSON-compatible values                                                                     |
-| `unknown`                                   | Escape hatch for dynamic data                                                                        |
-| `T[]`, `Array<T>`, `ReadonlyArray<T>`       | Arrays. `ReadonlyArray<T>` lowers as an array shape, not a stronger collection-mutability contract   |
-| `Record<string, T>`                         | Dictionaries with string-like keys. Non-string-like record keys are rejected                         |
-| `T \| null`                                 | Nullable wrapper                                                                                     |
-| `"a" \| "b"`                                | String literal unions                                                                                |
-| `1 \| 2 \| 3`                               | Numeric literal unions                                                                               |
-| heterogeneous scalar unions                 | Primitive and scalar-literal variants, such as `number \| false`, lower to OpenAPI `oneOf` + `const` |
-| discriminated object unions                 | Tagged unions when every variant has the same single required string-literal discriminator           |
-| `enum E { ... }`                            | Auto-numbered and explicit string/numeric members are supported; mixed string/numeric enums reject   |
-| exported interfaces and object type aliases | Become named schemas/refs                                                                            |
-| inline object types                         | Supported as anonymous object shapes, including optional properties                                  |
-| `Brand<string, "Email">`                    | Branded primitives; `brand("jane@example.com")` brands a value without validating it (mocks, tests)  |
-| `Format<string, "uuid">`                    | Primitive plus format metadata; any value of the primitive is assignable, no cast needed             |
-| generic types                               | Contract JSON preserves generic refs and type arguments                                              |
-| optional properties on named object shapes  | Preserved                                                                                            |
-| plain `readonly` properties                 | Preserved as property-level type information                                                         |
+| TypeScript construct                        | Notes                                                                                                                                                                               |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `string`, `number`, `boolean`               | Primitive JSON-compatible values                                                                                                                                                    |
+| `unknown`                                   | Escape hatch for dynamic data                                                                                                                                                       |
+| `T[]`, `Array<T>`, `ReadonlyArray<T>`       | Arrays. `ReadonlyArray<T>` lowers as an array shape, not a stronger collection-mutability contract                                                                                  |
+| `Record<string, T>`                         | Dictionaries with string-like keys. Non-string-like record keys are rejected                                                                                                        |
+| `T \| null`                                 | Nullable wrapper                                                                                                                                                                    |
+| `"a" \| "b"`                                | String literal unions                                                                                                                                                               |
+| `1 \| 2 \| 3`                               | Numeric literal unions                                                                                                                                                              |
+| heterogeneous scalar unions                 | Primitive and scalar-literal variants, such as `number \| false`, lower to OpenAPI `oneOf` + `const`                                                                                |
+| discriminated object unions                 | Tagged unions when every variant has the same single required string-literal discriminator                                                                                          |
+| `enum E { ... }`                            | Auto-numbered and explicit string/numeric members are supported; mixed string/numeric enums reject                                                                                  |
+| exported interfaces and object type aliases | Become named schemas/refs                                                                                                                                                           |
+| inline object types                         | Supported as anonymous object shapes, including optional properties                                                                                                                 |
+| `Brand<string, "Email">`                    | Branded primitives; `brand("jane@example.com")` brands a value without validating it (mocks, tests)                                                                                 |
+| `Format<string, "uuid">`                    | Primitive plus format metadata; any value of the primitive is assignable, no cast needed                                                                                            |
+| `Date`                                      | A `date-time` string on the wire. Responses only: in a request the handler would receive the string, so lowering reports `DATE_IN_REQUEST`; use `Format<string, "date-time">` there |
+| generic types                               | Contract JSON preserves generic refs and type arguments                                                                                                                             |
+| optional properties on named object shapes  | Preserved                                                                                                                                                                           |
+| plain `readonly` properties                 | Preserved as property-level type information                                                                                                                                        |
 
 Tagged-union discriminators must be required. Other variant properties may be optional.
 
@@ -92,7 +93,7 @@ Multipart endpoints use `acceptsFile: true` and an object-like `input` with exac
 
 `unknown` can be reflected as a primitive escape hatch, but `scaffold-mock` does not synthesize a fake value for it.
 
-Mock handlers return typed values with no type assertion, so they pass the scaffold's oxlint config (`typescript/consistent-type-assertions`). A success response example is checked against the response type first; one that does not match (a value outside its enum, a missing or extra property) is replaced by a synthesized value, with a `// TODO:` in the handler saying where it diverged.
+Mock handlers return typed values with no type assertion, so they pass the scaffold's oxlint config (`typescript/consistent-type-assertions`). A success response example is checked against the response type first; one that does not match (a value outside its enum, a missing or extra property) is replaced by a synthesized value, with a `// TODO:` in the handler saying where it diverged and a warning on stderr naming that file.
 
 ## Runtime integration support
 

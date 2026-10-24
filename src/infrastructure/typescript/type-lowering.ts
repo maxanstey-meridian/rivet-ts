@@ -633,13 +633,12 @@ const lowerTypeReferenceNode = (
   }
 
   // Date lives in lib .d.ts files the declaration index never sees, so a
-  // bare ref would dangle; lower it to its wire shape instead.
+  // bare ref would dangle; lower it to its wire shape instead, remembering
+  // that the TS side holds a `Date` there.
   if (libraryName === "Date" && typeArguments.length === 0) {
-    return {
-      kind: "primitive",
-      type: "string",
-      format: "date-time",
-    };
+    const date: RivetType = { kind: "primitive", type: "string", format: "date-time" };
+    ctx.dateTypes.set(date, node);
+    return date;
   }
 
   if (typeParameters.has(typeName) && typeArguments.length === 0) {

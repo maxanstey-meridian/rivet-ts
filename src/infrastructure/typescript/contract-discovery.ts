@@ -1,6 +1,6 @@
 // Finds the entry file's contracts and parses each endpoint spec once.
 import ts from "typescript";
-import type { HttpMethod } from "../../domain/contract.js";
+import { isSuccessStatus, SUCCESS_STATUS_CODES, type HttpMethod } from "../../domain/contract.js";
 import type { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import { toLoweredEndpointName } from "../../domain/handler-types.js";
 import type { DiscoveredContract } from "../../domain/rivet-contract-lowering-result.js";
@@ -342,7 +342,18 @@ const discoverEndpoint = (
     return null;
   }
 
-  const successStatus = readNumericLiteral(ctx, propertyMap.get("successStatus"));
+  const successStatusNode = propertyMap.get("successStatus");
+  const successStatus = readNumericLiteral(ctx, successStatusNode);
+  if (successStatus !== null && !isSuccessStatus(successStatus)) {
+    ctx.diagnostics.push(
+      createNodeDiagnostic(
+        successStatusNode ?? specNode,
+        "INVALID_SUCCESS_STATUS",
+        `Endpoint "${endpointName}" declares successStatus ${successStatus}, which is not a registered 2xx status (${SUCCESS_STATUS_CODES.join(", ")}).`,
+      ),
+    );
+    return null;
+  }
   const formEncoded = readBooleanLiteral(ctx, propertyMap.get("formEncoded")) ?? false;
   const acceptsFile = readBooleanLiteral(ctx, propertyMap.get("acceptsFile")) ?? false;
   const fileContentType =

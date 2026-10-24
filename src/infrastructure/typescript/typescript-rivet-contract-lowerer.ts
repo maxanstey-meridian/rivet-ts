@@ -11,8 +11,11 @@ import {
   RivetTypeDefinition,
   type RivetContractEnum,
   type RivetEndpointDefinition,
+  type RivetEndpointParam,
+  type RivetType,
 } from "../../domain/rivet-contract.js";
 import {
+  createNodeDiagnostic,
   hasModifier,
   type LoweringContext,
   type SupportedDeclaration,
@@ -71,14 +74,16 @@ export const lowerContracts = (
   const typeDefinitions = new Map<string, RivetTypeDefinition>();
   const enums = new Map<string, RivetContractEnum>();
   const endpoints: RivetEndpointDefinition[] = [];
+  const endpointNames = new Map<RivetEndpointDefinition, string>();
   const referencedTypeNames = new Set<string>();
-  const ctx: LoweringContext = { checker, declarations, diagnostics };
+  const ctx: LoweringContext = { checker, declarations, diagnostics, dateTypes: new Map() };
   const contracts = discoverContracts(ctx, sourceFile);
 
   for (const contract of contracts) {
     for (const endpoint of contract.endpoints) {
       const loweredEndpoint = lowerEndpoint(ctx, endpoint);
       endpoints.push(loweredEndpoint);
+      endpointNames.set(loweredEndpoint, `${endpoint.contractName}.${endpoint.name}`);
       for (const parameter of loweredEndpoint.params) {
         collectTypeReferences(parameter.type, referencedTypeNames);
       }
@@ -122,6 +127,10 @@ export const lowerContracts = (
     }
   }
 
+  for (const endpoint of endpoints) {
+    reportDateInputs(ctx, endpointNames.get(endpoint) ?? endpoint.name, endpoint, typeDefinitions);
+  }
+
   const document = new RivetContractDocument({
     types: [...typeDefinitions.values()].sort((left, right) => left.name.localeCompare(right.name)),
     enums: [...enums.values()].sort((left, right) => left.name.localeCompare(right.name)),
@@ -145,7 +154,104 @@ export const lowerContracts = (
     })),
     sourcePathAliases: toSourcePathAliases(project.compilerOptions, sourceRoot),
     enumDeclarations: toEnumDeclarations(document.enums, declarations, sourceFilePaths, sourceRoot),
+    dateTypes: new Set(ctx.dateTypes.keys()),
   });
+};
+
+const PARAM_PATH_ROOTS: Readonly<Record<RivetEndpointParam["source"], string>> = {
+  body: "body",
+  file: "file",
+  formField: "form",
+  query: "query",
+  route: "route",
+};
+
+/**
+ * A TS `Date` anywhere in an endpoint's input is an error: a request carries
+ * it as a string, and nothing between the wire and the handler (route and
+ * query binding, `req.json()`, the scaffold's validator) makes it a `Date`
+ * again, so the handler would receive a string its type calls a `Date`.
+ * Reported once per `Date` and endpoint, at the reference that wrote it.
+ */
+const reportDateInputs = (
+  ctx: LoweringContext,
+  endpointName: string,
+  endpoint: RivetEndpointDefinition,
+  typeDefinitions: ReadonlyMap<string, RivetTypeDefinition>,
+): void => {
+  const reported = new Set<RivetType>();
+  const visit = (type: RivetType, path: string, entered: ReadonlySet<string>): void => {
+    const enter = (name: string, typeArgs: readonly RivetType[]): void => {
+      for (const typeArg of typeArgs) {
+        visit(typeArg, path, entered);
+      }
+      const definition = typeDefinitions.get(name);
+      if (!definition || entered.has(name)) {
+        return;
+      }
+      const inside = new Set(entered).add(name);
+      if (definition.type) {
+        visit(definition.type, path, inside);
+      }
+      for (const property of definition.properties) {
+        visit(property.type, `${path}.${property.name}`, inside);
+      }
+    };
+
+    switch (type.kind) {
+      case "primitive": {
+        const node = ctx.dateTypes.get(type);
+        if (node && !reported.has(type)) {
+          reported.add(type);
+          ctx.diagnostics.push(
+            createNodeDiagnostic(
+              node,
+              "DATE_IN_REQUEST",
+              `Endpoint "${endpointName}" receives a Date at ${path}, but a request carries it as a string and the handler would get that string unconverted. Declare it as Format<string, "date-time">.`,
+            ),
+          );
+        }
+        return;
+      }
+      case "nullable":
+        return visit(type.inner, path, entered);
+      case "array":
+        return visit(type.element, `${path}[]`, entered);
+      case "dictionary":
+        return visit(type.value, `${path}[key]`, entered);
+      case "brand":
+        return visit(type.underlying, path, entered);
+      case "ref":
+        return enter(type.name, []);
+      case "generic":
+        return enter(type.name, type.typeArgs);
+      case "inlineObject":
+        for (const property of type.properties) {
+          visit(property.type, `${path}.${property.name}`, entered);
+        }
+        return;
+      case "union":
+        for (const variant of type.variants) {
+          visit(variant, path, entered);
+        }
+        return;
+      case "taggedUnion":
+        for (const variant of type.variants) {
+          visit(variant.type, path, entered);
+        }
+        return;
+      case "stringUnion":
+      case "intUnion":
+      case "literal":
+      case "typeParam":
+        return;
+    }
+  };
+
+  for (const param of endpoint.params) {
+    const root = PARAM_PATH_ROOTS[param.source];
+    visit(param.type, param.source === "body" ? root : `${root}.${param.name}`, new Set());
+  }
 };
 
 /** An enum member's name as `Enum[name]` reads it: `["a"] = 1` is the member `a`. */

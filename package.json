@@ -41,6 +41,10 @@
       "types": "./dist/hono.d.ts",
       "import": "./dist/hono.js"
     },
+    "./tooling": {
+      "types": "./dist/tooling.d.ts",
+      "import": "./dist/tooling.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {

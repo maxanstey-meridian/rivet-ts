@@ -4,6 +4,19 @@ export type Contract<TName extends string> = {
 
 export type EndpointAuthoringHttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
+/** The registered 2xx statuses: exactly Hono's `SuccessStatusCode`, so the runtime can send each. */
+export type EndpointAuthoringSuccessStatus =
+  | 200
+  | 201
+  | 202
+  | 203
+  | 204
+  | 205
+  | 206
+  | 207
+  | 208
+  | 226;
+
 export type EndpointErrorAuthoringSpec = {
   readonly status: number;
   readonly response?: unknown;
@@ -78,7 +91,7 @@ export type EndpointAuthoringSpec = {
   )[];
   readonly successResponseExample?: EndpointExampleAuthoringReference;
   readonly responseExamples?: readonly EndpointResponseExamplesAuthoringSpec[];
-  readonly successStatus?: number;
+  readonly successStatus?: EndpointAuthoringSuccessStatus;
   readonly summary?: string;
   readonly description?: string;
   readonly errors?: readonly EndpointErrorAuthoringSpec[];

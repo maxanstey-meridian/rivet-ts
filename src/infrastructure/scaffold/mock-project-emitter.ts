@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import ts from "typescript";
+import { ExtractionDiagnostic } from "../../domain/diagnostic.js";
 import type {
-  ContractEnumDeclaration,
   ContractSourceFile,
   ContractSourcePathAliases,
   DiscoveredContract,
@@ -13,7 +13,7 @@ import type {
   RivetEndpointDefinition,
 } from "../../domain/rivet-contract.js";
 import { toKebabCase } from "../codegen/kebab-case.js";
-import type { MockSourceImports } from "./mock-source-renderer.js";
+import type { ContractSourceTypes, MockSourceImports } from "./mock-source-renderer.js";
 import { generateEndpointMock } from "./mock-value-generator.js";
 import {
   assertOutDirWritable,
@@ -40,7 +40,7 @@ export type MockProjectConfig = {
   readonly contracts: readonly DiscoveredContract[];
   readonly sourceFiles: readonly ContractSourceFile[];
   readonly sourcePathAliases: ContractSourcePathAliases;
-  readonly enumDeclarations: readonly ContractEnumDeclaration[];
+  readonly sourceTypes: ContractSourceTypes;
   readonly document: RivetContractDocument;
 };
 
@@ -58,6 +58,8 @@ type HandlerDescriptor = {
   readonly supportsDemoCall: boolean;
   /** Present when the handler receives a JSON body the route validates. */
   readonly bodySchema?: ZodSourceResult;
+  /** What the mock could not do as the contract asked; the body carries each as a `// TODO:`. */
+  readonly diagnostics: readonly ExtractionDiagnostic[];
 };
 
 type ContractGroup = {
@@ -142,13 +144,13 @@ const buildHandlerDescriptor = (
   spec: DiscoveredEndpoint,
   endpoint: RivetEndpointDefinition,
   document: RivetContractDocument,
-  enumDeclarations: readonly ContractEnumDeclaration[],
+  sourceTypes: ContractSourceTypes,
 ): HandlerDescriptor => {
   // RivetHandlerInput has a slot per lowered param source, so an endpoint
   // with no lowered params is the one whose handler takes no input.
   const takesInput = endpoint.params.length > 0;
 
-  const mock = generateEndpointMock(endpoint, document, enumDeclarations);
+  const mock = generateEndpointMock(endpoint, document, sourceTypes);
   const unsupportedParams = endpoint.params.filter(
     (param) => !isSupportedParamSource(param.source),
   );
@@ -192,6 +194,7 @@ const buildHandlerDescriptor = (
       !endpoint.params.some((param) => isSupportedParamSource(param.source)) &&
       mock.result.kind === "value",
     bodySchema: bodyParam ? zodSourceForType(bodyParam.type, document) : undefined,
+    diagnostics: mock.diagnostics,
   };
 };
 
@@ -228,7 +231,7 @@ const buildContractGroups = (config: MockProjectConfig): readonly ContractGroup[
             `Endpoint "${contract.name}.${spec.name}" is missing from the lowered contract document.`,
           );
         }
-        return buildHandlerDescriptor(spec, endpoint, config.document, config.enumDeclarations);
+        return buildHandlerDescriptor(spec, endpoint, config.document, config.sourceTypes);
       }),
     };
   });
@@ -520,7 +523,10 @@ serve({ fetch: app.fetch, port: 5180 }, (info) => {
 /** Emitted files at the root of `apps/api/src`; copied contract sources must not land on them. */
 const API_SOURCE_FILES = ["local.ts", "main.ts", "app.ts", "validation.ts", "http-errors.ts"];
 
-export const emitMockProject = async (config: MockProjectConfig): Promise<void> => {
+/** Writes the mock workspace and returns the warnings its handlers carry as `// TODO:`s. */
+export const emitMockProject = async (
+  config: MockProjectConfig,
+): Promise<{ readonly diagnostics: readonly ExtractionDiagnostic[] }> => {
   const entryAbsolutePath = path.resolve(config.entryPath);
   const entryDependency = config.sourceFiles.find(
     (dependency) => dependency.absolutePath === entryAbsolutePath,
@@ -594,4 +600,22 @@ export const emitMockProject = async (config: MockProjectConfig): Promise<void> 
     ),
     ...Object.fromEntries(copiedSources),
   });
+
+  // Each located at the use case that carries it as a `// TODO:`.
+  return {
+    diagnostics: groups.flatMap((group) =>
+      group.handlers.flatMap((handler) =>
+        handler.diagnostics.map(
+          (diagnostic) =>
+            new ExtractionDiagnostic({
+              ...diagnostic,
+              filePath: path.join(
+                config.outDir,
+                `apps/api/src/modules/${group.moduleDirectoryName}/application/${handler.fileBaseName}.ts`,
+              ),
+            }),
+        ),
+      ),
+    ),
+  };
 };
