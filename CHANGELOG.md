@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — breaking
+## 0.17.0 — breaking
 
 - The reflection pipeline moves off the root entry to `@maxanstey-meridian/rivet-ts/tooling`: `lowerContracts`, `RivetContractLoweringResult`, `RivetContractDocument` and the other document classes, `ExtractionDiagnostic`. `runCli` is no longer exported; the `rivet-ts` command is the CLI. The root keeps the authoring types, `brand()` and the handler and runtime types, and now loads no other package at runtime. It used to load the TypeScript compiler, `tar` and the CLI, which a `scaffold-mock` API (run in the browser) pulled in the moment a mock imported `brand`.
 
@@ -20,7 +20,7 @@
 
 - `registerRivetHonoRoutes` rejects, at registration, an endpoint whose HTTP method is not GET, POST, PUT, PATCH or DELETE. One such method list now backs the authoring type, lowering and the runtime.
 
-## Unreleased — fixes
+## 0.17.0 — fixes
 
 - `scaffold-mock` handlers return typed mock values with no `as RivetHandlerResult<…>` cast, so a fresh mock passes its own oxlint config. TS `enum` values print as member references (`AccountStatus.Active`, `Status["On Hold"]`) imported from the copied contract module; enum-like type aliases print as literals; branded values go through the new `brand()` export. A contract whose response had a `Format<…>` field but no enum or brand got no cast and failed `tsc`; it compiles now.
 - `scaffold-mock` checks a success response example against the response type instead of casting it. An example that does not match (a value outside its enum, a missing or extra property: an example given as `typeof someConst` is not checked against the response type when you write it, so it can drift) is replaced by a synthesized value, and the handler carries a `// TODO:` naming where it diverged (`SCAFFOLD_RESPONSE_EXAMPLE_MISMATCH`). The cast used to ship it as-is.
